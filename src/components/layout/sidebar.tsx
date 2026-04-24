@@ -10,11 +10,15 @@ import {
   Settings,
   Brain,
   LogOut,
+  ShieldCheck,
+  Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
+import { useSubscription } from "@/hooks/use-subscription";
 import { useEffect, useState } from "react";
 import type { Profile } from "@/types/database";
 
@@ -33,18 +37,29 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
+  const { hasSubscription, isTrial, daysLeft, loading: subLoading } = useSubscription();
   const supabase = createClient();
 
   useEffect(() => {
     async function loadProfile() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
+        // Busca perfil
         const { data } = await supabase
           .from("profiles")
           .select("*")
           .eq("id", user.id)
           .single();
-        setProfile(data);
+        
+        // Se o perfil estiver faltando algum dado essencial, tenta complementar com o metadata do auth
+        const mergedProfile = {
+          ...data,
+          id: user.id,
+          full_name: data?.full_name || user.user_metadata?.full_name || "Psicóloga",
+          crp: data?.crp || user.user_metadata?.crp,
+        };
+        
+        setProfile(mergedProfile as any);
       }
     }
     loadProfile();
@@ -114,6 +129,37 @@ export function Sidebar() {
             </Link>
           );
         })}
+
+        {(!hasSubscription || isTrial) && (
+          <div className={cn(
+            "mt-6 mx-2 p-4 rounded-2xl border flex flex-col items-center text-center",
+            isTrial ? "bg-indigo-50/50 border-indigo-100" : "bg-primary/5 border-primary/10"
+          )}>
+            {isTrial ? (
+              <Clock className="w-8 h-8 text-indigo-600 mb-2 opacity-80" />
+            ) : (
+              <ShieldCheck className="w-8 h-8 text-primary mb-2 opacity-80" />
+            )}
+            <p className="text-xs font-bold mb-1">
+              {isTrial ? "Período de Teste" : "Acesso Limitado"}
+            </p>
+            <p className="text-[10px] text-muted-foreground mb-3 leading-tight">
+              {isTrial 
+                ? `Você tem ${daysLeft} ${daysLeft === 1 ? 'dia' : 'dias'} de acesso total liberado!`
+                : "Assine um plano para liberar todas as funções."}
+            </p>
+            <Button 
+              size="sm" 
+              className={cn(
+                "w-full h-8 text-[11px] font-bold text-white",
+                isTrial ? "bg-indigo-600 hover:bg-indigo-700" : "gradient-primary"
+              )}
+              onClick={() => router.push('/dashboard/settings/billing')}
+            >
+              {isTrial ? "Ativar Assinatura" : "Ver Planos"}
+            </Button>
+          </div>
+        )}
       </nav>
 
       {/* Bottom Section */}

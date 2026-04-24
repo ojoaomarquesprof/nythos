@@ -273,6 +273,50 @@ export interface Database {
           context?: 'morning' | 'afternoon' | 'evening' | 'night' | 'work' | 'home' | 'social' | 'other' | null;
         };
       };
+      anamnesis_templates: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          description: string | null;
+          fields: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          description?: string | null;
+          fields?: Json;
+        };
+        Update: {
+          title?: string;
+          description?: string | null;
+          fields?: Json;
+        };
+      };
+      anamnesis_responses: {
+        Row: {
+          id: string;
+          template_id: string;
+          patient_id: string | null;
+          responses: Json;
+          status: 'pending' | 'completed';
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          template_id: string;
+          patient_id?: string | null;
+          responses?: Json;
+          status?: 'pending' | 'completed';
+        };
+        Update: {
+          responses?: Json;
+          status?: 'pending' | 'completed';
+        };
+      };
     };
     Views: {
       monthly_financial_summary: {
@@ -296,6 +340,8 @@ export type Session = Database['public']['Tables']['sessions']['Row'];
 export type CashFlow = Database['public']['Tables']['cash_flow']['Row'];
 export type PatientTask = Database['public']['Tables']['patient_tasks']['Row'];
 export type EmotionDiary = Database['public']['Tables']['emotion_diary']['Row'];
+export type AnamnesisTemplate = Database['public']['Tables']['anamnesis_templates']['Row'];
+export type AnamnesisResponse = Database['public']['Tables']['anamnesis_responses']['Row'];
 
 export type SessionStatus = 'scheduled' | 'completed' | 'missed' | 'cancelled';
 export type SessionType = 'individual' | 'couple' | 'group' | 'online' | 'initial_assessment';

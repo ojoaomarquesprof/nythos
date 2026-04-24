@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { Profile } from "@/types/database";
+import { AnamnesisBuilder } from "@/components/dashboard/settings/anamnesis-builder";
 
 export default function SettingsPage() {
   const supabase = createClient();
@@ -430,6 +431,9 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       </form>
+
+      {/* Anamnesis Builder */}
+      <AnamnesisBuilder />
 
       {/* Notifications */}
       <Card className="border-0 shadow-sm overflow-hidden">

@@ -24,6 +24,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { SubscriptionGate } from "@/components/auth/subscription-gate";
 import {
   formatCurrency,
   formatDate,
@@ -202,14 +203,16 @@ export default function FinancesPage() {
             })}
           </p>
         </div>
-        <Button
-          className="gradient-primary text-white shadow-sm"
-          onClick={() => setShowExpense(true)}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          <span className="hidden sm:inline">Nova Despesa</span>
-          <span className="sm:hidden">Despesa</span>
-        </Button>
+        <SubscriptionGate>
+          <Button
+            className="gradient-primary text-white shadow-sm"
+            onClick={() => setShowExpense(true)}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            <span className="hidden sm:inline">Nova Despesa</span>
+            <span className="sm:hidden">Despesa</span>
+          </Button>
+        </SubscriptionGate>
       </div>
 
       {/* Summary Cards */}
@@ -289,16 +292,18 @@ export default function FinancesPage() {
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">Transações</CardTitle>
             <div className="flex gap-2 items-center">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={handleExportPdf}
-                disabled={isExporting || filtered.length === 0}
-                className="h-8"
-              >
-                <Download className="w-4 h-4 mr-2" />
-                <span className="hidden sm:inline">Exportar PDF</span>
-              </Button>
+              <SubscriptionGate>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleExportPdf}
+                  disabled={isExporting || filtered.length === 0}
+                  className="h-8"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  <span className="hidden sm:inline">Exportar PDF</span>
+                </Button>
+              </SubscriptionGate>
               <div className="flex gap-1 bg-muted/50 rounded-lg p-0.5">
                 {(["all", "income", "expense"] as const).map((f) => (
                   <button
@@ -401,24 +406,26 @@ export default function FinancesPage() {
                       </span>
 
                       {isPending && isIncome && (
-                        <div className="flex gap-1">
-                          {["pix", "cash", "credit_card"].map((method) => (
-                            <button
-                              key={method}
-                              onClick={() =>
-                                handleConfirmPayment(tx.id, method)
-                              }
-                              className="h-6 px-2 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
-                              title={`Confirmar como ${PAYMENT_METHODS[method as keyof typeof PAYMENT_METHODS]?.label}`}
-                            >
-                              {method === "pix"
-                                ? "⚡ Pix"
-                                : method === "cash"
-                                ? "💵"
-                                : "💳"}
-                            </button>
-                          ))}
-                        </div>
+                        <SubscriptionGate>
+                          <div className="flex gap-1">
+                            {["pix", "cash", "credit_card"].map((method) => (
+                              <button
+                                key={method}
+                                onClick={() =>
+                                  handleConfirmPayment(tx.id, method)
+                                }
+                                className="h-6 px-2 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+                                title={`Confirmar como ${PAYMENT_METHODS[method as keyof typeof PAYMENT_METHODS]?.label}`}
+                              >
+                                {method === "pix"
+                                  ? "⚡ Pix"
+                                  : method === "cash"
+                                  ? "💵"
+                                  : "💳"}
+                              </button>
+                            ))}
+                          </div>
+                        </SubscriptionGate>
                       )}
 
                       {tx.status === "confirmed" && (

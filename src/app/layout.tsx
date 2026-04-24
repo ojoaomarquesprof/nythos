@@ -43,6 +43,8 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+import Script from "next/script";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -58,27 +60,24 @@ export default function RootLayout({
         <TooltipProvider>
           {children}
         </TooltipProvider>
-        <ServiceWorkerRegistration />
+        
+        {/* Service Worker Registration */}
+        <Script
+          id="sw-registration"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js')
+                    .then(function(reg) { console.log('[Nythos] SW registered:', reg.scope); })
+                    .catch(function(err) { console.log('[Nythos] SW registration failed:', err); });
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
-  );
-}
-
-// Inline script component to register SW
-function ServiceWorkerRegistration() {
-  return (
-    <script
-      dangerouslySetInnerHTML={{
-        __html: `
-          if ('serviceWorker' in navigator) {
-            window.addEventListener('load', function() {
-              navigator.serviceWorker.register('/sw.js')
-                .then(function(reg) { console.log('[Nythos] SW registered:', reg.scope); })
-                .catch(function(err) { console.log('[Nythos] SW registration failed:', err); });
-            });
-          }
-        `,
-      }}
-    />
   );
 }

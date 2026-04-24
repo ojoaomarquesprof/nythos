@@ -100,6 +100,17 @@ export function formatDate(date: string | Date, options?: Intl.DateTimeFormatOpt
   }).format(new Date(date));
 }
 
+// Multidisciplinary specialties for care network
+export const SPECIALTIES = [
+  { value: "fono", label: "Fonoaudiologia" },
+  { value: "to", label: "Terapia Ocupacional" },
+  { value: "neuro", label: "Neuropediatria" },
+  { value: "psico", label: "Psicopedagogia" },
+  { value: "at", label: "Acompanhante Terapêutico" },
+  { value: "escola", label: "Escola" },
+  { value: "outros", label: "Outros" },
+] as const;
+
 // Format time
 export function formatTime(date: string | Date): string {
   return new Intl.DateTimeFormat('pt-BR', {

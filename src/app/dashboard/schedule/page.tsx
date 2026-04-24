@@ -21,6 +21,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { SubscriptionGate } from "@/components/auth/subscription-gate";
 import { SESSION_STATUS, formatTime, formatCurrency } from "@/lib/constants";
 import type { Session, Patient } from "@/types/database";
 
@@ -274,14 +275,16 @@ export default function SchedulePage() {
           <h1 className="text-xl font-bold">Agenda</h1>
           <p className="text-sm text-muted-foreground capitalize">{monthYear}</p>
         </div>
-        <Button
-          className="gradient-primary text-white shadow-sm"
-          onClick={() => setShowNewSession(true)}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          <span className="hidden sm:inline">Nova Sessão</span>
-          <span className="sm:hidden">Nova</span>
-        </Button>
+        <SubscriptionGate>
+          <Button
+            className="gradient-primary text-white shadow-sm"
+            onClick={() => setShowNewSession(true)}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            <span className="hidden sm:inline">Nova Sessão</span>
+            <span className="sm:hidden">Nova</span>
+          </Button>
+        </SubscriptionGate>
       </div>
 
       {/* Week Navigation */}
@@ -435,33 +438,35 @@ export default function SchedulePage() {
                       </Badge>
                       <div className="flex gap-1">
                         {session.status === "scheduled" && (
-                          <>
-                            <button
-                              onClick={() => openEditModal(session)}
-                              className="w-8 h-8 rounded-md bg-muted text-muted-foreground flex items-center justify-center text-xs hover:bg-primary/10 hover:text-primary transition-colors"
-                              title="Remarcar"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() =>
-                                handleStatusChange(session.id, "completed")
-                              }
-                              className="w-8 h-8 rounded-md bg-green-50 text-green-600 flex items-center justify-center text-xs font-bold hover:bg-green-100 transition-colors"
-                              title="Marcar como realizada"
-                            >
-                              ✓
-                            </button>
-                            <button
-                              onClick={() =>
-                                handleStatusChange(session.id, "missed")
-                              }
-                              className="w-8 h-8 rounded-md bg-red-50 text-red-500 flex items-center justify-center text-xs font-bold hover:bg-red-100 transition-colors"
-                              title="Marcar como falta"
-                            >
-                              ✗
-                            </button>
-                          </>
+                          <SubscriptionGate>
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => openEditModal(session)}
+                                className="w-8 h-8 rounded-md bg-muted text-muted-foreground flex items-center justify-center text-xs hover:bg-primary/10 hover:text-primary transition-colors"
+                                title="Remarcar"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() =>
+                                  handleStatusChange(session.id, "completed")
+                                }
+                                className="w-8 h-8 rounded-md bg-green-50 text-green-600 flex items-center justify-center text-xs font-bold hover:bg-green-100 transition-colors"
+                                title="Marcar como realizada"
+                              >
+                                ✓
+                              </button>
+                              <button
+                                onClick={() =>
+                                  handleStatusChange(session.id, "missed")
+                                }
+                                className="w-8 h-8 rounded-md bg-red-50 text-red-500 flex items-center justify-center text-xs font-bold hover:bg-red-100 transition-colors"
+                                title="Marcar como falta"
+                              >
+                                ✗
+                              </button>
+                            </div>
+                          </SubscriptionGate>
                         )}
                       </div>
                     </div>

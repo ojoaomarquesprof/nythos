@@ -18,6 +18,9 @@ import {
   Heart,
   AlertCircle,
   Download,
+  Users,
+  Activity,
+  ClipboardList,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,9 +32,13 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import { SESSION_STATUS, formatCurrency, formatDate, formatTime } from "@/lib/constants";
+import { SESSION_STATUS, formatCurrency, formatDate, formatTime, SPECIALTIES } from "@/lib/constants";
 import type { Patient, Session, Profile } from "@/types/database";
 import { createPdfDocument, addPdfFooter, addTableToPdf } from "@/lib/pdf-generator";
+import { CareNetworkCard } from "@/components/dashboard/patients/care-network-card";
+import { ProtocolTrackerCard } from "@/components/dashboard/patients/protocol-tracker-card";
+import { AbcRecordCard } from "@/components/dashboard/patients/abc-record-card";
+import { AnamnesisRequestCard } from "@/components/dashboard/patients/anamnesis-request-card";
 
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -180,7 +187,12 @@ export default function PatientDetailPage() {
     try {
       const { doc, startY } = await createPdfDocument({
         title: "Prontuário do Paciente",
-        subtitle: `Paciente: ${patient.full_name}\nData de Nascimento: ${patient.date_of_birth ? formatDate(patient.date_of_birth) : "Não informada"}\nCPF: ${patient.cpf || "Não informado"}`,
+        subtitle: [
+          `Paciente: ${patient.full_name}`,
+          patient.cpf ? `CPF: ${patient.cpf}` : null,
+          patient.date_of_birth ? `Data de Nasc.: ${formatDate(patient.date_of_birth)}` : null,
+          `Data do Relatório: ${new Date().toLocaleDateString("pt-BR")}`
+        ].filter(Boolean).join(" | "),
         profile
       });
 
@@ -195,9 +207,190 @@ export default function PatientDetailPage() {
       doc.text(splitText, 14, startY + 8);
 
       addPdfFooter(doc);
-      doc.save(`prontuario_${patient.full_name.replace(/\s+/g, '_')}.pdf`);
+      doc.save(`notas_evolucao_${patient.full_name.replace(/\s+/g, '_')}.pdf`);
     } catch (e) {
       showError("Erro na Exportação", "Ocorreu um erro ao gerar o PDF do prontuário.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportFullRecord = async () => {
+    if (!patient || !profile) return;
+    setIsExporting(true);
+    
+    try {
+      // 1. Fetch all data in parallel
+      const [networkRes, protocolsRes, behaviorRes, anamnesisRes] = await Promise.all([
+        supabase.from("care_network").select("*").eq("patient_id", patient.id).order("created_at", { ascending: false }),
+        supabase.from("patient_evaluations").select("*").eq("patient_id", patient.id).order("evaluation_date", { ascending: false }),
+        supabase.from("abc_records").select("*").eq("patient_id", patient.id).order("occurrence_date", { ascending: false }),
+        supabase.from("anamnesis_responses").select("*, anamnesis_templates(*)").eq("patient_id", patient.id).eq("status", "completed").order("created_at", { ascending: false })
+      ]);
+
+      const anamneses = (anamnesisRes.data as any[]) || [];
+
+      const { doc, startY } = await createPdfDocument({
+        title: "Prontuário Clínico Integrado",
+        subtitle: [
+          `Paciente: ${patient.full_name}`,
+          patient.cpf ? `CPF: ${patient.cpf}` : null,
+          patient.date_of_birth ? `Data de Nasc.: ${formatDate(patient.date_of_birth)}` : null,
+          `Data do Relatório: ${new Date().toLocaleDateString("pt-BR")}`
+        ].filter(Boolean).join(" | "),
+        profile
+      });
+
+      let currentY = startY;
+
+      // Section 1: Care Network
+      if (networkRes.data && networkRes.data.length > 0) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.text("1. Rede de Apoio Multidisciplinar", 14, currentY);
+        currentY += 8;
+
+        addTableToPdf(doc, {
+          startY: currentY,
+          head: [["Profissional", "Especialidade", "Contato"]],
+          body: networkRes.data.map(p => {
+            const specLabel = SPECIALTIES.find(s => s.value === p.specialty)?.label || p.specialty;
+            return [p.name, specLabel, p.phone || "—"];
+          }),
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: [79, 70, 229] },
+        });
+        currentY = (doc as any).lastAutoTable.finalY + 15;
+      }
+
+      // Section 2: Protocol Tracker
+      if (protocolsRes.data && protocolsRes.data.length > 0) {
+        if (currentY > 250) { doc.addPage(); currentY = 20; }
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.text("2. Protocolos e Avaliações", 14, currentY);
+        currentY += 8;
+
+        addTableToPdf(doc, {
+          startY: currentY,
+          head: [["Protocolo", "Data", "Score", "Status"]],
+          body: protocolsRes.data.map(e => [
+            e.protocol_name,
+            formatDate(e.evaluation_date),
+            e.score || "—",
+            e.status === "completed" ? "Concluído" : "Em andamento"
+          ]),
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: [99, 102, 241] },
+        });
+        currentY = (doc as any).lastAutoTable.finalY + 15;
+      }
+
+      // Section 3: ABC Behavior Log
+      if (behaviorRes.data && behaviorRes.data.length > 0) {
+        if (currentY > 250) { doc.addPage(); currentY = 20; }
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.text("3. Registro Comportamental (ABC)", 14, currentY);
+        currentY += 8;
+
+        addTableToPdf(doc, {
+          startY: currentY,
+          head: [["Data", "Comportamento", "Antecedente (A)", "Consequência (C)", "Int."]],
+          body: behaviorRes.data.map(r => [
+            formatDate(r.occurrence_date),
+            r.behavior,
+            r.antecedent,
+            r.consequence,
+            r.intensity.toString()
+          ]),
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [225, 29, 72] },
+          columnStyles: { 1: { cellWidth: 40 }, 2: { cellWidth: 40 }, 3: { cellWidth: 40 } }
+        });
+        currentY = (doc as any).lastAutoTable.finalY + 15;
+      }
+
+      // Section 4: Anamneses
+      if (anamneses && anamneses.length > 0) {
+        if (currentY > 250) { doc.addPage(); currentY = 20; }
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.text("4. Anamneses e Avaliações", 14, currentY);
+        currentY += 10;
+
+        for (const anam of anamneses) {
+          if (currentY > 240) { doc.addPage(); currentY = 20; }
+          
+          doc.setFontSize(11);
+          doc.setFont("helvetica", "bold");
+          doc.text(anam.anamnesis_templates.title, 14, currentY);
+          doc.setFontSize(8);
+          doc.setFont("helvetica", "italic");
+          doc.text(`Respondido em: ${formatDate(anam.created_at)}`, 14, currentY + 5);
+          currentY += 12;
+
+          const fields = anam.anamnesis_templates.fields as any[];
+          const body = fields.map((f, idx) => [
+            `${idx + 1}. ${f.label}`,
+            anam.responses[f.id] || "—"
+          ]);
+
+          addTableToPdf(doc, {
+            startY: currentY,
+            head: [["Pergunta", "Resposta"]],
+            body: body,
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [79, 70, 229] },
+            columnStyles: { 0: { cellWidth: 80 }, 1: { cellWidth: 100 } }
+          });
+          currentY = (doc as any).lastAutoTable.finalY + 15;
+        }
+      }
+
+      // Section 5: Sessions
+      if (sessions && sessions.length > 0) {
+        if (currentY > 250) { doc.addPage(); currentY = 20; }
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.text("5. Histórico de Sessões", 14, currentY);
+        currentY += 8;
+
+        addTableToPdf(doc, {
+          startY: currentY,
+          head: [["Data", "Tipo", "Status", "Notas de Evolução"]],
+          body: sessions.map(s => [
+            formatDate(s.scheduled_at),
+            s.session_type,
+            SESSION_STATUS[s.status].label,
+            s.session_notes_encrypted || "—"
+          ]),
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [139, 92, 246] },
+          columnStyles: { 3: { cellWidth: 90 } }
+        });
+        currentY = (doc as any).lastAutoTable.finalY + 15;
+      }
+
+      // Section 5: Evolution Notes (encrypted)
+      if (patient.notes_encrypted) {
+        if (currentY > 240) { doc.addPage(); currentY = 20; }
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.text("6. Evolução Clínica Geral", 14, currentY);
+        currentY += 8;
+        
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        const splitText = doc.splitTextToSize(patient.notes_encrypted, 180);
+        doc.text(splitText, 14, currentY);
+      }
+
+      addPdfFooter(doc);
+      doc.save(`prontuario_completo_${patient.full_name.replace(/\s+/g, '_')}.pdf`);
+    } catch (e) {
+      console.error(e);
+      showError("Erro na Exportação", "Ocorreu um erro ao gerar o relatório completo.");
     } finally {
       setIsExporting(false);
     }
@@ -323,6 +516,19 @@ export default function PatientDetailPage() {
                 </div>
               </div>
             </div>
+
+            <div className="flex flex-col gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 border-primary/30 text-primary hover:bg-primary/5 shadow-sm"
+                onClick={handleExportFullRecord}
+                disabled={isExporting}
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Prontuário Completo
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -341,6 +547,18 @@ export default function PatientDetailPage() {
           <TabsTrigger value="info" className="text-xs data-[state=active]:shadow-sm">
             <User className="w-3.5 h-3.5 mr-1.5" />
             Dados
+          </TabsTrigger>
+          <TabsTrigger value="network" className="text-xs data-[state=active]:shadow-sm">
+            <Users className="w-3.5 h-3.5 mr-1.5" />
+            Equipe & Protocolos
+          </TabsTrigger>
+          <TabsTrigger value="behavior" className="text-xs data-[state=active]:shadow-sm">
+            <Activity className="w-3.5 h-3.5 mr-1.5" />
+            Comportamento
+          </TabsTrigger>
+          <TabsTrigger value="anamnesis" className="text-xs data-[state=active]:shadow-sm">
+            <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
+            Anamneses
           </TabsTrigger>
         </TabsList>
 
@@ -436,7 +654,17 @@ export default function PatientDetailPage() {
 
         {/* Notes Tab (Prontuário) */}
         <TabsContent value="notes" className="mt-4 space-y-4">
-          <div className="flex justify-end mb-2">
+          <div className="flex justify-end gap-2 mb-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="border-primary/30 text-primary hover:bg-primary/5"
+              onClick={handleExportFullRecord}
+              disabled={isExporting}
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              Relatório Completo (Tudo)
+            </Button>
             <Button 
               variant="outline" 
               size="sm" 
@@ -444,7 +672,7 @@ export default function PatientDetailPage() {
               disabled={isExporting || !patient.notes_encrypted}
             >
               <Download className="w-4 h-4 mr-2" />
-              Exportar Prontuário (PDF)
+              Exportar Notas (Apenas)
             </Button>
           </div>
 
@@ -503,6 +731,34 @@ export default function PatientDetailPage() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        {/* Care Network & Protocols Tab */}
+        <TabsContent value="network" className="mt-4 animate-fade-in space-y-6">
+          <CareNetworkCard 
+            patientId={id as string} 
+            patient={patient}
+            profile={profile}
+          />
+          <ProtocolTrackerCard 
+            patientId={id as string} 
+            patient={patient}
+            profile={profile}
+          />
+        </TabsContent>
+
+        {/* Behavior Tab */}
+        <TabsContent value="behavior" className="mt-4 animate-fade-in">
+          <AbcRecordCard 
+            patientId={id as string} 
+            patient={patient}
+            profile={profile}
+          />
+        </TabsContent>
+
+        {/* Anamneses Tab */}
+        <TabsContent value="anamnesis" className="mt-4 animate-fade-in">
+          <AnamnesisRequestCard patientId={id as string} />
         </TabsContent>
 
         {/* Info Tab */}

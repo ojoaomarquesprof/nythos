@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/client";
 export default function RegisterPage() {
   const [fullName, setFullName] = useState("");
   const [crp, setCrp] = useState("");
+  const [cpf, setCpf] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -45,6 +46,7 @@ export default function RegisterPage() {
         data: {
           full_name: fullName,
           crp: crp,
+          cpf: cpf.replace(/\D/g, ''),
         },
         emailRedirectTo: `${window.location.origin}/dashboard`,
       },
@@ -130,6 +132,7 @@ export default function RegisterPage() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   required
+                  autoComplete="name"
                 />
               </div>
 
@@ -145,6 +148,19 @@ export default function RegisterPage() {
               </div>
 
               <div className="space-y-1.5">
+                <Label htmlFor="cpf">CPF ou CNPJ</Label>
+                <Input
+                  id="cpf"
+                  placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                  className="h-10"
+                  value={cpf}
+                  onChange={(e) => setCpf(e.target.value)}
+                  required
+                  autoComplete="off"
+                />
+              </div>
+
+              <div className="space-y-1.5">
                 <Label htmlFor="email">E-mail</Label>
                 <Input
                   id="email"
@@ -154,6 +170,7 @@ export default function RegisterPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  autoComplete="email"
                 />
               </div>
 
@@ -169,6 +186,7 @@ export default function RegisterPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     minLength={6}
+                    autoComplete="new-password"
                   />
                   <button
                     type="button"
@@ -195,6 +213,7 @@ export default function RegisterPage() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
                   minLength={6}
+                  autoComplete="new-password"
                 />
               </div>
 

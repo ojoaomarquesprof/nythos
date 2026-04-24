@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { SubscriptionGate } from "@/components/auth/subscription-gate";
 import type { Patient } from "@/types/database";
 
 const statusConfig = {
@@ -80,13 +81,15 @@ export default function PatientsPage() {
             {patients.length} paciente{patients.length !== 1 ? "s" : ""} cadastrado{patients.length !== 1 ? "s" : ""}
           </p>
         </div>
-        <Link href="/dashboard/patients/new">
-          <Button className="gradient-primary text-white shadow-sm">
-            <Plus className="w-4 h-4 mr-2" />
-            <span className="hidden sm:inline">Novo Paciente</span>
-            <span className="sm:hidden">Novo</span>
-          </Button>
-        </Link>
+        <SubscriptionGate>
+          <Link href="/dashboard/patients/new">
+            <Button className="gradient-primary text-white shadow-sm">
+              <Plus className="w-4 h-4 mr-2" />
+              <span className="hidden sm:inline">Novo Paciente</span>
+              <span className="sm:hidden">Novo</span>
+            </Button>
+          </Link>
+        </SubscriptionGate>
       </div>
 
       {/* Search & Filter */}
@@ -152,12 +155,14 @@ export default function PatientsPage() {
                 : "Comece cadastrando seu primeiro paciente."}
             </p>
             {!search && (
-              <Link href="/dashboard/patients/new">
-                <Button className="mt-6 gradient-primary text-white">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Cadastrar Primeiro Paciente
-                </Button>
-              </Link>
+              <SubscriptionGate>
+                <Link href="/dashboard/patients/new">
+                  <Button className="mt-6 gradient-primary text-white">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Cadastrar Primeiro Paciente
+                  </Button>
+                </Link>
+              </SubscriptionGate>
             )}
           </CardContent>
         </Card>
