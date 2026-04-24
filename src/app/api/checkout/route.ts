@@ -55,6 +55,10 @@ export async function POST(req: Request) {
     const asaasUrl = 'https://sandbox.asaas.com/api/v3';
 
     // 0. Busca se o cliente já existe pelo email
+    if (!user.email) {
+      return NextResponse.json({ error: 'Email do usuário não encontrado.' }, { status: 400 });
+    }
+
     const searchRes = await fetch(`${asaasUrl}/customers?email=${encodeURIComponent(user.email)}`, {
       method: 'GET',
       headers: {
