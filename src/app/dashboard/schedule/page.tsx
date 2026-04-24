@@ -41,6 +41,9 @@ export default function SchedulePage() {
     session_type: "individual",
     session_price: "",
     location: "office",
+    is_recurring: false,
+    recurrence_period: "weekly",
+    recurrence_count: "4",
   });
 
   useEffect(() => {
@@ -118,34 +121,55 @@ export default function SchedulePage() {
       return;
     }
 
-    const scheduledAt = new Date(
+    const baseDate = new Date(
       `${newSession.scheduled_at}T${newSession.scheduled_time}:00`
     );
 
-    const { error } = await supabase.from("sessions").insert({
-      user_id: user.id,
-      patient_id: newSession.patient_id,
-      scheduled_at: scheduledAt.toISOString(),
-      duration_minutes: parseInt(newSession.duration_minutes),
-      session_type: newSession.session_type as Session["session_type"],
-      session_price: newSession.session_price
-        ? parseFloat(newSession.session_price)
-        : null,
-      location: newSession.location,
-      status: "scheduled",
-    });
+    const count = newSession.is_recurring ? parseInt(newSession.recurrence_count) || 1 : 1;
+    const sessionsToInsert = [];
+
+    for (let i = 0; i < count; i++) {
+      const scheduledAt = new Date(baseDate);
+      if (newSession.is_recurring) {
+        if (newSession.recurrence_period === "weekly") {
+          scheduledAt.setDate(scheduledAt.getDate() + i * 7);
+        } else if (newSession.recurrence_period === "biweekly") {
+          scheduledAt.setDate(scheduledAt.getDate() + i * 14);
+        } else if (newSession.recurrence_period === "monthly") {
+          scheduledAt.setMonth(scheduledAt.getMonth() + i);
+        }
+      }
+
+      sessionsToInsert.push({
+        user_id: user.id,
+        patient_id: newSession.patient_id,
+        scheduled_at: scheduledAt.toISOString(),
+        duration_minutes: parseInt(newSession.duration_minutes),
+        session_type: newSession.session_type as Session["session_type"],
+        session_price: newSession.session_price
+          ? parseFloat(newSession.session_price)
+          : null,
+        location: newSession.location,
+        status: "scheduled",
+      });
+    }
+
+    const { error } = await supabase.from("sessions").insert(sessionsToInsert);
 
     if (!error) {
       setShowNewSession(false);
-      setNewSession({
-        patient_id: "",
-        scheduled_at: "",
-        scheduled_time: "14:00",
-        duration_minutes: "50",
-        session_type: "individual",
-        session_price: "",
-        location: "office",
-      });
+        setNewSession({
+          patient_id: "",
+          scheduled_at: "",
+          scheduled_time: "14:00",
+          duration_minutes: "50",
+          session_type: "individual",
+          session_price: "",
+          location: "office",
+          is_recurring: false,
+          recurrence_period: "weekly",
+          recurrence_count: "4",
+        });
       loadData();
     }
     setSaving(false);
@@ -488,6 +512,69 @@ export default function SchedulePage() {
                   }))
                 }
               />
+            </div>
+
+            <div className="pt-2 border-t border-border/50">
+              <div className="flex items-center gap-2 mb-3">
+                <input
+                  type="checkbox"
+                  id="is_recurring"
+                  className="w-4 h-4 rounded border-input text-primary focus:ring-primary"
+                  checked={newSession.is_recurring}
+                  onChange={(e) =>
+                    setNewSession((p) => ({
+                      ...p,
+                      is_recurring: e.target.checked,
+                    }))
+                  }
+                />
+                <Label htmlFor="is_recurring" className="cursor-pointer">
+                  Repetir sessão
+                </Label>
+              </div>
+
+              {newSession.is_recurring && (
+                <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                  <div className="space-y-1.5">
+                    <Label>Frequência</Label>
+                    <select
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      value={newSession.recurrence_period}
+                      onChange={(e) =>
+                        setNewSession((p) => ({
+                          ...p,
+                          recurrence_period: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="weekly">Semanal</option>
+                      <option value="biweekly">Quinzenal</option>
+                      <option value="monthly">Mensal</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Repetir por</Label>
+                    <div className="relative">
+                      <Input
+                        type="number"
+                        min="2"
+                        max="52"
+                        className="h-10 pr-12"
+                        value={newSession.recurrence_count}
+                        onChange={(e) =>
+                          setNewSession((p) => ({
+                            ...p,
+                            recurrence_count: e.target.value,
+                          }))
+                        }
+                      />
+                      <span className="absolute right-3 top-2.5 text-xs text-muted-foreground pointer-events-none">
+                        vezes
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3 pt-2">
