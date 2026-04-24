@@ -514,12 +514,12 @@ export default function SchedulePage() {
               />
             </div>
 
-            <div className="pt-2 border-t border-border/50">
-              <div className="flex items-center gap-2 mb-3">
+            <div className="pt-3 border-t border-muted/50">
+              <label className="flex items-center gap-2 mb-2 cursor-pointer group">
                 <input
                   type="checkbox"
                   id="is_recurring"
-                  className="w-4 h-4 rounded border-input text-primary focus:ring-primary"
+                  className="w-4 h-4 rounded border-input text-primary focus:ring-primary transition-all cursor-pointer"
                   checked={newSession.is_recurring}
                   onChange={(e) =>
                     setNewSession((p) => ({
@@ -528,17 +528,17 @@ export default function SchedulePage() {
                     }))
                   }
                 />
-                <Label htmlFor="is_recurring" className="cursor-pointer">
+                <span className="text-sm font-medium group-hover:text-primary transition-colors">
                   Repetir sessão
-                </Label>
-              </div>
+                </span>
+              </label>
 
               {newSession.is_recurring && (
-                <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-1 duration-200">
-                  <div className="space-y-1.5">
-                    <Label>Frequência</Label>
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">Frequência</Label>
                     <select
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       value={newSession.recurrence_period}
                       onChange={(e) =>
                         setNewSession((p) => ({
@@ -552,14 +552,14 @@ export default function SchedulePage() {
                       <option value="monthly">Mensal</option>
                     </select>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label>Repetir por</Label>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">Ocorrências</Label>
                     <div className="relative">
                       <Input
                         type="number"
                         min="2"
                         max="52"
-                        className="h-10 pr-12"
+                        className="h-9 pr-8"
                         value={newSession.recurrence_count}
                         onChange={(e) =>
                           setNewSession((p) => ({
@@ -568,7 +568,7 @@ export default function SchedulePage() {
                           }))
                         }
                       />
-                      <span className="absolute right-3 top-2.5 text-xs text-muted-foreground pointer-events-none">
+                      <span className="absolute right-2 top-2 text-[10px] text-muted-foreground pointer-events-none">
                         vezes
                       </span>
                     </div>

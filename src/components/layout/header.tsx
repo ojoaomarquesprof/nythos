@@ -1,9 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bell, Search, Brain } from "lucide-react";
+import { Bell, Search, Brain, CalendarDays, Wallet, ArrowRight } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  PopoverHeader,
+  PopoverTitle,
+} from "@/components/ui/popover";
+import Link from "next/link";
 import { getGreeting } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile } from "@/types/database";
@@ -11,7 +19,8 @@ import type { Profile } from "@/types/database";
 export function Header() {
   const greeting = getGreeting();
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [notificationCount, setNotificationCount] = useState(0);
+  const [sessionsTodayCount, setSessionsTodayCount] = useState(0);
+  const [pendingPaymentsCount, setPendingPaymentsCount] = useState(0);
   const supabase = createClient();
 
   useEffect(() => {
@@ -48,7 +57,8 @@ export function Header() {
         .eq("type", "income")
         .eq("status", "pending");
 
-      setNotificationCount((sessionsToday || 0) + (pendingPayments || 0));
+      setSessionsTodayCount(sessionsToday || 0);
+      setPendingPaymentsCount(pendingPayments || 0);
     }
     loadData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,14 +97,64 @@ export function Header() {
           </button>
 
           {/* Notifications */}
-          <button className="relative p-2.5 rounded-xl hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
-            <Bell className="w-5 h-5" />
-            {notificationCount > 0 && (
-              <Badge className="absolute -top-0.5 -right-0.5 h-4 w-4 p-0 flex items-center justify-center text-[9px] bg-destructive text-white border-2 border-background">
-                {notificationCount}
-              </Badge>
-            )}
-          </button>
+          <Popover>
+            <PopoverTrigger className="relative p-2.5 rounded-xl hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+              <Bell className="w-5 h-5" />
+              {(sessionsTodayCount + pendingPaymentsCount) > 0 && (
+                <Badge className="absolute -top-0.5 -right-0.5 h-4 w-4 p-0 flex items-center justify-center text-[9px] bg-destructive text-white border-2 border-background">
+                  {sessionsTodayCount + pendingPaymentsCount}
+                </Badge>
+              )}
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-80 p-0 overflow-hidden">
+              <PopoverHeader className="px-4 py-3 border-b border-border/50 bg-muted/20">
+                <PopoverTitle className="text-sm font-semibold">Notificações</PopoverTitle>
+              </PopoverHeader>
+              <div className="p-2 space-y-1">
+                {sessionsTodayCount > 0 && (
+                  <Link
+                    href="/dashboard/schedule"
+                    className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted transition-colors group"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                      <CalendarDays className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs font-medium">Sessões de Hoje</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Você tem {sessionsTodayCount} {sessionsTodayCount === 1 ? "sessão agendada" : "sessões agendadas"} para hoje.
+                      </p>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </Link>
+                )}
+
+                {pendingPaymentsCount > 0 && (
+                  <Link
+                    href="/dashboard/finances"
+                    className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted transition-colors group"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">
+                      <Wallet className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs font-medium">Pagamentos Pendentes</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {pendingPaymentsCount} {pendingPaymentsCount === 1 ? "recebimento pendente" : "recebimentos pendentes"} a confirmar.
+                      </p>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </Link>
+                )}
+
+                {sessionsTodayCount === 0 && pendingPaymentsCount === 0 && (
+                  <div className="py-8 text-center">
+                    <p className="text-xs text-muted-foreground">Tudo em dia por aqui! ✨</p>
+                  </div>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
 
           {/* Avatar (mobile only) */}
           <Avatar className="w-9 h-9 md:hidden ring-2 ring-primary/20">
