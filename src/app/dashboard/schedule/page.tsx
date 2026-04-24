@@ -10,6 +10,7 @@ import {
   Video,
   MapPin,
   X,
+  Pencil,
 } from "lucide-react";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,9 @@ export default function SchedulePage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [showNewSession, setShowNewSession] = useState(false);
+  const [showEditSession, setShowEditSession] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // New session form
@@ -45,6 +48,18 @@ export default function SchedulePage() {
     recurrence_period: "weekly",
     recurrence_count: "4",
   });
+
+  // Edit session form
+  const [editingSession, setEditingSession] = useState<{
+    id: string;
+    patient_id: string;
+    scheduled_at: string;
+    scheduled_time: string;
+    duration_minutes: string;
+    session_type: string;
+    session_price: string;
+    location: string;
+  } | null>(null);
 
   useEffect(() => {
     loadData();
@@ -109,6 +124,11 @@ export default function SchedulePage() {
     const d = new Date(currentDate);
     d.setDate(d.getDate() + dir * 7);
     setCurrentDate(d);
+    
+    // Also update selectedDate to same day of week in the new week
+    const newSelected = new Date(selectedDate);
+    newSelected.setDate(newSelected.getDate() + dir * 7);
+    setSelectedDate(newSelected);
   };
 
   const handleCreateSession = async (e: React.FormEvent) => {
@@ -175,6 +195,35 @@ export default function SchedulePage() {
     setSaving(false);
   };
 
+  const handleUpdateSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSession) return;
+    setSaving(true);
+
+    const scheduledAt = new Date(
+      `${editingSession.scheduled_at}T${editingSession.scheduled_time}:00`
+    );
+
+    const { error } = await supabase
+      .from("sessions")
+      .update({
+        patient_id: editingSession.patient_id,
+        scheduled_at: scheduledAt.toISOString(),
+        duration_minutes: parseInt(editingSession.duration_minutes),
+        session_type: editingSession.session_type as Session["session_type"],
+        session_price: editingSession.session_price ? parseFloat(editingSession.session_price) : null,
+        location: editingSession.location,
+      })
+      .eq("id", editingSession.id);
+
+    if (!error) {
+      setShowEditSession(false);
+      setEditingSession(null);
+      loadData();
+    }
+    setSaving(false);
+  };
+
   const handleStatusChange = async (
     sessionId: string,
     newStatus: Session["status"]
@@ -189,11 +238,33 @@ export default function SchedulePage() {
     }
   };
 
+  const openEditModal = (session: Session & { patient?: Patient }) => {
+    const date = new Date(session.scheduled_at);
+    const dateStr = date.toISOString().split("T")[0];
+    const timeStr = date.toTimeString().split(" ")[0].slice(0, 5);
+
+    setEditingSession({
+      id: session.id,
+      patient_id: session.patient_id,
+      scheduled_at: dateStr,
+      scheduled_time: timeStr,
+      duration_minutes: session.duration_minutes.toString(),
+      session_type: session.session_type,
+      session_price: session.session_price?.toString() || "",
+      location: session.location,
+    });
+    setShowEditSession(true);
+  };
+
   const dayNames = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
   const monthYear = currentDate.toLocaleDateString("pt-BR", {
     month: "long",
     year: "numeric",
   });
+
+  const selectedDaySessions = sessions.filter(
+    (s) => new Date(s.scheduled_at).toDateString() === selectedDate.toDateString()
+  );
 
   return (
     <div className="px-4 py-5 md:px-6 md:py-6 space-y-5 max-w-7xl mx-auto w-full">
@@ -221,7 +292,11 @@ export default function SchedulePage() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => setCurrentDate(new Date())}
+          onClick={() => {
+            const now = new Date();
+            setCurrentDate(now);
+            setSelectedDate(now);
+          }}
           className="text-primary font-medium"
         >
           Hoje
@@ -235,127 +310,144 @@ export default function SchedulePage() {
       <div className="grid grid-cols-7 gap-1.5">
         {weekDays.map((day, i) => {
           const isToday = day.toDateString() === today.toDateString();
+          const isSelected = day.toDateString() === selectedDate.toDateString();
           const daySessions = sessions.filter(
             (s) => new Date(s.scheduled_at).toDateString() === day.toDateString()
           );
 
           return (
-            <div key={i} className="flex flex-col items-center">
-              <span className="text-[10px] text-muted-foreground font-medium mb-1">
+            <button 
+              key={i} 
+              onClick={() => setSelectedDate(day)}
+              className="flex flex-col items-center group outline-none"
+            >
+              <span className={cn(
+                "text-[10px] font-medium mb-1 transition-colors",
+                isSelected ? "text-primary font-bold" : "text-muted-foreground group-hover:text-foreground"
+              )}>
                 {dayNames[i]}
               </span>
               <div
                 className={cn(
-                  "w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium mb-2 transition-all",
-                  isToday
-                    ? "bg-primary text-white shadow-sm"
-                    : "text-foreground hover:bg-muted"
+                  "w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium mb-1 transition-all",
+                  isSelected
+                    ? "bg-primary text-white shadow-md scale-110"
+                    : isToday
+                      ? "border-2 border-primary text-primary bg-primary/5"
+                      : "text-foreground hover:bg-muted group-hover:scale-105"
                 )}
               >
                 {day.getDate()}
               </div>
-              {daySessions.length > 0 && (
-                <div className="flex gap-0.5">
-                  {daySessions.slice(0, 3).map((_, idx) => (
-                    <div
-                      key={idx}
-                      className="w-1.5 h-1.5 rounded-full bg-primary"
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
+              <div className="h-1.5 flex items-center justify-center gap-0.5">
+                {daySessions.length > 0 && (
+                  <>
+                    {daySessions.slice(0, 3).map((_, idx) => (
+                      <div
+                        key={idx}
+                        className={cn(
+                          "w-1 h-1 rounded-full",
+                          isSelected ? "bg-primary/40" : "bg-primary"
+                        )}
+                      />
+                    ))}
+                    {daySessions.length > 3 && (
+                      <div className="w-1 h-1 rounded-full bg-primary/50" />
+                    )}
+                  </>
+                )}
+              </div>
+            </button>
           );
         })}
       </div>
 
-      {/* Daily Sessions */}
-      {weekDays.map((day, dayIndex) => {
-        const daySessions = sessions.filter(
-          (s) =>
-            new Date(s.scheduled_at).toDateString() === day.toDateString()
-        );
-
-        if (daySessions.length === 0) return null;
-
-        const isToday = day.toDateString() === today.toDateString();
-
-        return (
-          <div key={dayIndex} className="space-y-2">
-            <h3
-              className={cn(
-                "text-sm font-semibold",
-                isToday && "text-primary"
-              )}
-            >
-              {isToday ? "Hoje" : day.toLocaleDateString("pt-BR", {
+      {/* Selected Day View */}
+      <div className="space-y-4 pt-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <span className={cn(
+              selectedDate.toDateString() === today.toDateString() && "text-primary"
+            )}>
+              {selectedDate.toLocaleDateString("pt-BR", {
                 weekday: "long",
                 day: "numeric",
-                month: "short",
+                month: "long",
               })}
-              <span className="text-muted-foreground font-normal ml-2">
-                {daySessions.length} sessão{daySessions.length > 1 ? "ões" : ""}
-              </span>
-            </h3>
+            </span>
+            <span className="text-xs text-muted-foreground font-normal bg-muted px-2 py-0.5 rounded-full">
+              {selectedDaySessions.length} sessão{selectedDaySessions.length !== 1 ? "ões" : ""}
+            </span>
+          </h3>
+        </div>
 
-            {daySessions.map((session) => {
-              const statusCfg = SESSION_STATUS[session.status];
-              const patientInitials = session.patient?.full_name
-                ? session.patient.full_name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")
-                    .slice(0, 2)
-                    .toUpperCase()
-                : "??";
+        <div className="space-y-2.5">
+          {selectedDaySessions.map((session) => {
+            const statusCfg = SESSION_STATUS[session.status];
+            const patientInitials = session.patient?.full_name
+              ? session.patient.full_name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .join("")
+                  .slice(0, 2)
+                  .toUpperCase()
+              : "??";
 
-              return (
-                <Card key={session.id} className="border-0 shadow-sm">
-                  <CardContent className="p-3.5">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="w-10 h-10 flex-shrink-0">
-                        <AvatarFallback className="bg-violet-100 text-violet-700 text-xs font-semibold">
-                          {patientInitials}
-                        </AvatarFallback>
-                      </Avatar>
+            return (
+              <Card key={session.id} className="border-0 shadow-sm hover:shadow-md transition-shadow">
+                <CardContent className="p-3.5">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="w-10 h-10 flex-shrink-0">
+                      <AvatarFallback className="bg-violet-100 text-violet-700 text-xs font-semibold">
+                        {patientInitials}
+                      </AvatarFallback>
+                    </Avatar>
 
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {session.patient?.full_name || "Paciente"}
-                        </p>
-                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Clock className="w-3 h-3" />
-                            {formatTime(session.scheduled_at)} ·{" "}
-                            {session.duration_minutes}min
-                          </span>
-                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                            {session.session_type === "online" ? (
-                              <Video className="w-3 h-3" />
-                            ) : (
-                              <MapPin className="w-3 h-3" />
-                            )}
-                            {session.session_type === "online"
-                              ? "Online"
-                              : "Consultório"}
-                          </span>
-                        </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {session.patient?.full_name || "Paciente"}
+                      </p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Clock className="w-3 h-3" />
+                          {formatTime(session.scheduled_at)} ·{" "}
+                          {session.duration_minutes}min
+                        </span>
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          {session.session_type === "online" ? (
+                            <Video className="w-3 h-3" />
+                          ) : (
+                            <MapPin className="w-3 h-3" />
+                          )}
+                          {session.session_type === "online"
+                            ? "Online"
+                            : "Consultório"}
+                        </span>
                       </div>
+                    </div>
 
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <Badge
-                          variant="secondary"
-                          className={cn("text-[10px] h-5", statusCfg.color)}
-                        >
-                          {statusCfg.label}
-                        </Badge>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Badge
+                        variant="secondary"
+                        className={cn("text-[10px] h-5", statusCfg.color)}
+                      >
+                        {statusCfg.label}
+                      </Badge>
+                      <div className="flex gap-1">
                         {session.status === "scheduled" && (
-                          <div className="flex gap-1">
+                          <>
+                            <button
+                              onClick={() => openEditModal(session)}
+                              className="w-8 h-8 rounded-md bg-muted text-muted-foreground flex items-center justify-center text-xs hover:bg-primary/10 hover:text-primary transition-colors"
+                              title="Remarcar"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
                             <button
                               onClick={() =>
                                 handleStatusChange(session.id, "completed")
                               }
-                              className="w-7 h-7 rounded-md bg-green-50 text-green-600 flex items-center justify-center text-xs font-bold hover:bg-green-100 transition-colors"
+                              className="w-8 h-8 rounded-md bg-green-50 text-green-600 flex items-center justify-center text-xs font-bold hover:bg-green-100 transition-colors"
                               title="Marcar como realizada"
                             >
                               ✓
@@ -364,43 +456,34 @@ export default function SchedulePage() {
                               onClick={() =>
                                 handleStatusChange(session.id, "missed")
                               }
-                              className="w-7 h-7 rounded-md bg-red-50 text-red-500 flex items-center justify-center text-xs font-bold hover:bg-red-100 transition-colors"
+                              className="w-8 h-8 rounded-md bg-red-50 text-red-500 flex items-center justify-center text-xs font-bold hover:bg-red-100 transition-colors"
                               title="Marcar como falta"
                             >
                               ✗
                             </button>
-                          </div>
+                          </>
                         )}
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        );
-      })}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
 
-      {sessions.length === 0 && !loading && (
-        <Card className="border-0 shadow-sm">
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
-              <CalendarDays className="w-8 h-8 text-primary" />
-            </div>
-            <CardTitle className="text-lg mb-2">Sem sessões esta semana</CardTitle>
-            <p className="text-sm text-muted-foreground max-w-xs">
-              Agende sessões para os seus pacientes.
-            </p>
-            <Button
-              className="mt-6 gradient-primary text-white"
-              onClick={() => setShowNewSession(true)}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Agendar Sessão
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+          {selectedDaySessions.length === 0 && (
+            <Card className="border-dashed border-2 bg-transparent shadow-none">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3 text-muted-foreground">
+                  <CalendarDays className="w-6 h-6" />
+                </div>
+                <p className="text-sm text-muted-foreground font-medium">Nenhuma sessão agendada</p>
+                <p className="text-xs text-muted-foreground mt-1">Clique em "Nova Sessão" para agendar.</p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
 
       {/* New Session Dialog */}
       <Dialog open={showNewSession} onOpenChange={setShowNewSession}>
@@ -599,6 +682,140 @@ export default function SchedulePage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Session Dialog */}
+      <Dialog open={showEditSession} onOpenChange={setShowEditSession}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Remarcar Sessão</DialogTitle>
+          </DialogHeader>
+          {editingSession && (
+            <form onSubmit={handleUpdateSession} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label>Paciente</Label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring opacity-70"
+                  value={editingSession.patient_id}
+                  disabled
+                >
+                  {patients.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.full_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Data *</Label>
+                  <Input
+                    type="date"
+                    className="h-10"
+                    value={editingSession.scheduled_at}
+                    onChange={(e) =>
+                      setEditingSession((p) => p ? ({
+                        ...p,
+                        scheduled_at: e.target.value,
+                      }) : null)
+                    }
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Hora *</Label>
+                  <Input
+                    type="time"
+                    className="h-10"
+                    value={editingSession.scheduled_time}
+                    onChange={(e) =>
+                      setEditingSession((p) => p ? ({
+                        ...p,
+                        scheduled_time: e.target.value,
+                      }) : null)
+                    }
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Duração (min)</Label>
+                  <Input
+                    type="number"
+                    className="h-10"
+                    value={editingSession.duration_minutes}
+                    onChange={(e) =>
+                      setEditingSession((p) => p ? ({
+                        ...p,
+                        duration_minutes: e.target.value,
+                      }) : null)
+                    }
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Tipo</Label>
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    value={editingSession.session_type}
+                    onChange={(e) =>
+                      setEditingSession((p) => p ? ({
+                        ...p,
+                        session_type: e.target.value,
+                      }) : null)
+                    }
+                  >
+                    <option value="individual">Individual</option>
+                    <option value="couple">Casal</option>
+                    <option value="group">Grupo</option>
+                    <option value="online">Online</option>
+                    <option value="initial_assessment">Avaliação Inicial</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Valor (R$)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  className="h-10"
+                  value={editingSession.session_price}
+                  onChange={(e) =>
+                    setEditingSession((p) => p ? ({
+                      ...p,
+                      session_price: e.target.value,
+                    }) : null)
+                  }
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setShowEditSession(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  className="flex-1 gradient-primary text-white"
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    "Salvar Alterações"
+                  )}
+                </Button>
+              </div>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>

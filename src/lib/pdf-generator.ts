@@ -68,14 +68,16 @@ export async function createPdfDocument(options: PdfHeaderOptions) {
   doc.text(title, margin, yPos);
 
   if (subtitle) {
-    yPos += 6;
+    yPos += 8;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
     doc.setTextColor(120);
-    doc.text(subtitle, margin, yPos);
+    const splitSubtitle = doc.splitTextToSize(subtitle, 182);
+    doc.text(splitSubtitle, margin, yPos);
+    yPos += (splitSubtitle.length * 6); // Adequate spacing for multi-line subtitle
   }
 
-  yPos += 15;
+  yPos += 10;
 
   return { doc, startY: yPos };
 }

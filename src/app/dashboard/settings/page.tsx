@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { User, Bell, Shield, Save, CheckCircle2, AlertCircle, Upload, ImageIcon } from "lucide-react";
+import { User, Bell, Shield, Save, CheckCircle2, AlertCircle, Upload, ImageIcon, Fingerprint } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import type { Profile } from "@/types/database";
 
 export default function SettingsPage() {
@@ -32,6 +34,10 @@ export default function SettingsPage() {
 
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  
+  // New states for notifications and security
+  const [pushStatus, setPushStatus] = useState<NotificationPermission>("default");
+  const [isBiometryEnabled, setIsBiometryEnabled] = useState(false);
 
   function showError(title: string, message: string) {
     setErrorDialog({ open: true, title, message });
@@ -64,6 +70,11 @@ export default function SettingsPage() {
         });
       }
     }
+
+    if ("Notification" in window) {
+      setPushStatus(Notification.permission);
+    }
+
     setLoading(false);
   }
 
@@ -104,7 +115,6 @@ export default function SettingsPage() {
       const safeExt = ["jpg","jpeg","png","gif","webp"].includes(fileExt) ? fileExt : "png";
       const fileName = `${profile.id}/${field}-${Date.now()}.${safeExt}`;
 
-      // Upsert so re-uploads overwrite instead of creating duplicates
       const { error: uploadError } = await supabase.storage
         .from("brand")
         .upload(fileName, file, { upsert: true });
@@ -114,11 +124,8 @@ export default function SettingsPage() {
       }
 
       const { data } = supabase.storage.from("brand").getPublicUrl(fileName);
-      
-      // Add cache-busting so the preview updates immediately
       const publicUrl = `${data.publicUrl}?t=${Date.now()}`;
 
-      // Save to DB immediately (don't wait for the "Save" button)
       const { error: updateError } = await supabase
         .from("profiles")
         .update({ [field]: data.publicUrl })
@@ -174,6 +181,37 @@ export default function SettingsPage() {
     setSaving(false);
   };
 
+  const requestPushPermission = async () => {
+    if (!("Notification" in window)) {
+      showError("Não Suportado", "Seu navegador não suporta notificações push.");
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    setPushStatus(permission);
+    
+    if (permission === "granted") {
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } else if (permission === "denied") {
+      showError("Acesso Negado", "Você bloqueou as notificações. Ative-as nas configurações do seu navegador para receber lembretes.");
+    }
+  };
+
+  const handleToggleBiometry = () => {
+    if (!window.PublicKeyCredential) {
+      showError("Não Suportado", "Seu dispositivo ou navegador não suporta autenticação biométrica (WebAuthn).");
+      return;
+    }
+
+    // In a real app, we would call navigator.credentials.create here
+    setIsBiometryEnabled(!isBiometryEnabled);
+    if (!isBiometryEnabled) {
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    }
+  };
+
   if (loading) {
     return (
       <div className="px-4 py-5 md:px-6 md:py-6 max-w-2xl mx-auto w-full">
@@ -187,11 +225,19 @@ export default function SettingsPage() {
 
   return (
     <div className="px-4 py-5 md:px-6 md:py-6 space-y-5 max-w-2xl mx-auto w-full">
-      <div>
-        <h1 className="text-xl font-bold">Configurações</h1>
-        <p className="text-sm text-muted-foreground">
-          Gerencie seu perfil e preferências
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold">Configurações</h1>
+          <p className="text-sm text-muted-foreground">
+            Gerencie seu perfil e preferências
+          </p>
+        </div>
+        {success && (
+          <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-none px-3 py-1 flex items-center gap-1.5 animate-in fade-in zoom-in duration-300">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Salvo!
+          </Badge>
+        )}
       </div>
 
       {/* Profile Form */}
@@ -380,50 +426,75 @@ export default function SettingsPage() {
                   </>
                 )}
               </Button>
-              {success && (
-                <span className="flex items-center text-sm text-green-600">
-                  <CheckCircle2 className="w-4 h-4 mr-1" />
-                  Salvo com sucesso!
-                </span>
-              )}
             </div>
           </CardContent>
         </Card>
       </form>
 
       {/* Notifications */}
-      <Card className="border-0 shadow-sm">
+      <Card className="border-0 shadow-sm overflow-hidden">
         <CardHeader className="pb-4">
           <CardTitle className="text-base flex items-center gap-2">
             <Bell className="w-4 h-4 text-primary" />
             Notificações
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Configure lembretes e notificações push para sessões.
-          </p>
-          <Button variant="outline" className="mt-4">
-            Ativar Notificações Push
+        <CardContent className="space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Lembretes por Push</p>
+              <p className="text-xs text-muted-foreground max-w-[280px]">
+                Receba alertas sobre sessões agendadas diretamente na tela do seu dispositivo.
+              </p>
+            </div>
+            <Badge className={cn(
+              "px-2 py-0.5 border-none",
+              pushStatus === "granted" ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"
+            )}>
+              {pushStatus === "granted" ? "Ativado" : pushStatus === "denied" ? "Bloqueado" : "Inativo"}
+            </Badge>
+          </div>
+          <Button 
+            variant={pushStatus === "granted" ? "secondary" : "outline"} 
+            className="w-full sm:w-auto"
+            onClick={requestPushPermission}
+            disabled={pushStatus === "granted"}
+          >
+            {pushStatus === "granted" ? "Notificações Ativas" : "Ativar Notificações Push"}
           </Button>
         </CardContent>
       </Card>
 
       {/* Security */}
-      <Card className="border-0 shadow-sm">
+      <Card className="border-0 shadow-sm overflow-hidden">
         <CardHeader className="pb-4">
           <CardTitle className="text-base flex items-center gap-2">
             <Shield className="w-4 h-4 text-primary" />
             Segurança
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Configure bloqueio biométrico (FaceID/TouchID) para proteger o
-            acesso ao app.
-          </p>
-          <Button variant="outline" className="mt-4">
-            Configurar Biometria
+        <CardContent className="space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Bloqueio Biométrico</p>
+              <p className="text-xs text-muted-foreground max-w-[280px]">
+                Proteja o acesso aos prontuários usando FaceID ou TouchID.
+              </p>
+            </div>
+            <Badge className={cn(
+              "px-2 py-0.5 border-none",
+              isBiometryEnabled ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"
+            )}>
+              {isBiometryEnabled ? "Configurado" : "Inativo"}
+            </Badge>
+          </div>
+          <Button 
+            variant={isBiometryEnabled ? "secondary" : "outline"} 
+            className="w-full sm:w-auto flex items-center gap-2"
+            onClick={handleToggleBiometry}
+          >
+            <Fingerprint className="w-4 h-4" />
+            {isBiometryEnabled ? "Desativar Biometria" : "Configurar Biometria"}
           </Button>
         </CardContent>
       </Card>

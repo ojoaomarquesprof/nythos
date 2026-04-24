@@ -141,7 +141,7 @@ export default function PatientDetailPage() {
     setIsExporting(true);
     
     try {
-      const { doc } = await createPdfDocument({
+      const { doc, startY } = await createPdfDocument({
         title: "Relatório de Sessões",
         subtitle: `Paciente: ${patient.full_name}\nGerado em: ${new Date().toLocaleDateString("pt-BR")}`,
         profile
@@ -156,7 +156,7 @@ export default function PatientDetailPage() {
       ]);
 
       addTableToPdf(doc, {
-        startY: 65,
+        startY: startY,
         head: [['Data', 'Hora', 'Duração', 'Tipo', 'Status']],
         body: tableData,
         theme: 'striped',
