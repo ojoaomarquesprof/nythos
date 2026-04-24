@@ -15,7 +15,7 @@ export const metadata: Metadata = {
     template: "%s | Nythos",
   },
   description:
-    "Plataforma completa de gestão clínica e financeira para psicólogos. Agenda, prontuário eletrônico, fluxo de caixa e área do paciente.",
+    "Plataforma de gestão clínica e financeira para psicólogos. Agenda, prontuário eletrônico, fluxo de caixa e área do paciente.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -60,7 +60,7 @@ export default function RootLayout({
         <TooltipProvider>
           {children}
         </TooltipProvider>
-        
+
         {/* Service Worker Registration */}
         <Script
           id="sw-registration"
