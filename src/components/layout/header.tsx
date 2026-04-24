@@ -10,23 +10,7 @@ import type { Profile } from "@/types/database";
 
 export function Header() {
   const greeting = getGreeting();
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const supabase = createClient();
 
-  useEffect(() => {
-    async function loadProfile() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .single();
-        setProfile(data);
-      }
-    }
-    loadProfile();
-  }, []);
 
   const userName = profile?.full_name || "Psicóloga";
   const initials = userName
@@ -61,12 +45,7 @@ export function Header() {
           </button>
 
           {/* Notifications */}
-          <button className="relative p-2.5 rounded-xl hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
-            <Bell className="w-5 h-5" />
-            <Badge className="absolute -top-0.5 -right-0.5 h-4 w-4 p-0 flex items-center justify-center text-[9px] bg-destructive text-white border-2 border-background">
-              3
-            </Badge>
-          </button>
+
 
           {/* Avatar (mobile only) */}
           <Avatar className="w-9 h-9 md:hidden ring-2 ring-primary/20">
