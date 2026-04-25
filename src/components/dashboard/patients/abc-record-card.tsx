@@ -165,7 +165,7 @@ export function AbcRecordCard({
         r.intensity.toString()
       ]),
       styles: { fontSize: 8 },
-      headStyles: { fillGray: 200, textColor: 40, fontStyle: "bold" },
+      headStyles: { fillColor: [200, 200, 200], textColor: [40, 40, 40], fontStyle: "bold" },
       columnStyles: {
         1: { cellWidth: 40 },
         2: { cellWidth: 45 },
