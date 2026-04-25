@@ -303,14 +303,14 @@ export default function PublicAnamnesisPage() {
                     {field.type === "select" && (
                       <Select 
                         value={responses[field.id]} 
-                        onValueChange={(val) => handleInputChange(field.id, val)}
+                        onValueChange={(val: any) => handleInputChange(field.id, val || "")}
                         required={field.required}
                       >
                         <SelectTrigger className="h-12 text-base border-slate-200 shadow-sm">
                           <SelectValue placeholder="Selecione uma opção..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {field.options?.map((opt) => (
+                          {field.options?.map((opt: string) => (
                             <SelectItem key={opt} value={opt} className="text-base">
                               {opt}
                             </SelectItem>

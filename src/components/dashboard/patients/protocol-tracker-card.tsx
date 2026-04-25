@@ -233,13 +233,13 @@ export function ProtocolTrackerCard({
                   <Label>Protocolo / Teste *</Label>
                   <Select
                     value={formData.protocol}
-                    onValueChange={(val) => setFormData({ ...formData, protocol: val })}
+                    onValueChange={(val: any) => setFormData({ ...formData, protocol: val || "" })}
                   >
                     <SelectTrigger className="h-10">
                       <SelectValue placeholder="Selecione o protocolo" />
                     </SelectTrigger>
                     <SelectContent>
-                      {protocols.map((p) => (
+                      {protocols.map((p: string) => (
                         <SelectItem key={p} value={p}>
                           {p}
                         </SelectItem>
@@ -342,7 +342,7 @@ export function ProtocolTrackerCard({
                 </TableCell>
               </TableRow>
             ) : (
-              evaluations.map((e) => (
+              evaluations.map((e: { id: string; protocol_name: string; evaluation_date: string; score: string; status: string }) => (
                 <TableRow key={e.id} className="group hover:bg-muted/10 transition-colors">
                   <TableCell className="text-sm font-bold pl-4">
                     {e.protocol_name}

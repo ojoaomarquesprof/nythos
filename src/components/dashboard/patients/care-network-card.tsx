@@ -219,13 +219,13 @@ export function CareNetworkCard({
                   <Label htmlFor="specialty">Especialidade *</Label>
                   <Select
                     value={formData.specialty}
-                    onValueChange={(val) => setFormData({ ...formData, specialty: val })}
+                    onValueChange={(val: any) => setFormData({ ...formData, specialty: val || "" })}
                   >
                     <SelectTrigger id="specialty" className="h-10">
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {specialties.map((s) => (
+                      {specialties.map((s: { value: string; label: string }) => (
                         <SelectItem key={s.value} value={s.value}>
                           {s.label}
                         </SelectItem>
@@ -299,13 +299,13 @@ export function CareNetworkCard({
           </div>
         ) : (
           <div className="space-y-3">
-            {professionals.map((p) => {
-              const specLabel = specialties.find(s => s.value === p.specialty)?.label || p.specialty;
-              const isSchool = p.specialty === "escola";
+            {professionals.map((contact: any) => {
+              const specLabel = specialties.find(s => s.value === contact.specialty)?.label || contact.specialty;
+              const isSchool = contact.specialty === "escola";
 
               return (
                 <div 
-                  key={p.id} 
+                  key={contact.id} 
                   className="flex items-center gap-3 p-3 rounded-xl border border-muted hover:bg-muted/30 transition-colors group"
                 >
                   <div className={cn(
