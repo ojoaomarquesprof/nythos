@@ -37,7 +37,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import { SPECIALTIES } from "@/lib/constants";
+import { SPECIALTIES, formatDate } from "@/lib/constants";
 
 interface Professional {
   id: string;
@@ -148,12 +148,12 @@ export function CareNetworkCard({
     addTableToPdf(doc, {
       startY,
       head: [["Nome do Profissional", "Especialidade", "Contato"]],
-      body: professionals.map(p => {
-        const specLabel = specialties.find(s => s.value === p.specialty)?.label || p.specialty;
-        return [p.name, specLabel, p.phone || "—"];
+      body: professionals.map((contact: Professional) => {
+        const specLabel = specialties.find(s => s.value === contact.specialty)?.label || contact.specialty;
+        return [contact.name, specLabel, contact.phone || "—"];
       }),
       styles: { fontSize: 10 },
-      headStyles: { fillGray: 200, textColor: 40, fontStyle: "bold" },
+      headStyles: { fillColor: [229, 231, 235], textColor: [40, 40, 40], fontStyle: "bold" },
     });
 
     addPdfFooter(doc);
@@ -316,12 +316,12 @@ export function CareNetworkCard({
                   </div>
                   
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold truncate leading-none mb-1">{p.name}</p>
+                    <p className="text-sm font-bold truncate leading-none mb-1">{contact.name}</p>
                     <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">{specLabel}</p>
-                    {p.phone && (
+                    {contact.phone && (
                       <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
                         <Phone className="w-3 h-3" />
-                        {p.phone}
+                        {contact.phone}
                       </div>
                     )}
                   </div>
@@ -330,7 +330,7 @@ export function CareNetworkCard({
                     variant="ghost" 
                     size="icon" 
                     className="w-8 h-8 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-600 hover:bg-red-50"
-                    onClick={() => handleDelete(p.id)}
+                    onClick={() => handleDelete(contact.id)}
                   >
                     <Trash2 className="w-4 h-4" />
                   </Button>

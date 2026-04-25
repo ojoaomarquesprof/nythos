@@ -172,14 +172,14 @@ export function ProtocolTrackerCard({
     addTableToPdf(doc, {
       startY,
       head: [["Protocolo", "Data", "Score / Resultado", "Status"]],
-      body: evaluations.map(e => [
+      body: evaluations.map((e: any) => [
         e.protocol_name,
         formatDate(e.evaluation_date),
         e.score || "—",
         e.status === "completed" ? "Concluído" : "Em andamento"
       ]),
       styles: { fontSize: 9 },
-      headStyles: { fillGray: 200, textColor: 40, fontStyle: "bold" },
+      headStyles: { fillColor: [200, 200, 200], textColor: [40, 40, 40], fontStyle: "bold" },
     });
 
     addPdfFooter(doc);
@@ -342,7 +342,7 @@ export function ProtocolTrackerCard({
                 </TableCell>
               </TableRow>
             ) : (
-              evaluations.map((e: { id: string; protocol_name: string; evaluation_date: string; score: string; status: string }) => (
+              evaluations.map((e: any) => (
                 <TableRow key={e.id} className="group hover:bg-muted/10 transition-colors">
                   <TableCell className="text-sm font-bold pl-4">
                     {e.protocol_name}
