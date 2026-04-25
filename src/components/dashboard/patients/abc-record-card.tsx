@@ -250,7 +250,7 @@ export function AbcRecordCard({
                   </div>
                   <Slider
                     value={[formData.intensity]}
-                    onValueChange={(val) => setFormData({ ...formData, intensity: val[0] })}
+                    onValueChange={(val: number[]) => setFormData({ ...formData, intensity: val[0] })}
                     max={10}
                     min={1}
                     step={1}
