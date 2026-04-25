@@ -128,7 +128,7 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
           <div className="flex-1">
             <Select 
               value={selectedTemplate} 
-              onValueChange={setSelectedTemplate}
+              onValueChange={(val: any) => setSelectedTemplate(val || "")}
               disabled={loading || templates.length === 0}
             >
               <SelectTrigger>
