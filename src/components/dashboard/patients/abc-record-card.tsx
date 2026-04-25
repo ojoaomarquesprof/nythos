@@ -16,7 +16,7 @@ import {
   Download
 } from "lucide-react";
 import { createPdfDocument, addPdfFooter, addTableToPdf } from "@/lib/pdf-generator";
-import type { Profile } from "@/types/database";
+import type { Profile, Patient } from "@/types/database";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
