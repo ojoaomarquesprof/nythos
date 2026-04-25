@@ -586,7 +586,7 @@ export default function PatientDetailPage() {
               </CardContent>
             </Card>
           ) : (
-            sessions.map((session) => {
+            sessions.map((session: Session) => {
               const statusCfg = SESSION_STATUS[session.status];
               return (
                 <Card key={session.id} className="border-0 shadow-sm">
