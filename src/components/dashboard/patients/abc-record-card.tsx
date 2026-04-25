@@ -157,7 +157,7 @@ export function AbcRecordCard({
     addTableToPdf(doc, {
       startY,
       head: [["Data", "Comportamento", "Antecedente (A)", "Consequência (C)", "Intensidade"]],
-      body: records.map(r => [
+      body: records.map((r: any) => [
         formatDate(r.occurrence_date),
         r.behavior,
         r.antecedent,
@@ -317,7 +317,7 @@ export function AbcRecordCard({
       <CardContent className="p-4">
         {loading ? (
           <div className="space-y-3">
-            {[1, 2].map((i) => (
+            {[1, 2].map((i: number) => (
               <div key={i} className="animate-pulse h-16 bg-muted rounded-xl" />
             ))}
           </div>
@@ -328,7 +328,7 @@ export function AbcRecordCard({
           </div>
         ) : (
           <div className="space-y-3">
-            {records.map((r) => {
+            {records.map((r: any) => {
               const isExpanded = expandedId === r.id;
               return (
                 <div 

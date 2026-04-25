@@ -135,7 +135,7 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
                 <SelectValue placeholder={templates.length === 0 ? "Nenhum modelo criado" : "Selecione um modelo..."} />
               </SelectTrigger>
               <SelectContent>
-                {templates.map((t) => (
+                {templates.map((t: any) => (
                   <SelectItem key={t.id} value={t.id}>
                     {t.title}
                   </SelectItem>
@@ -176,7 +176,7 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
             </div>
           ) : (
             <div className="space-y-2">
-              {requests.map((req) => (
+              {requests.map((req: any) => (
                 <div 
                   key={req.id} 
                   className="flex items-center justify-between p-3 rounded-xl border bg-card/50 hover:bg-card transition-colors group"
@@ -247,7 +247,7 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
           </DialogHeader>
 
           <div className="space-y-6 py-4">
-            {viewingResponse && (viewingResponse.anamnesis_templates.fields as any[]).map((field, idx) => (
+            {viewingResponse && (viewingResponse.anamnesis_templates.fields as any[]).map((field: any, idx: number) => (
               <div key={field.id} className="space-y-2 pb-4 border-b last:border-0 border-slate-100">
                 <div className="flex items-start gap-2">
                   <span className="text-[10px] font-bold text-slate-300 mt-1 uppercase">Q{idx + 1}</span>

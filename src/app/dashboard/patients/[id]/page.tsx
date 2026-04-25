@@ -253,7 +253,7 @@ export default function PatientDetailPage() {
         addTableToPdf(doc, {
           startY: currentY,
           head: [["Profissional", "Especialidade", "Contato"]],
-          body: networkRes.data.map(p => {
+          body: networkRes.data.map((p: any) => {
             const specLabel = SPECIALTIES.find(s => s.value === p.specialty)?.label || p.specialty;
             return [p.name, specLabel, p.phone || "—"];
           }),
@@ -274,7 +274,7 @@ export default function PatientDetailPage() {
         addTableToPdf(doc, {
           startY: currentY,
           head: [["Protocolo", "Data", "Score", "Status"]],
-          body: protocolsRes.data.map(e => [
+          body: protocolsRes.data.map((e: any) => [
             e.protocol_name,
             formatDate(e.evaluation_date),
             e.score || "—",
@@ -297,7 +297,7 @@ export default function PatientDetailPage() {
         addTableToPdf(doc, {
           startY: currentY,
           head: [["Data", "Comportamento", "Antecedente (A)", "Consequência (C)", "Int."]],
-          body: behaviorRes.data.map(r => [
+          body: behaviorRes.data.map((r: any) => [
             formatDate(r.occurrence_date),
             r.behavior,
             r.antecedent,
@@ -331,7 +331,7 @@ export default function PatientDetailPage() {
           currentY += 12;
 
           const fields = anam.anamnesis_templates.fields as any[];
-          const body = fields.map((f, idx) => [
+          const body = fields.map((f: any, idx: number) => [
             `${idx + 1}. ${f.label}`,
             anam.responses[f.id] || "—"
           ]);
@@ -359,10 +359,10 @@ export default function PatientDetailPage() {
         addTableToPdf(doc, {
           startY: currentY,
           head: [["Data", "Tipo", "Status", "Notas de Evolução"]],
-          body: sessions.map(s => [
+          body: sessions.map((s: any) => [
             formatDate(s.scheduled_at),
             s.session_type,
-            SESSION_STATUS[s.status].label,
+            SESSION_STATUS[s.status as keyof typeof SESSION_STATUS].label,
             s.session_notes_encrypted || "—"
           ]),
           styles: { fontSize: 8 },

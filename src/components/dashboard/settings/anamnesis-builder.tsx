@@ -201,7 +201,7 @@ export function AnamnesisBuilder() {
             </CardContent>
           </Card>
         ) : (
-          templates.map((template) => (
+          templates.map((template: any) => (
             <Card key={template.id} className="group border-0 shadow-sm hover:shadow-md transition-all">
               <CardHeader className="p-4 pb-2">
                 <div className="flex items-start justify-between">
@@ -296,7 +296,7 @@ export function AnamnesisBuilder() {
                     <p className="text-sm">Clique em "Adicionar Campo" para começar.</p>
                   </div>
                 ) : (
-                  fields.map((field, index) => (
+                  fields.map((field: any, index: number) => (
                     <div key={field.id} className="p-4 rounded-xl border bg-card/50 space-y-3 relative group">
                       <div className="flex items-start gap-3">
                         <div className="mt-2.5 cursor-grab">
