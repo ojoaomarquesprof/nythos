@@ -9,11 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
+import { useSubscription } from "@/hooks/use-subscription";
 import { Checkbox } from "@/components/ui/checkbox";
 
 export default function NewPatientPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = createClient() as any;
   const { therapistId } = useSubscription();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
