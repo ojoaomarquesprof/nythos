@@ -32,6 +32,9 @@ export default function SettingsPage() {
     signature_url: "",
     session_duration_default: 50,
     session_price_default: 150,
+    cpf: "",
+    rg: "",
+    address: "",
   });
 
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -71,6 +74,9 @@ export default function SettingsPage() {
           signature_url: data.signature_url || "",
           session_duration_default: data.session_duration_default || 50,
           session_price_default: data.session_price_default || 150,
+          cpf: data.cpf || "",
+          rg: data.rg || "",
+          address: data.address || "",
         });
       }
     }
@@ -172,6 +178,9 @@ export default function SettingsPage() {
         signature_url: formData.signature_url,
         session_duration_default: formData.session_duration_default,
         session_price_default: formData.session_price_default,
+        cpf: formData.cpf,
+        rg: formData.rg,
+        address: formData.address,
       })
       .eq("id", profile.id);
 
@@ -423,6 +432,39 @@ export default function SettingsPage() {
                       placeholder="(11) 99999-9999"
                       className="glass-input-field h-12"
                       value={formData.phone}
+                      onChange={handleChange}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cpf" className="text-xs font-bold text-primary/70 uppercase ml-1">CPF (Obrigatório para contratos)</Label>
+                    <Input
+                      id="cpf"
+                      name="cpf"
+                      placeholder="000.000.000-00"
+                      className="glass-input-field h-12"
+                      value={formData.cpf}
+                      onChange={handleChange}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="rg" className="text-xs font-bold text-primary/70 uppercase ml-1">RG</Label>
+                    <Input
+                      id="rg"
+                      name="rg"
+                      placeholder="00.000.000-0"
+                      className="glass-input-field h-12"
+                      value={formData.rg}
+                      onChange={handleChange}
+                    />
+                  </div>
+                  <div className="md:col-span-2 space-y-2">
+                    <Label htmlFor="address" className="text-xs font-bold text-primary/70 uppercase ml-1">Endereço Completo</Label>
+                    <Input
+                      id="address"
+                      name="address"
+                      placeholder="Rua, Número, Bairro, Cidade - UF"
+                      className="glass-input-field h-12"
+                      value={formData.address}
                       onChange={handleChange}
                     />
                   </div>

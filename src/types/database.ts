@@ -24,6 +24,9 @@ export interface Database {
           created_at: string;
           updated_at: string;
           signature_url: string | null;
+          cpf: string | null;
+          rg: string | null;
+          address: string | null;
         };
         Insert: {
           id: string;
@@ -39,6 +42,9 @@ export interface Database {
           biometric_credential_id?: string | null;
           timezone?: string;
           signature_url?: string | null;
+          cpf?: string | null;
+          rg?: string | null;
+          address?: string | null;
         };
         Update: {
           full_name?: string;
@@ -53,6 +59,9 @@ export interface Database {
           biometric_credential_id?: string | null;
           timezone?: string;
           signature_url?: string | null;
+          cpf?: string | null;
+          rg?: string | null;
+          address?: string | null;
         };
       };
       patients: {
