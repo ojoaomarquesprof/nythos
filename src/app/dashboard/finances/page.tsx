@@ -32,7 +32,7 @@ import {
   CASH_FLOW_CATEGORIES,
   PAYMENT_METHODS,
 } from "@/lib/constants";
-import type { CashFlow, Profile } from "@/types/database";
+import type { Database, CashFlow, Profile } from "@/types/database";
 import { createPdfDocument, addPdfFooter, addTableToPdf } from "@/lib/pdf-generator";
 
 export default function FinancesPage() {
@@ -84,13 +84,15 @@ export default function FinancesPage() {
   }
 
   const handleConfirmPayment = async (id: string, method: string) => {
+    const payload: Database["public"]["Tables"]["cash_flow"]["Update"] = {
+      status: "confirmed",
+      paid_at: new Date().toISOString(),
+      payment_method: method as CashFlow["payment_method"],
+    };
+
     const { error } = await supabase
       .from("cash_flow")
-      .update({
-        status: "confirmed",
-        paid_at: new Date().toISOString(),
-        payment_method: method as CashFlow["payment_method"],
-      })
+      .update(payload)
       .eq("id", id);
 
     if (!error) loadTransactions();
