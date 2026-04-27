@@ -54,7 +54,7 @@ export default function TeamPage() {
   const [currentPlan, setCurrentPlan] = useState<string>("Starter");
   
   const { isSecretary, isTrial } = useSubscription();
-  const supabase = createClient();
+  const supabase = createClient() as any;
 
   useEffect(() => {
     loadTeamData();

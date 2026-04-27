@@ -16,7 +16,7 @@ interface MonthData {
 
 export function CashFlowChart() {
   const { therapistId } = useSubscription();
-  const supabase = createClient();
+  const supabase = createClient() as any;
   const [monthlyData, setMonthlyData] = useState<MonthData[]>([]);
   const [currentMonth, setCurrentMonth] = useState({ income: 0, expenses: 0 });
 

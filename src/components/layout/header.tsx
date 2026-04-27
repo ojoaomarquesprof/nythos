@@ -21,7 +21,7 @@ export function Header() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [sessionsTodayCount, setSessionsTodayCount] = useState(0);
   const [pendingPaymentsCount, setPendingPaymentsCount] = useState(0);
-  const supabase = createClient();
+  const supabase = createClient() as any;
 
   useEffect(() => {
     async function loadData() {

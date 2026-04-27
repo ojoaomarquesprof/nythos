@@ -19,7 +19,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = createClient() as any;
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();

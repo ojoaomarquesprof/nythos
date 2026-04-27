@@ -60,7 +60,7 @@ export function AbcRecordCard({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const supabase = createClient();
+  const supabase = createClient() as any;
   const router = useRouter();
   const { hasSubscription, loading: subLoading } = useSubscription();
 

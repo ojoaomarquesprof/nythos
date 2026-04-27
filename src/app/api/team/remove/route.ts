@@ -24,7 +24,7 @@ export async function DELETE(req: Request) {
           },
         },
       }
-    );
+    ) as any;
 
     const { data: { user: therapist } } = await supabase.auth.getUser();
 

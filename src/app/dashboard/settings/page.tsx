@@ -15,7 +15,7 @@ import type { Profile } from "@/types/database";
 import { AnamnesisBuilder } from "@/components/dashboard/settings/anamnesis-builder";
 
 export default function SettingsPage() {
-  const supabase = createClient();
+  const supabase = createClient() as any;
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

@@ -36,7 +36,7 @@ import { formatDate } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
-  const supabase = createClient();
+  const supabase = createClient() as any;
   const [templates, setTemplates] = useState<AnamnesisTemplate[]>([]);
   const [requests, setRequests] = useState<(AnamnesisResponse & { anamnesis_templates: AnamnesisTemplate })[]>([]);
   const [loading, setLoading] = useState(true);

@@ -36,7 +36,7 @@ interface TemplateField {
 
 export default function PublicAnamnesisPage() {
   const { id } = useParams();
-  const supabase = createClient();
+  const supabase = createClient() as any;
   
   const [responseRecord, setResponseRecord] = useState<any>(null);
   const [template, setTemplate] = useState<any>(null);

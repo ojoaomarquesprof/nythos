@@ -50,7 +50,7 @@ interface TemplateField {
 }
 
 export function AnamnesisBuilder() {
-  const supabase = createClient();
+  const supabase = createClient() as any;
   const [templates, setTemplates] = useState<AnamnesisTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);

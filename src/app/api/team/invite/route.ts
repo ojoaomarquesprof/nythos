@@ -23,7 +23,7 @@ export async function POST(req: Request) {
           },
         },
       }
-    );
+    ) as any;
 
     const { data: { user: therapist } } = await supabase.auth.getUser();
 

@@ -64,7 +64,7 @@ export function CareNetworkCard({
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const supabase = createClient();
+  const supabase = createClient() as any;
   const router = useRouter();
   const { hasSubscription, loading: subLoading } = useSubscription();
 

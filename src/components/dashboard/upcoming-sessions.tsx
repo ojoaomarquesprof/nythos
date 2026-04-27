@@ -23,7 +23,7 @@ const avatarColors = [
 
 export function UpcomingSessions() {
   const { therapistId } = useSubscription();
-  const supabase = createClient();
+  const supabase = createClient() as any;
   const [sessions, setSessions] = useState<(Session & { patient?: Patient })[]>([]);
 
   useEffect(() => {

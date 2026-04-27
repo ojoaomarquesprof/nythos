@@ -28,7 +28,7 @@ import type { Session, Patient } from "@/types/database";
 
 export default function SchedulePage() {
   const { therapistId } = useSubscription();
-  const supabase = createClient();
+  const supabase = createClient() as any;
   const [sessions, setSessions] = useState<(Session & { patient?: Patient })[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);

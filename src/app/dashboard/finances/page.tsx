@@ -38,7 +38,7 @@ import { createPdfDocument, addPdfFooter, addTableToPdf } from "@/lib/pdf-genera
 
 export default function FinancesPage() {
   const { therapistId } = useSubscription();
-  const supabase = createClient() as SupabaseClient<Database>;
+  const supabase = createClient() as any;
   const [transactions, setTransactions] = useState<CashFlow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showExpense, setShowExpense] = useState(false);

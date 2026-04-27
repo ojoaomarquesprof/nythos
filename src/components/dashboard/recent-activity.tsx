@@ -74,7 +74,7 @@ function getTimeAgo(date: Date) {
 
 export function RecentActivity() {
   const { therapistId } = useSubscription();
-  const supabase = createClient();
+  const supabase = createClient() as any;
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
 

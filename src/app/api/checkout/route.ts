@@ -18,7 +18,7 @@ export async function POST(req: Request) {
           },
         },
       }
-    );
+    ) as any;
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {

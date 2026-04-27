@@ -38,7 +38,7 @@ export function Sidebar() {
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
   const { hasSubscription, isTrial, daysLeft, loading: subLoading } = useSubscription();
-  const supabase = createClient();
+  const supabase = createClient() as any;
 
   useEffect(() => {
     async function loadProfile() {
