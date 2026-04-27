@@ -3,7 +3,7 @@ import autoTable, { UserOptions } from "jspdf-autotable";
 import type { Profile } from "@/types/database";
 
 // Helper to convert image URL to base64
-async function getBase64ImageFromUrl(imageUrl: string): Promise<string> {
+export async function getBase64ImageFromUrl(imageUrl: string): Promise<string> {
   const res = await fetch(imageUrl);
   const blob = await res.blob();
   return new Promise((resolve, reject) => {

@@ -36,52 +36,48 @@ function StatCard({
   gradientClass,
   delay = "",
 }: StatCardProps) {
+  const colorMap: Record<string, { bg: string, text: string, shadow: string, border: string }> = {
+    "gradient-primary": { bg: "bg-indigo-600", text: "text-indigo-600", shadow: "shadow-indigo-500/20", border: "border-indigo-500/20" },
+    "gradient-sage": { bg: "bg-emerald-500", text: "text-emerald-600", shadow: "shadow-emerald-500/20", border: "border-emerald-500/20" },
+    "gradient-warm": { bg: "bg-amber-500", text: "text-amber-600", shadow: "shadow-amber-500/20", border: "border-amber-500/20" },
+    "gradient-rose": { bg: "bg-rose-500", text: "text-rose-600", shadow: "shadow-rose-500/20", border: "border-rose-500/20" },
+  };
+
+  const colors = colorMap[gradientClass] || colorMap["gradient-primary"];
+
   return (
     <Card
       className={cn(
-        "relative overflow-hidden border-0 shadow-sm hover:shadow-md transition-all duration-300 hover:-translate-y-0.5 animate-fade-in",
+        "relative overflow-hidden border-0 shadow-lg shadow-slate-200/40 bg-white/80 backdrop-blur-md hover:shadow-xl transition-all duration-300 hover:-translate-y-1.5 animate-fade-in rounded-[32px] border-b-4 group",
+        colors.border,
         delay
       )}
     >
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="space-y-1.5 flex-1">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+      <CardContent className="p-6">
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center justify-between">
+            <div className={cn(
+              "w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-all group-hover:scale-110 group-hover:rotate-3",
+              colors.bg,
+              colors.shadow
+            )}>
+              <Icon className="w-6 h-6 text-white" />
+            </div>
+            <p className={cn("text-[10px] font-black uppercase tracking-[0.2em] opacity-40", colors.text)}>
               {title}
             </p>
-            <p className="text-2xl font-bold tracking-tight">{value}</p>
-            {subtitle && (
-              <p className="text-xs text-muted-foreground">{subtitle}</p>
-            )}
-            {trend && (
-              <div className="flex items-center gap-1 mt-1">
-                {trend.value >= 0 ? (
-                  <TrendingUp className="w-3 h-3 text-green-600" />
-                ) : (
-                  <TrendingDown className="w-3 h-3 text-red-500" />
-                )}
-                <span
-                  className={cn(
-                    "text-[11px] font-medium",
-                    trend.value >= 0 ? "text-green-600" : "text-red-500"
-                  )}
-                >
-                  {trend.value > 0 ? "+" : ""}
-                  {trend.value}%
-                </span>
-                <span className="text-[11px] text-muted-foreground">
-                  {trend.label}
-                </span>
-              </div>
-            )}
           </div>
-          <div
-            className={cn(
-              "w-10 h-10 rounded-xl flex items-center justify-center shadow-sm flex-shrink-0",
-              gradientClass
+          
+          <div className="space-y-1.5">
+            <p className="text-2xl font-black text-[#1e1b4b] tracking-tighter leading-none group-hover:translate-x-1 transition-transform">
+              {value}
+            </p>
+            {subtitle && (
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <span className={cn("w-1 h-1 rounded-full", colors.bg)} />
+                {subtitle}
+              </p>
             )}
-          >
-            <Icon className="w-5 h-5 text-white" />
           </div>
         </div>
       </CardContent>

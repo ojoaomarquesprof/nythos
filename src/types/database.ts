@@ -23,6 +23,7 @@ export interface Database {
           timezone: string;
           created_at: string;
           updated_at: string;
+          signature_url: string | null;
         };
         Insert: {
           id: string;
@@ -37,6 +38,7 @@ export interface Database {
           push_subscription?: Json | null;
           biometric_credential_id?: string | null;
           timezone?: string;
+          signature_url?: string | null;
         };
         Update: {
           full_name?: string;
@@ -50,6 +52,7 @@ export interface Database {
           push_subscription?: Json | null;
           biometric_credential_id?: string | null;
           timezone?: string;
+          signature_url?: string | null;
         };
       };
       patients: {

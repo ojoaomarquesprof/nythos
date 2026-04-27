@@ -66,51 +66,51 @@ export function CashFlowChart() {
   const profit = currentMonth.income - currentMonth.expenses;
 
   return (
-    <Card className="border-0 shadow-sm animate-fade-in delay-500">
-      <CardHeader className="pb-2 px-4 md:px-6">
+    <Card className="border-0 shadow-xl shadow-slate-200/40 bg-white/80 backdrop-blur-md rounded-[32px] overflow-hidden animate-fade-in delay-500">
+      <CardHeader className="pb-4 px-8 pt-8 border-b border-indigo-50/50">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base font-semibold">
+          <CardTitle className="text-[11px] font-black text-indigo-600/40 uppercase tracking-[0.2em]">
             Fluxo de Caixa
           </CardTitle>
           <Link
             href="/dashboard/finances"
-            className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+            className="text-[10px] font-black text-indigo-600 hover:text-indigo-700 transition-colors uppercase tracking-widest bg-indigo-50 px-4 py-2 rounded-full border border-indigo-100/50 shadow-sm active:scale-95 transition-all"
           >
-            Detalhes →
+            Ver Detalhes
           </Link>
         </div>
       </CardHeader>
-      <CardContent className="px-4 md:px-6 pb-4">
+      <CardContent className="p-8">
         {/* Summary */}
-        <div className="grid grid-cols-3 gap-3 mb-5">
-          <div className="text-center p-2.5 rounded-xl bg-emerald-50 border border-emerald-100">
-            <p className="text-[10px] text-emerald-600 font-medium uppercase tracking-wider">
+        <div className="grid grid-cols-3 gap-4 mb-8">
+          <div className="text-center p-4 rounded-[24px] bg-emerald-50 border border-emerald-100/50 shadow-sm">
+            <p className="text-[9px] text-emerald-600 font-black uppercase tracking-widest">
               Receita
             </p>
-            <p className="text-sm font-bold text-emerald-700 mt-0.5">
+            <p className="text-sm font-black text-emerald-700 mt-1">
               {formatCurrency(currentMonth.income)}
             </p>
           </div>
-          <div className="text-center p-2.5 rounded-xl bg-red-50 border border-red-100">
-            <p className="text-[10px] text-red-600 font-medium uppercase tracking-wider">
+          <div className="text-center p-4 rounded-[24px] bg-rose-50 border border-rose-100/50 shadow-sm">
+            <p className="text-[9px] text-rose-600 font-black uppercase tracking-widest">
               Despesas
             </p>
-            <p className="text-sm font-bold text-red-700 mt-0.5">
+            <p className="text-sm font-black text-rose-700 mt-1">
               {formatCurrency(currentMonth.expenses)}
             </p>
           </div>
-          <div className="text-center p-2.5 rounded-xl bg-violet-50 border border-violet-100">
-            <p className="text-[10px] text-violet-600 font-medium uppercase tracking-wider">
+          <div className="text-center p-4 rounded-[24px] bg-indigo-50 border border-indigo-100/50 shadow-sm">
+            <p className="text-[9px] text-indigo-600 font-black uppercase tracking-widest">
               Lucro
             </p>
-            <p className="text-sm font-bold text-violet-700 mt-0.5">
+            <p className="text-sm font-black text-indigo-700 mt-1">
               {formatCurrency(profit)}
             </p>
           </div>
         </div>
 
         {/* Bar chart */}
-        <div className="flex items-end gap-2 h-28">
+        <div className="flex items-end gap-3 h-32">
           {monthlyData.map((data, index) => {
             const incomeHeight = (data.income / maxValue) * 100;
             const expenseHeight = (data.expenses / maxValue) * 100;
@@ -119,36 +119,36 @@ export function CashFlowChart() {
             return (
               <div
                 key={data.month}
-                className="flex-1 flex flex-col items-center gap-1"
+                className="flex-1 flex flex-col items-center gap-2 group"
               >
-                <div className="flex items-end gap-0.5 w-full h-24">
+                <div className="flex items-end gap-1 w-full h-24">
                   <div className="flex-1 flex flex-col justify-end h-full">
                     <div
                       className={cn(
-                        "w-full rounded-t-sm transition-all duration-500 ease-out hover:opacity-80 cursor-default",
-                        isLast ? "bg-emerald-500" : "bg-emerald-300"
+                        "w-full rounded-t-xl transition-all duration-500 ease-out cursor-default",
+                        isLast ? "bg-emerald-500 shadow-lg shadow-emerald-500/20" : "bg-emerald-200/60"
                       )}
-                      style={{ height: `${Math.max(incomeHeight, 3)}%` }}
+                      style={{ height: `${Math.max(incomeHeight, 5)}%` }}
                       title={`Receita: ${formatCurrency(data.income)}`}
                     />
                   </div>
                   <div className="flex-1 flex flex-col justify-end h-full">
                     <div
                       className={cn(
-                        "w-full rounded-t-sm transition-all duration-500 ease-out hover:opacity-80 cursor-default",
-                        isLast ? "bg-red-400" : "bg-red-200"
+                        "w-full rounded-t-xl transition-all duration-500 ease-out cursor-default",
+                        isLast ? "bg-rose-400 shadow-lg shadow-rose-400/20" : "bg-rose-200/60"
                       )}
-                      style={{ height: `${Math.max(expenseHeight, 3)}%` }}
+                      style={{ height: `${Math.max(expenseHeight, 5)}%` }}
                       title={`Despesa: ${formatCurrency(data.expenses)}`}
                     />
                   </div>
                 </div>
                 <span
                   className={cn(
-                    "text-[10px]",
+                    "text-[10px] font-black uppercase tracking-widest",
                     isLast
-                      ? "font-semibold text-foreground"
-                      : "text-muted-foreground"
+                      ? "text-indigo-600"
+                      : "text-slate-300"
                   )}
                 >
                   {data.month}
@@ -159,14 +159,14 @@ export function CashFlowChart() {
         </div>
 
         {/* Legend */}
-        <div className="flex items-center justify-center gap-4 mt-3">
-          <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-sm bg-emerald-400" />
-            <span className="text-[11px] text-muted-foreground">Receitas</span>
+        <div className="flex items-center justify-center gap-6 mt-6">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-400" />
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Receitas</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-sm bg-red-300" />
-            <span className="text-[11px] text-muted-foreground">Despesas</span>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-rose-300" />
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Despesas</span>
           </div>
         </div>
       </CardContent>

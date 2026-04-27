@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { createPdfDocument, addPdfFooter, addTableToPdf } from "@/lib/pdf-generator";
 import type { Profile, Patient } from "@/types/database";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -71,7 +71,7 @@ export function CareNetworkCard({
   // Form State
   const [formData, setFormData] = useState({
     name: "",
-    specialty: "fono",
+    specialty: "Fonoaudiologia",
     phone: "",
     notes: "",
   });
@@ -161,175 +161,192 @@ export function CareNetworkCard({
   }
 
   return (
-    <Card className="border-0 shadow-sm overflow-hidden h-full">
-      <CardHeader className="flex flex-row items-center justify-between pb-2 bg-muted/30">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Users className="w-4 h-4 text-primary" />
+    <Card className="glass-panel border-0 shadow-lg overflow-hidden rounded-[32px] animate-fade-in">
+      <CardHeader className="pb-4 bg-white/30 backdrop-blur-sm border-b border-white/40">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center">
+              <Users className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle className="text-lg font-bold text-primary">Rede de Apoio</CardTitle>
+              <CardDescription className="text-xs">
+                Contatos dos profissionais que atendem o paciente.
+              </CardDescription>
+            </div>
           </div>
-          <CardTitle className="text-base font-bold">Rede de Apoio</CardTitle>
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <Button 
-            size="sm" 
-            variant="outline" 
-            className="h-8 gap-1.5 text-muted-foreground hover:text-primary"
-            onClick={handleExportPdf}
-            disabled={professionals.length === 0 || !profile || !patient}
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Exportar PDF</span>
-          </Button>
+          
+          <div className="flex items-center gap-2">
+            <Button 
+              size="sm" 
+              variant="outline" 
+              className="h-9 px-4 rounded-full border-primary/20 text-primary hover:bg-primary/5 transition-all"
+              onClick={handleExportPdf}
+              disabled={professionals.length === 0 || !profile || !patient}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              <span className="hidden sm:inline">PDF</span>
+            </Button>
 
-          <Dialog open={open} onOpenChange={setOpen}>
-          <Button 
-            size="sm" 
-            variant="ghost" 
-            className="h-8 gap-1.5 text-primary hover:text-primary hover:bg-primary/5"
-            onClick={() => {
-              if (!hasSubscription && !subLoading) {
-                router.push("/dashboard/settings/billing");
-              } else {
-                setOpen(true);
-              }
-            }}
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Adicionar</span>
-          </Button>
-          <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Novo Profissional</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleAddProfessional} className="space-y-4 pt-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="name">Nome do Profissional *</Label>
-                  <Input
-                    id="name"
-                    placeholder="Ex: Dra. Ana Souza"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    required
-                    className="h-10"
-                  />
-                </div>
+            <Dialog open={open} onOpenChange={setOpen}>
+              <Button 
+                size="sm" 
+                className="gradient-primary text-white h-9 px-5 rounded-full shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all active:scale-95" 
+                onClick={() => {
+                  if (!hasSubscription && !subLoading) {
+                    router.push("/dashboard/settings/billing");
+                  } else {
+                    setOpen(true);
+                  }
+                }}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                <span>Novo</span>
+              </Button>
+              <DialogContent className="sm:max-w-md rounded-[32px] border-0 shadow-2xl">
+                <DialogHeader className="p-4">
+                  <DialogTitle className="text-xl font-bold text-primary">Novo Profissional</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleAddProfessional} className="space-y-5 p-4 pt-0">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="name" className="text-sm font-bold text-slate-700">Nome do Profissional *</Label>
+                    <Input
+                      id="name"
+                      placeholder="Ex: Dra. Ana Souza"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      required
+                      className="glass-input-field h-12 bg-slate-50/50"
+                    />
+                  </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="specialty">Especialidade *</Label>
-                  <Select
-                    value={formData.specialty}
-                    onValueChange={(val: any) => setFormData({ ...formData, specialty: val || "" })}
-                  >
-                    <SelectTrigger id="specialty" className="h-10">
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {specialties.map((s: { value: string; label: string }) => (
-                        <SelectItem key={s.value} value={s.value}>
-                          {s.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="specialty" className="text-sm font-bold text-slate-700">Especialidade *</Label>
+                    <Select
+                      value={formData.specialty}
+                      onValueChange={(val: any) => setFormData({ ...formData, specialty: val || "" })}
+                    >
+                      <SelectTrigger id="specialty" className="glass-input-field h-12 bg-slate-50/50 w-full">
+                        <SelectValue placeholder="Selecione..." />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-2xl border-white/40 backdrop-blur-xl">
+                        {specialties.map((s: { value: string; label: string }) => (
+                          <SelectItem key={s.value} value={s.value} className="rounded-lg">
+                            {s.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="phone">Telefone / WhatsApp</Label>
-                  <Input
-                    id="phone"
-                    placeholder="(00) 00000-0000"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="h-10"
-                  />
-                </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="phone" className="text-sm font-bold text-slate-700">Telefone / WhatsApp</Label>
+                    <Input
+                      id="phone"
+                      placeholder="(00) 00000-0000"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      className="glass-input-field h-12 bg-slate-50/50"
+                    />
+                  </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="notes">Observações</Label>
-                  <Textarea
-                    id="notes"
-                    placeholder="Ex: Atendimento nas quartas pela manhã"
-                    className="min-h-[80px] resize-none"
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  />
-                </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="notes" className="text-sm font-bold text-slate-700">Observações</Label>
+                    <Textarea
+                      id="notes"
+                      placeholder="Ex: Atendimento nas quartas pela manhã"
+                      className="rounded-2xl border-slate-200 focus:border-primary transition-all shadow-sm bg-slate-50/50 min-h-[80px] py-4"
+                      value={formData.notes}
+                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    />
+                  </div>
 
-                <div className="flex gap-3 pt-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => setOpen(false)}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button
-                    type="submit"
-                    className="flex-1 gradient-primary text-white"
-                    disabled={saving}
-                  >
-                    {saving ? "Salvando..." : "Cadastrar"}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
+                  <div className="flex gap-3 pt-4">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="flex-1 rounded-full h-12"
+                      onClick={() => setOpen(false)}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="submit"
+                      className="flex-1 gradient-primary text-white rounded-full h-12 font-bold shadow-lg shadow-primary/20"
+                      disabled={saving}
+                    >
+                      {saving ? "Salvando..." : "Cadastrar"}
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
       </CardHeader>
       
-      <CardContent className="p-4">
+      <CardContent className="p-8">
         {loading ? (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {[1, 2].map((i) => (
-              <div key={i} className="animate-pulse flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-muted" />
+              <div key={i} className="animate-pulse flex items-center gap-4 p-4 rounded-2xl bg-white/40 border border-white/60">
+                <div className="w-12 h-12 rounded-xl bg-muted/20" />
                 <div className="flex-1 space-y-2">
-                  <div className="w-32 h-4 bg-muted rounded" />
-                  <div className="w-20 h-3 bg-muted rounded" />
+                  <div className="w-32 h-4 bg-muted/20 rounded" />
+                  <div className="w-20 h-3 bg-muted/20 rounded" />
                 </div>
               </div>
             ))}
           </div>
         ) : professionals.length === 0 ? (
-          <div className="py-8 text-center bg-muted/20 rounded-xl border border-dashed border-muted">
-            <Users className="w-8 h-8 text-muted-foreground mx-auto mb-2 opacity-50" />
-            <p className="text-sm text-muted-foreground">Nenhum profissional na rede.</p>
+          <div className="py-12 text-center border border-dashed rounded-[32px] bg-white/5 flex flex-col items-center">
+            <div className="w-12 h-12 rounded-full bg-muted/20 flex items-center justify-center mb-3">
+              <Users className="w-6 h-6 text-muted-foreground/40" />
+            </div>
+            <p className="text-sm text-muted-foreground">Nenhum profissional na rede de apoio deste paciente.</p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {professionals.map((contact: any) => {
-              const specLabel = specialties.find(s => s.value === contact.specialty)?.label || contact.specialty;
+              const OLD_MAPPING: Record<string, string> = {
+                fono: "Fonoaudiologia",
+                to: "Terapia Ocupacional",
+                at: "Acompanhamento Terapêutico",
+                neuro: "Neuropediatria",
+                psico: "Psicopedagogia"
+              };
+              const specLabel = specialties.find(s => s.value === contact.specialty)?.label || OLD_MAPPING[contact.specialty] || contact.specialty;
               const isSchool = contact.specialty === "escola";
 
               return (
                 <div 
                   key={contact.id} 
-                  className="flex items-center gap-3 p-3 rounded-xl border border-muted hover:bg-muted/30 transition-colors group"
+                  className="flex items-center justify-between p-4 rounded-[24px] border border-white/40 bg-white/40 hover:bg-white/60 transition-all group"
                 >
-                  <div className={cn(
-                    "w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0",
-                    isSchool ? "bg-amber-100 text-amber-700" : "bg-primary/10 text-primary"
-                  )}>
-                    {isSchool ? <GraduationCap className="w-5 h-5" /> : <Stethoscope className="w-5 h-5" />}
-                  </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold truncate leading-none mb-1">{contact.name}</p>
-                    <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">{specLabel}</p>
-                    {contact.phone && (
-                      <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
-                        <Phone className="w-3 h-3" />
-                        {contact.phone}
-                      </div>
-                    )}
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className={cn(
+                      "w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm",
+                      isSchool ? "bg-amber-100 text-amber-700" : "bg-primary/10 text-primary"
+                    )}>
+                      {isSchool ? <GraduationCap className="w-6 h-6" /> : <Stethoscope className="w-6 h-6" />}
+                    </div>
+                    
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-primary/80 truncate leading-none mb-1.5">{contact.name}</p>
+                      <p className="text-xs text-muted-foreground font-bold">{specLabel}</p>
+                      {contact.phone && (
+                        <div className="flex items-center gap-1.5 mt-2 text-[11px] text-muted-foreground font-medium">
+                          <Phone className="w-3 h-3" />
+                          {contact.phone}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <Button 
                     variant="ghost" 
                     size="icon" 
-                    className="w-8 h-8 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-600 hover:bg-red-50"
+                    className="w-9 h-9 rounded-full opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-red-600 hover:bg-red-50"
                     onClick={() => handleDelete(contact.id)}
                   >
                     <Trash2 className="w-4 h-4" />

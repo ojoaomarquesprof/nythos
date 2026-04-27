@@ -21,6 +21,19 @@ import {
   Users,
   Activity,
   ClipboardList,
+  Wallet,
+  Bell,
+  Archive,
+  X,
+  ChevronDown,
+  ChevronUp,
+  ChevronRight,
+  History,
+  Smile,
+  Frown,
+  Zap,
+  Waves,
+  HeartPulse,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,14 +42,14 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { SESSION_STATUS, formatCurrency, formatDate, formatTime, SPECIALTIES } from "@/lib/constants";
-import type { Patient, Session, Profile } from "@/types/database";
+import type { Patient, Session, Profile, CashFlow, PatientTask } from "@/types/database";
 import { createPdfDocument, addPdfFooter, addTableToPdf } from "@/lib/pdf-generator";
 import { CareNetworkCard } from "@/components/dashboard/patients/care-network-card";
 import { ProtocolTrackerCard } from "@/components/dashboard/patients/protocol-tracker-card";
@@ -51,7 +64,21 @@ export default function PatientDetailPage() {
   const { isSecretary } = useSubscription();
 
   const [patient, setPatient] = useState<Patient | null>(null);
+  const TABS = [
+    { value: "info", label: "Perfil do Paciente", shortLabel: "Perfil", icon: User },
+    { value: "sessions", label: "Sessões Agendadas", shortLabel: "Sessões", icon: Clock },
+    { value: "finance", label: "Financeiro do Paciente", shortLabel: "Finanças", icon: Wallet },
+    { value: "notes", label: "Prontuário Geral", shortLabel: "Prontuário", icon: FileText },
+    { value: "behavior", label: "Comportamento (ABC)", shortLabel: "ABC", icon: Activity },
+    { value: "team", label: "Equipe Multidisciplinar", shortLabel: "Equipe", icon: Users },
+    { value: "protocols", label: "Protocolos e Rastreadores", shortLabel: "Protocolos", icon: ClipboardList },
+    { value: "anamnesis", label: "Anamnese e Formulários", shortLabel: "Anamnese", icon: Shield },
+    { value: "archive", label: "Arquivo de Sessões", shortLabel: "Arquivo", icon: Archive },
+    { value: "alerts", label: "Lembretes e Alertas", shortLabel: "Alertas", icon: Bell },
+  ];
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [patientCashFlow, setPatientCashFlow] = useState<CashFlow[]>([]);
+  const [patientTasks, setPatientTasks] = useState<PatientTask[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState("");
@@ -63,6 +90,8 @@ export default function PatientDetailPage() {
   const [guardian, setGuardian] = useState<any>(null);
   const [editForm, setEditForm] = useState<any>(null);
   const [errorDialog, setErrorDialog] = useState({ open: false, title: "", message: "" });
+  const [viewingSession, setViewingSession] = useState<Session | null>(null);
+  const [showSessionModal, setShowSessionModal] = useState(false);
 
   function showError(title: string, message: string) {
     setErrorDialog({ open: true, title, message });
@@ -77,7 +106,7 @@ export default function PatientDetailPage() {
 
     const idStr = Array.isArray(id) ? id[0] : id;
 
-    const [patientRes, sessionsRes, authRes, guardianRes] = await Promise.all([
+    const [patientRes, sessionsRes, authRes, guardianRes, tasksRes] = await Promise.all([
       supabase.from("patients").select("*").eq("id", idStr).single(),
       supabase
         .from("sessions")
@@ -85,7 +114,12 @@ export default function PatientDetailPage() {
         .eq("patient_id", idStr)
         .order("scheduled_at", { ascending: false }),
       supabase.auth.getUser(),
-      supabase.from("patient_guardians").select("*").eq("patient_id", idStr).maybeSingle()
+      supabase.from("patient_guardians").select("*").eq("patient_id", idStr).maybeSingle(),
+      supabase
+        .from("patient_tasks")
+        .select("*")
+        .eq("patient_id", idStr)
+        .order("created_at", { ascending: false }),
     ]);
 
     if (patientRes.data) {
@@ -103,7 +137,20 @@ export default function PatientDetailPage() {
       });
     }
     if (sessionsRes.data) setSessions(sessionsRes.data);
+    if (tasksRes.data) setPatientTasks(tasksRes.data);
     if (guardianRes.data) setGuardian(guardianRes.data);
+
+    const sessionIds = sessionsRes.data?.map((s: Session) => s.id) || [];
+    if (sessionIds.length > 0) {
+      const { data: cashFlowData } = await supabase
+        .from("cash_flow")
+        .select("*")
+        .in("session_id", sessionIds)
+        .order("created_at", { ascending: false });
+      setPatientCashFlow(cashFlowData || []);
+    } else {
+      setPatientCashFlow([]);
+    }
     
     if (authRes.data.user) {
       const { data: profileData } = await supabase.from("profiles").select("*").eq("id", authRes.data.user.id).single();
@@ -290,14 +337,55 @@ export default function PatientDetailPage() {
       doc.setFontSize(12);
       doc.text("Evolução Clínica e Observações", 14, startY);
       
+      let currentY = startY + 10;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
-      
-      const splitText = doc.splitTextToSize(patient.notes_encrypted, 180);
-      doc.text(splitText, 14, startY + 8);
+
+      // 1. Notas Manuais
+      if (patient.notes_encrypted) {
+        doc.setFont("helvetica", "bold");
+        doc.text("Notas Gerais:", 14, currentY);
+        doc.setFont("helvetica", "normal");
+        const splitNotes = doc.splitTextToSize(patient.notes_encrypted, 180);
+        doc.text(splitNotes, 14, currentY + 5);
+        currentY += (splitNotes.length * 5) + 15;
+      }
+
+      // 2. Evoluções de Sessão
+      const completedSessions = sessions.filter(s => s.status === "completed" && s.session_notes_encrypted);
+      if (completedSessions.length > 0) {
+        doc.setFont("helvetica", "bold");
+        doc.text("Evoluções por Sessão:", 14, currentY);
+        currentY += 8;
+
+        completedSessions.forEach(session => {
+          if (currentY > 270) { doc.addPage(); currentY = 20; }
+          
+          let evolution: any = null;
+          try {
+            evolution = JSON.parse(session.session_notes_encrypted || "{}");
+          } catch (e) {
+            evolution = { notes: session.session_notes_encrypted };
+          }
+
+          const dateStr = `${new Date(session.scheduled_at).toLocaleDateString("pt-BR")} - `;
+          const moodStr = evolution.mood_happy_sad ? ` (Humor: ${evolution.mood_happy_sad}/10)` : "";
+          
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          doc.text(dateStr + moodStr, 14, currentY);
+          
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(9);
+          const splitEv = doc.splitTextToSize(evolution.notes || evolution || "", 170);
+          doc.text(splitEv, 20, currentY + 5);
+          
+          currentY += (splitEv.length * 4) + 12;
+        });
+      }
 
       addPdfFooter(doc);
-      doc.save(`notas_evolucao_${patient.full_name.replace(/\s+/g, '_')}.pdf`);
+      doc.save(`prontuario_evolucao_${patient.full_name.replace(/\s+/g, '_')}.pdf`);
     } catch (e) {
       showError("Erro na Exportação", "Ocorreu um erro ao gerar o PDF do prontuário.");
     } finally {
@@ -449,12 +537,23 @@ export default function PatientDetailPage() {
         addTableToPdf(doc, {
           startY: currentY,
           head: [["Data", "Tipo", "Status", "Notas de Evolução"]],
-          body: sessions.map((s: any) => [
-            formatDate(s.scheduled_at),
-            s.session_type,
-            SESSION_STATUS[s.status as keyof typeof SESSION_STATUS].label,
-            s.session_notes_encrypted || "—"
-          ]),
+          body: sessions.map((s: any) => {
+            let notes = "—";
+            if (s.session_notes_encrypted) {
+              try {
+                const ev = JSON.parse(s.session_notes_encrypted);
+                notes = ev.notes || s.session_notes_encrypted;
+              } catch {
+                notes = s.session_notes_encrypted;
+              }
+            }
+            return [
+              formatDate(s.scheduled_at),
+              s.session_type,
+              SESSION_STATUS[s.status as keyof typeof SESSION_STATUS].label,
+              notes
+            ];
+          }),
           styles: { fontSize: 8 },
           headStyles: { fillColor: [139, 92, 246] },
           columnStyles: { 3: { cellWidth: 90 } }
@@ -486,9 +585,90 @@ export default function PatientDetailPage() {
     }
   };
 
+  const handleExportSingleSession = async (session: Session) => {
+    if (!patient || !profile) return;
+    setIsExporting(true);
+    
+    try {
+      let evolution: any = null;
+      try {
+        evolution = JSON.parse(session.session_notes_encrypted || "{}");
+      } catch (e) {
+        evolution = { notes: session.session_notes_encrypted };
+      }
+
+      const { doc, startY } = await createPdfDocument({
+        title: "Relatório de Atendimento Individual",
+        subtitle: `Paciente: ${patient.full_name} | Data: ${formatDate(session.scheduled_at)}`,
+        profile
+      });
+
+      let currentY = startY;
+      
+      // Detalhes em Tabela
+      addTableToPdf(doc, {
+        startY: currentY,
+        head: [['Informação', 'Detalhe']],
+        body: [
+          ["Data/Hora", `${formatDate(session.scheduled_at)} às ${formatTime(session.scheduled_at)}`],
+          ["Duração", `${session.duration_minutes} minutos`],
+          ["Modalidade", session.session_type === "online" ? "Online" : "Presencial"],
+          ["Humor do Paciente", evolution.mood_happy_sad ? `${evolution.mood_happy_sad}/10` : "Não registrado"],
+          ["Nível de Agitação", evolution.mood_anxious_calm ? `${evolution.mood_anxious_calm}/10` : "Não registrado"],
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: [79, 70, 229] },
+        styles: { fontSize: 10 }
+      });
+
+      currentY = (doc as any).lastAutoTable.finalY + 15;
+
+      // Evolução
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(79, 70, 229);
+      doc.text("Evolução Clínica", 14, currentY);
+      currentY += 8;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(51, 65, 85);
+      const notesText = evolution.notes || session.session_notes_encrypted || "Nenhuma nota registrada.";
+      const splitText = doc.splitTextToSize(notesText, 180);
+      doc.text(splitText, 14, currentY);
+
+      addPdfFooter(doc);
+      doc.save(`sessao_${patient.full_name.replace(/\s+/g, '_')}_${formatDate(session.scheduled_at).replace(/\//g, '-')}.pdf`);
+    } catch (e) {
+      console.error(e);
+      showError("Erro na Exportação", "Erro ao gerar PDF da sessão individual.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const [isMobile, setIsMobile] = useState(false);
+  const [orientation, setOrientation] = useState<"horizontal" | "vertical">("vertical");
+  const [activeTab, setActiveTab] = useState("info");
+
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+      setOrientation(mobile ? "horizontal" : "vertical");
+    };
+    
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  const activeTabInfo = TABS.find(t => t.value === activeTab) || TABS[0];
+  const ActiveIcon = activeTabInfo.icon;
+
   if (loading) {
     return (
-      <div className="px-4 py-5 md:px-6 md:py-6 max-w-5xl mx-auto w-full">
+      <div className="px-4 py-5 md:px-6 md:py-6 max-w-7xl mx-auto w-full">
         <div className="animate-pulse space-y-6">
           <div className="h-6 w-32 bg-muted rounded" />
           <div className="h-32 bg-muted rounded-xl" />
@@ -500,7 +680,7 @@ export default function PatientDetailPage() {
 
   if (!patient) {
     return (
-      <div className="px-4 py-5 md:px-6 md:py-6 max-w-5xl mx-auto w-full text-center py-20">
+      <div className="px-4 py-5 md:px-6 md:py-6 max-w-7xl mx-auto w-full text-center py-20">
         <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
         <h2 className="text-lg font-semibold">Paciente não encontrado</h2>
         <Button variant="outline" onClick={() => router.back()} className="mt-4">
@@ -510,15 +690,15 @@ export default function PatientDetailPage() {
     );
   }
 
-  const initials = patient.full_name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
-  const completedSessions = sessions.filter((s) => s.status === "completed").length;
-  const scheduledSessions = sessions.filter((s) => s.status === "scheduled").length;
+  const scheduledOnlySessions = sessions.filter((s) => s.status === "scheduled");
+  const archivedSessions = sessions.filter((s) => s.status !== "scheduled");
+  const totalPatientIncome = patientCashFlow
+    .filter((f) => f.type === "income")
+    .reduce((sum, f) => sum + Number(f.amount), 0);
+  const pendingPatientIncome = patientCashFlow
+    .filter((f) => f.type === "income" && f.status === "pending")
+    .reduce((sum, f) => sum + Number(f.amount), 0);
+  const openAlerts = patientTasks.filter((t) => t.status !== "completed" && t.status !== "cancelled");
 
   const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -526,151 +706,148 @@ export default function PatientDetailPage() {
   };
 
   return (
-    <div className="px-4 py-5 md:px-6 md:py-6 max-w-5xl mx-auto w-full space-y-5">
+    <div className="px-4 py-5 md:px-6 md:py-6 max-w-7xl mx-auto w-full space-y-5">
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between">
         <Button
           variant="ghost"
           size="sm"
           onClick={() => router.push("/dashboard/patients")}
-          className="text-muted-foreground"
+          className="text-muted-foreground hover:bg-white/40 transition-colors"
         >
           <ArrowLeft className="w-4 h-4 mr-1" />
-          Pacientes
+          Voltar para Pacientes
         </Button>
       </div>
 
-      {/* Patient Card */}
-      <Card className="border-0 shadow-sm">
-        <CardContent className="p-5">
-          <div className="flex items-start gap-4">
-            <Avatar className="w-16 h-16 flex-shrink-0">
-              <AvatarFallback className="bg-primary/10 text-primary text-xl font-bold">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl font-bold">{patient.full_name}</h1>
-                <Badge
-                  variant="secondary"
-                  className={cn(
-                    "text-xs",
-                    patient.status === "active"
-                      ? "bg-green-100 text-green-700"
-                      : patient.status === "inactive"
-                      ? "bg-yellow-100 text-yellow-700"
-                      : "bg-gray-100 text-gray-500"
-                  )}
-                >
-                  {patient.status === "active"
-                    ? "Ativo"
-                    : patient.status === "inactive"
-                    ? "Inativo"
-                    : "Arquivado"}
-                </Badge>
+      {/* Painel do Paciente (estilo modal grande com sidebar) */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} orientation={orientation} className="w-full">
+        <div className={cn(
+          "w-full rounded-[24px] lg:rounded-[32px] glass-panel overflow-hidden flex flex-col lg:grid lg:grid-cols-[280px_minmax(0,1fr)] lg:h-[calc(100vh-9rem)]",
+          !isMobile && "min-h-[600px]"
+        )}>
+          {/* Mobile Tab Selector - Clean and Premium */}
+          <div className="lg:hidden flex items-center justify-between p-4 bg-white/40 backdrop-blur-md border-b border-white/20">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl gradient-primary flex items-center justify-center text-white shadow-lg shadow-primary/20">
+                <ActiveIcon className="w-5 h-5" />
               </div>
-
-              <div className="flex items-center gap-4 mt-2 flex-wrap">
-                {patient.phone && (
-                  <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Phone className="w-3.5 h-3.5" />
-                    {patient.phone}
-                  </span>
-                )}
-                {patient.email && (
-                  <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Mail className="w-3.5 h-3.5" />
-                    {patient.email}
-                  </span>
-                )}
-                {patient.date_of_birth && (
-                  <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Calendar className="w-3.5 h-3.5" />
-                    {formatDate(patient.date_of_birth)}
-                  </span>
-                )}
+              <div>
+                <p className="text-[10px] font-bold text-primary/60 uppercase tracking-tighter leading-none mb-1">Seção atual</p>
+                <h2 className="text-sm font-bold text-foreground leading-none">{activeTabInfo.label}</h2>
               </div>
+            </div>
+            
+            <Dialog>
+              <DialogTrigger render={
+                <Button variant="ghost" size="sm" className="rounded-full bg-white/60 border border-white/80 shadow-sm text-primary font-bold text-[11px] h-9 px-4 hover:bg-white transition-all">
+                  Mudar Seção
+                  <ChevronDown className="w-3.5 h-3.5 ml-1.5 opacity-60" />
+                </Button>
+              } />
+              <DialogContent className="sm:max-w-[400px] p-0 overflow-hidden rounded-[32px] border-none glass-panel">
+                <div className="p-6 bg-gradient-to-br from-primary/10 to-transparent">
+                  <h3 className="text-xl font-bold text-primary mb-1">Navegação</h3>
+                  <p className="text-xs text-muted-foreground mb-6">Selecione uma seção para visualizar os detalhes.</p>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    {TABS.map((tab) => {
+                      const Icon = tab.icon;
+                      const isActive = activeTab === tab.value;
+                      return (
+                        <DialogClose
+                          key={tab.value}
+                          render={
+                            <Button
+                              variant="ghost"
+                              onClick={() => setActiveTab(tab.value)}
+                              className={cn(
+                                "flex flex-col items-start gap-2 h-auto p-4 rounded-2xl border transition-all text-left",
+                                isActive 
+                                  ? "bg-primary text-white border-primary shadow-lg shadow-primary/20 scale-[1.02]" 
+                                  : "bg-white/40 border-white/60 hover:bg-white/60 text-foreground"
+                              )}
+                            >
+                              <Icon className={cn("w-5 h-5", isActive ? "text-white" : "text-primary")} />
+                              <span className="text-[11px] font-bold leading-tight">{tab.label}</span>
+                            </Button>
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="p-4 bg-white/20 border-t border-white/20 flex justify-center">
+                  <DialogClose render={<Button variant="ghost" className="w-full rounded-xl font-bold text-muted-foreground">Fechar</Button>} />
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
 
-              {/* Quick stats */}
-              <div className="flex items-center gap-4 mt-3">
-                <div className="text-center px-3 py-1.5 rounded-lg bg-primary/5">
-                  <p className="text-lg font-bold text-primary">{completedSessions}</p>
-                  <p className="text-[10px] text-muted-foreground">Realizadas</p>
-                </div>
-                <div className="text-center px-3 py-1.5 rounded-lg bg-blue-50">
-                  <p className="text-lg font-bold text-blue-600">{scheduledSessions}</p>
-                  <p className="text-[10px] text-muted-foreground">Agendadas</p>
-                </div>
-                <div className="text-center px-3 py-1.5 rounded-lg bg-emerald-50">
-                  <p className="text-lg font-bold text-emerald-600">
-                    {formatCurrency(patient.session_price || 150)}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground">Sessão</p>
-                </div>
+          <div className="bg-white/30 p-2 lg:p-5 overflow-x-auto lg:overflow-y-auto border-b lg:border-b-0 lg:border-r border-white/20 scrollbar-hide hidden lg:block">
+            <div className="hidden lg:flex items-center gap-3 mb-8 p-2 rounded-2xl bg-white/40 border border-white/50 shadow-sm">
+              <Avatar className="w-10 h-10 ring-2 ring-primary/20">
+                <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
+                  {patient.full_name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-primary/60 uppercase tracking-tighter">Paciente em foco</p>
+                <p className="text-sm font-bold truncate text-foreground">{patient.full_name}</p>
               </div>
             </div>
 
-            {!isSecretary && (
-              <div className="flex flex-col gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 border-primary/30 text-primary hover:bg-primary/5 shadow-sm"
-                  onClick={handleExportFullRecord}
-                  disabled={isExporting}
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  Prontuário Completo
-                </Button>
-              </div>
-            )}
+            <TabsList className="w-fit lg:w-full h-fit bg-transparent p-1 flex flex-row flex-nowrap lg:flex-col gap-2 pr-10 lg:pr-1">
+              <TabsTrigger value="info" className="glass-pill whitespace-nowrap px-4 lg:px-4 py-3 lg:py-2.5">
+                <User className="w-4 h-4" />
+                <span className="lg:inline">{isMobile ? "Perfil" : "Perfil do Paciente"}</span>
+              </TabsTrigger>
+              <TabsTrigger value="sessions" className="glass-pill whitespace-nowrap px-4 lg:px-4 py-3 lg:py-2.5">
+                <Clock className="w-4 h-4" />
+                <span className="lg:inline">{isMobile ? "Sessões" : "Sessões (Agendadas)"}</span>
+              </TabsTrigger>
+              <TabsTrigger value="finance" className="glass-pill whitespace-nowrap px-4 lg:px-4 py-3 lg:py-2.5">
+                <Wallet className="w-4 h-4" />
+                <span className="lg:inline">{isMobile ? "Finanças" : "Financeiro"}</span>
+              </TabsTrigger>
+              <TabsTrigger value="notes" className="glass-pill whitespace-nowrap px-4 lg:px-4 py-3 lg:py-2.5">
+                <FileText className="w-4 h-4" />
+                <span className="lg:inline">{isMobile ? "Notas" : "Prontuário Geral"}</span>
+              </TabsTrigger>
+              <TabsTrigger value="behavior" className="glass-pill whitespace-nowrap px-4 lg:px-4 py-3 lg:py-2.5">
+                <Activity className="w-4 h-4" />
+                <span className="lg:inline">{isMobile ? "ABC" : "Comportamento"}</span>
+              </TabsTrigger>
+              <TabsTrigger value="team" className="glass-pill whitespace-nowrap px-4 lg:px-4 py-3 lg:py-2.5">
+                <Users className="w-4 h-4" />
+                <span className="lg:inline">Equipe</span>
+              </TabsTrigger>
+              <TabsTrigger value="protocols" className="glass-pill whitespace-nowrap px-4 lg:px-4 py-3 lg:py-2.5">
+                <ClipboardList className="w-4 h-4" />
+                <span className="lg:inline">Protocolos</span>
+              </TabsTrigger>
+              <TabsTrigger value="anamnesis" className="glass-pill whitespace-nowrap px-4 lg:px-4 py-3 lg:py-2.5">
+                <Shield className="w-4 h-4" />
+                <span className="lg:inline">Anamnese</span>
+              </TabsTrigger>
+              <TabsTrigger value="archive" className="glass-pill whitespace-nowrap px-4 lg:px-4 py-3 lg:py-2.5">
+                <Archive className="w-4 h-4" />
+                <span className="lg:inline">Arquivo</span>
+              </TabsTrigger>
+              <TabsTrigger value="alerts" className="glass-pill whitespace-nowrap px-4 lg:px-4 py-3 lg:py-2.5">
+                <Bell className="w-4 h-4" />
+                <span className="lg:inline">Alertas</span>
+              </TabsTrigger>
+            </TabsList>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Tabs */}
-      <Tabs defaultValue="sessions" className="w-full">
-        <TabsList className="w-full justify-start bg-muted/50 p-1 h-auto">
-          <TabsTrigger value="sessions" className="text-xs data-[state=active]:shadow-sm">
-            <Clock className="w-3.5 h-3.5 mr-1.5" />
-            Sessões ({sessions.length})
-          </TabsTrigger>
-          {!isSecretary && (
-            <TabsTrigger value="notes" className="text-xs data-[state=active]:shadow-sm">
-              <FileText className="w-3.5 h-3.5 mr-1.5" />
-              Prontuário
-            </TabsTrigger>
-          )}
-          <TabsTrigger value="info" className="text-xs data-[state=active]:shadow-sm">
-            <User className="w-3.5 h-3.5 mr-1.5" />
-            Dados
-          </TabsTrigger>
-          {!isSecretary && (
-            <>
-              <TabsTrigger value="network" className="text-xs data-[state=active]:shadow-sm">
-                <Users className="w-3.5 h-3.5 mr-1.5" />
-                Equipe & Protocolos
-              </TabsTrigger>
-              <TabsTrigger value="behavior" className="text-xs data-[state=active]:shadow-sm">
-                <Activity className="w-3.5 h-3.5 mr-1.5" />
-                Comportamento
-              </TabsTrigger>
-              <TabsTrigger value="anamnesis" className="text-xs data-[state=active]:shadow-sm">
-                <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
-                Anamneses
-              </TabsTrigger>
-            </>
-          )}
-        </TabsList>
-
-        {/* Sessions Tab */}
-        <TabsContent value="sessions" className="mt-4 space-y-3">
+          <div className="p-4 lg:p-6 overflow-y-auto min-w-0 w-full flex-1">
+        {/* Sessões */}
+        <TabsContent value="sessions" className="mt-0 space-y-3 w-full">
           <div className="flex justify-end mb-2">
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               onClick={handleExportSessions}
               disabled={isExporting || sessions.length === 0}
             >
@@ -678,21 +855,19 @@ export default function PatientDetailPage() {
               Exportar Sessões (PDF)
             </Button>
           </div>
-          
-          {sessions.length === 0 ? (
-            <Card className="border-0 shadow-sm">
+
+          {scheduledOnlySessions.length === 0 ? (
+            <Card className="border shadow-none">
               <CardContent className="py-12 text-center">
                 <Clock className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">
-                  Nenhuma sessão registrada.
-                </p>
+                <p className="text-sm text-muted-foreground">Nenhuma sessão agendada.</p>
               </CardContent>
             </Card>
           ) : (
-            sessions.map((session: Session) => {
+            scheduledOnlySessions.map((session: Session) => {
               const statusCfg = SESSION_STATUS[session.status];
               return (
-                <Card key={session.id} className="border-0 shadow-sm">
+                <Card key={session.id} className="border shadow-none">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
@@ -717,37 +892,25 @@ export default function PatientDetailPage() {
                           {session.session_price && ` · ${formatCurrency(session.session_price)}`}
                         </p>
                       </div>
-
-                      {session.status === "scheduled" && (
-                        <div className="flex gap-1.5">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs text-green-700 border-green-200 hover:bg-green-50"
-                            onClick={() => handleStatusChange(session.id, "completed")}
-                          >
-                            ✓ Realizada
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs text-red-700 border-red-200 hover:bg-red-50"
-                            onClick={() => handleStatusChange(session.id, "missed")}
-                          >
-                            ✗ Faltou
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-
-                    {session.session_notes_encrypted && !isSecretary && (
-                      <div className="mt-3 p-3 rounded-lg bg-muted/30 text-sm">
-                        <p className="text-xs font-medium text-muted-foreground mb-1">
-                          Nota de Evolução:
-                        </p>
-                        {session.session_notes_encrypted}
+                      <div className="flex gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs text-green-700 border-green-200 hover:bg-green-50"
+                          onClick={() => handleStatusChange(session.id, "completed")}
+                        >
+                          ✓ Realizada
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs text-red-700 border-red-200 hover:bg-red-50"
+                          onClick={() => handleStatusChange(session.id, "missed")}
+                        >
+                          ✗ Faltou
+                        </Button>
                       </div>
-                    )}
+                    </div>
                   </CardContent>
                 </Card>
               );
@@ -755,159 +918,185 @@ export default function PatientDetailPage() {
           )}
         </TabsContent>
 
-        {/* Notes Tab (Prontuário) */}
-        <TabsContent value="notes" className="mt-4 space-y-4">
-          <div className="flex justify-end gap-2 mb-2">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="border-primary/30 text-primary hover:bg-primary/5"
-              onClick={handleExportFullRecord}
-              disabled={isExporting}
-            >
-              <FileText className="w-4 h-4 mr-2" />
-              Relatório Completo (Tudo)
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={handleExportNotes}
-              disabled={isExporting || !patient.notes_encrypted}
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Exportar Notas (Apenas)
-            </Button>
-          </div>
-
-          <Card className="border-0 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <FileText className="w-4 h-4 text-primary" />
-                Nova Nota de Evolução
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Textarea
-                placeholder="Registre a evolução do paciente, observações clínicas, intervenções realizadas..."
-                className="min-h-[120px] resize-none"
-                value={newNote}
-                onChange={(e) => setNewNote(e.target.value)}
-              />
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] text-muted-foreground">
-                  🔒 Dados protegidos com criptografia
-                </p>
-                <Button
-                  size="sm"
-                  className="gradient-primary text-white"
-                  disabled={!newNote.trim() || savingNote}
-                  onClick={handleAddNote}
-                >
-                  {savingNote ? (
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <>
-                      <Plus className="w-3.5 h-3.5 mr-1" />
-                      Adicionar Nota
-                    </>
-                  )}
-                </Button>
+        <TabsContent value="info" className="mt-0 space-y-6 animate-fade-in w-full">
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/20 p-6 rounded-[32px] border border-white/40 backdrop-blur-md">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight text-primary">Perfil do Paciente</h2>
+                <p className="text-sm text-muted-foreground">Dados cadastrais e informações gerais do paciente.</p>
               </div>
-            </CardContent>
-          </Card>
+              {!isEditing && (
+                <Button 
+                  onClick={() => setIsEditing(true)} 
+                  className="rounded-full gradient-primary text-white font-bold px-8 shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all"
+                >
+                  <User className="w-4 h-4 mr-2" />
+                  Editar Perfil
+                </Button>
+              )}
+            </div>
 
-          {patient.notes_encrypted ? (
-            <Card className="border-0 shadow-sm">
-              <CardContent className="p-5">
-                <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans">
-                  {patient.notes_encrypted}
-                </pre>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="border-0 shadow-sm">
-              <CardContent className="py-10 text-center">
-                <FileText className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">
-                  Nenhuma nota registrada ainda.
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white/30 p-8 rounded-[32px] border border-white/40 shadow-lg">
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-black text-primary/60 uppercase ml-4 tracking-widest">Nome Completo:</Label>
+                <Input 
+                  readOnly={!isEditing} 
+                  className={cn("glass-input-field h-14 text-base font-bold px-6", !isEditing && "cursor-default")} 
+                  value={isEditing ? (editForm.full_name || "") : (patient.full_name || "—")} 
+                  name="full_name"
+                  onChange={handleEditChange}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-black text-primary/60 uppercase ml-4 tracking-widest">Data de Nascimento:</Label>
+                <Input 
+                  type={isEditing ? "date" : "text"}
+                  readOnly={!isEditing} 
+                  className={cn("glass-input-field h-14 text-base font-bold px-6", !isEditing && "cursor-default")} 
+                  value={isEditing ? (editForm.date_of_birth || "") : (patient.date_of_birth ? formatDate(patient.date_of_birth) : "—")} 
+                  name="date_of_birth"
+                  onChange={handleEditChange}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-black text-primary/60 uppercase ml-4 tracking-widest">CPF:</Label>
+                <Input 
+                  readOnly={!isEditing} 
+                  className={cn("glass-input-field h-14 text-base font-bold px-6", !isEditing && "cursor-default")} 
+                  value={isEditing ? (editForm.cpf || "") : (patient.cpf || "—")} 
+                  name="cpf"
+                  onChange={handleEditChange}
+                />
+              </div>
+            </div>
 
-        {/* Care Network & Protocols Tab */}
-        <TabsContent value="network" className="mt-4 animate-fade-in space-y-6">
-          <CareNetworkCard 
-            patientId={id as string} 
-            patient={patient}
-            profile={profile}
-          />
-          <ProtocolTrackerCard 
-            patientId={id as string} 
-            patient={patient}
-            profile={profile}
-          />
-        </TabsContent>
+            {/* Responsável Legal Section */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between ml-2">
+                <h3 className="text-xl font-bold text-primary flex items-center gap-2">
+                  <div className="w-2 h-8 bg-indigo-400 rounded-full" />
+                  Responsável Legal
+                </h3>
+                {isEditing && (
+                  <div className="flex items-center gap-2 bg-white/40 px-4 py-2 rounded-full border border-white/60 shadow-sm">
+                    <Checkbox 
+                      id="has_guardian" 
+                      checked={editForm.has_guardian} 
+                      onCheckedChange={(checked) => setEditForm(prev => ({ ...prev, has_guardian: checked }))}
+                    />
+                    <Label htmlFor="has_guardian" className="text-xs font-bold text-primary cursor-pointer">Possui responsável legal?</Label>
+                  </div>
+                )}
+              </div>
 
-        {/* Behavior Tab */}
-        <TabsContent value="behavior" className="mt-4 animate-fade-in">
-          <AbcRecordCard 
-            patientId={id as string} 
-            patient={patient}
-            profile={profile}
-          />
-        </TabsContent>
-
-        {/* Anamneses Tab */}
-        <TabsContent value="anamnesis" className="mt-4 animate-fade-in">
-          <AnamnesisRequestCard patientId={id as string} />
-        </TabsContent>
-
-        {/* Info Tab */}
-        <TabsContent value="info" className="mt-4 space-y-4">
-          <Card className="border-0 shadow-sm">
-            <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <CardTitle className="text-base">Informações Pessoais</CardTitle>
-              {isEditing && (
-                <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => { setIsEditing(false); loadData(); }}>
-                    Cancelar
-                  </Button>
-                  <Button size="sm" className="gradient-primary text-white" onClick={handleUpdatePatient} disabled={isSaving}>
-                    {isSaving ? "Salvando..." : "Salvar Alterações"}
-                  </Button>
+              {(editForm.has_guardian || (!isEditing && guardian)) ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-white/30 p-8 rounded-[32px] border border-white/40 shadow-md">
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-black text-primary/60 uppercase ml-4 tracking-widest">Nome do Responsável:</Label>
+                    <Input 
+                      readOnly={!isEditing} 
+                      className={cn("glass-input-field h-14 text-base font-bold px-6", !isEditing && "cursor-default")} 
+                      value={isEditing ? (editForm.guardian_name || "") : (guardian?.full_name || "—")} 
+                      name="guardian_name"
+                      onChange={handleEditChange}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-black text-primary/60 uppercase ml-4 tracking-widest">CPF do Responsável:</Label>
+                    <Input 
+                      readOnly={!isEditing} 
+                      className={cn("glass-input-field h-14 text-base font-bold px-6", !isEditing && "cursor-default")} 
+                      value={isEditing ? (editForm.guardian_cpf || "") : (guardian?.cpf || "—")} 
+                      name="guardian_cpf"
+                      onChange={handleEditChange}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-black text-primary/60 uppercase ml-4 tracking-widest">Telefone:</Label>
+                    <Input 
+                      readOnly={!isEditing} 
+                      className={cn("glass-input-field h-14 text-base font-bold px-6", !isEditing && "cursor-default")} 
+                      value={isEditing ? (editForm.guardian_phone || "") : (guardian?.phone || "—")} 
+                      name="guardian_phone"
+                      onChange={handleEditChange}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-black text-primary/60 uppercase ml-4 tracking-widest">Email:</Label>
+                    <Input 
+                      readOnly={!isEditing} 
+                      className={cn("glass-input-field h-14 text-base font-bold px-6", !isEditing && "cursor-default")} 
+                      value={isEditing ? (editForm.guardian_email || "") : (guardian?.email || "—")} 
+                      name="guardian_email"
+                      onChange={handleEditChange}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-black text-primary/60 uppercase ml-4 tracking-widest">Parentesco:</Label>
+                    {isEditing ? (
+                      <select
+                        name="guardian_relationship"
+                        className="flex h-14 w-full rounded-full border border-white/40 bg-white/50 px-6 py-2 text-base font-bold focus:ring-primary/20"
+                        value={editForm.guardian_relationship}
+                        onChange={handleEditChange}
+                      >
+                        <option value="mother">Mãe</option>
+                        <option value="father">Pai</option>
+                        <option value="grandfather">Avô/Avó</option>
+                        <option value="uncle">Tio/Tia</option>
+                        <option value="guardian">Tutor Legal</option>
+                        <option value="other">Outro</option>
+                      </select>
+                    ) : (
+                      <Input readOnly className="glass-input-field h-14 text-base font-bold cursor-default px-6" value={
+                        guardian?.relationship === "mother" ? "Mãe" :
+                        guardian?.relationship === "father" ? "Pai" :
+                        guardian?.relationship === "grandfather" ? "Avô/Avó" :
+                        guardian?.relationship === "uncle" ? "Tio/Tia" :
+                        guardian?.relationship === "guardian" ? "Tutor Legal" :
+                        guardian?.relationship === "other" ? "Outro" : "—"
+                      } />
+                    )}
+                  </div>
+                  <div className="flex flex-col justify-end pb-2">
+                    <div className={cn(
+                      "flex items-center gap-3 px-6 h-14 rounded-full border transition-all",
+                      editForm.guardian_is_financial ? "bg-emerald-50 border-emerald-200" : "bg-white/40 border-white/60"
+                    )}>
+                      <Checkbox 
+                        id="guardian_is_financial" 
+                        disabled={!isEditing}
+                        checked={editForm.guardian_is_financial} 
+                        onCheckedChange={(checked) => setEditForm(prev => ({ ...prev, guardian_is_financial: checked }))}
+                      />
+                      <Label htmlFor="guardian_is_financial" className="text-sm font-bold text-primary cursor-pointer">Responsável Financeiro?</Label>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white/20 p-8 rounded-[32px] border border-white/40 border-dashed text-center">
+                  <p className="text-sm text-muted-foreground italic">Este paciente não possui um responsável legal cadastrado.</p>
                 </div>
               )}
-            </CardHeader>
-            <CardContent>
-              {isEditing ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5 md:col-span-2">
-                    <Label>Nome Completo</Label>
-                    <Input name="full_name" value={editForm.full_name} onChange={handleEditChange} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>E-mail</Label>
-                    <Input name="email" value={editForm.email || ""} onChange={handleEditChange} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Telefone</Label>
-                    <Input name="phone" value={editForm.phone || ""} onChange={handleEditChange} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>CPF</Label>
-                    <Input name="cpf" value={editForm.cpf || ""} onChange={handleEditChange} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Data de Nascimento</Label>
-                    <Input name="date_of_birth" type="date" value={editForm.date_of_birth || ""} onChange={handleEditChange} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Gênero</Label>
+            </div>
+
+            {/* General Info Section */}
+            <div className="space-y-4">
+              <h3 className="text-xl font-bold text-primary ml-2 flex items-center gap-2">
+                <div className="w-2 h-8 bg-primary rounded-full" />
+                Informações Gerais
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-white/30 p-8 rounded-[32px] border border-white/40 shadow-md">
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-black text-muted-foreground uppercase ml-2 tracking-widest">Início do Tratamento:</p>
+                  <Input readOnly className="glass-input-field h-12 text-sm font-bold cursor-default px-5" value={formatDate(patient.created_at)} />
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-black text-muted-foreground uppercase ml-2 tracking-widest">Gênero:</p>
+                  {isEditing ? (
                     <select
                       name="gender"
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex h-12 w-full rounded-full border border-white/40 bg-white/50 px-5 py-2 text-sm font-bold focus:ring-primary/20"
                       value={editForm.gender}
                       onChange={handleEditChange}
                     >
@@ -916,164 +1105,609 @@ export default function PatientDetailPage() {
                       <option value="male">Masculino</option>
                       <option value="other">Outro</option>
                     </select>
-                  </div>
-                  <div className="space-y-1.5 md:col-span-2">
-                    <Label>Endereço</Label>
-                    <Input name="address" value={editForm.address || ""} onChange={handleEditChange} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Contato de Emergência</Label>
-                    <Input name="emergency_contact_name" value={editForm.emergency_contact_name || ""} onChange={handleEditChange} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Tel. Emergência</Label>
-                    <Input name="emergency_contact_phone" value={editForm.emergency_contact_phone || ""} onChange={handleEditChange} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Convênio</Label>
-                    <Input name="insurance_provider" value={editForm.insurance_provider || ""} onChange={handleEditChange} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Nº Convênio</Label>
-                    <Input name="insurance_number" value={editForm.insurance_number || ""} onChange={handleEditChange} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Valor da Sessão (R$)</Label>
-                    <Input name="session_price" type="number" value={editForm.session_price || ""} onChange={handleEditChange} />
-                  </div>
-
-                  <Separator className="md:col-span-2 my-2" />
-                  
-                  <div className="md:col-span-2 flex items-center space-x-2">
-                    <Checkbox 
-                      id="edit_has_guardian" 
-                      checked={editForm.has_guardian}
-                      onCheckedChange={(checked) => setEditForm((prev: any) => ({ ...prev, has_guardian: !!checked }))}
-                    />
-                    <Label htmlFor="edit_has_guardian" className="font-semibold text-primary">Possui Responsável (Paciente Infantil)</Label>
-                  </div>
-
-                  {editForm.has_guardian && (
-                    <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 bg-primary/5 p-4 rounded-lg border border-primary/10">
-                      <div className="space-y-1.5 md:col-span-2">
-                        <Label>Nome do Responsável</Label>
-                        <Input name="guardian_name" value={editForm.guardian_name} onChange={handleEditChange} />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>E-mail</Label>
-                        <Input name="guardian_email" value={editForm.guardian_email} onChange={handleEditChange} />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Telefone</Label>
-                        <Input name="guardian_phone" value={editForm.guardian_phone} onChange={handleEditChange} />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>CPF do Responsável</Label>
-                        <Input name="guardian_cpf" value={editForm.guardian_cpf} onChange={handleEditChange} />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Parentesco</Label>
-                        <select
-                          name="guardian_relationship"
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                          value={editForm.guardian_relationship}
-                          onChange={handleEditChange}
-                        >
-                          <option value="mother">Mãe</option>
-                          <option value="father">Pai</option>
-                          <option value="grandparent">Avô/Avó</option>
-                          <option value="other">Outro</option>
-                        </select>
-                      </div>
-                      <div className="md:col-span-2 flex items-center space-x-2">
-                        <Checkbox 
-                          id="edit_guardian_is_financial" 
-                          checked={editForm.guardian_is_financial}
-                          onCheckedChange={(checked) => setEditForm((prev: any) => ({ ...prev, guardian_is_financial: !!checked }))}
-                        />
-                        <Label htmlFor="edit_guardian_is_financial">Responsável financeiro</Label>
-                      </div>
-                    </div>
+                  ) : (
+                    <Input readOnly className="glass-input-field h-12 text-sm font-bold cursor-default px-5" value={patient.gender === "female" ? "Feminino" : patient.gender === "male" ? "Masculino" : patient.gender === "other" ? "Outro" : "Não informado"} />
                   )}
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {[
-                    { label: "CPF", value: patient.cpf },
-                    { label: "Data de Nascimento", value: patient.date_of_birth ? formatDate(patient.date_of_birth) : null },
-                    { label: "Gênero", value: patient.gender === "female" ? "Feminino" : patient.gender === "male" ? "Masculino" : patient.gender === "other" ? "Outro" : "Não informado" },
-                    { label: "Endereço", value: patient.address },
-                    { label: "Contato de Emergência", value: patient.emergency_contact_name },
-                    { label: "Tel. Emergência", value: patient.emergency_contact_phone },
-                    { label: "Convênio", value: patient.insurance_provider },
-                    { label: "Nº Convênio", value: patient.insurance_number },
-                    { label: "Valor da Sessão", value: patient.session_price ? formatCurrency(patient.session_price) : null },
-                  ].map((field) => (
-                    <div key={field.label}>
-                      <p className="text-xs text-muted-foreground">{field.label}</p>
-                      <p className="text-sm font-medium mt-0.5">
-                        {field.value || "—"}
-                      </p>
-                    </div>
-                  ))}
-                  
-                  {guardian && (
-                    <div className="md:col-span-2 mt-4 p-4 rounded-xl bg-primary/5 border border-primary/10">
-                      <p className="text-xs font-bold text-primary uppercase tracking-wider mb-3">Responsável Cadastrado</p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-[10px] text-muted-foreground uppercase">Nome</p>
-                          <p className="text-sm font-medium">{guardian.full_name}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-muted-foreground uppercase">Parentesco</p>
-                          <p className="text-sm font-medium">
-                            {guardian.relationship === 'mother' ? 'Mãe' : 
-                             guardian.relationship === 'father' ? 'Pai' : 
-                             guardian.relationship === 'grandparent' ? 'Avô/Avó' : 'Outro'}
-                          </p>
-                        </div>
-                        {guardian.phone && (
-                          <div>
-                            <p className="text-[10px] text-muted-foreground uppercase">Telefone</p>
-                            <p className="text-sm font-medium">{guardian.phone}</p>
-                          </div>
-                        )}
-                        {guardian.is_financial_responsible && (
-                          <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 w-fit">
-                            Responsável Financeiro
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-black text-muted-foreground uppercase ml-2 tracking-widest">Status:</p>
+                  <div className="h-12 flex items-center px-5 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-700 font-bold text-sm">
+                    Ativo
+                  </div>
                 </div>
-              )}
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-black text-muted-foreground uppercase ml-2 tracking-widest">País de residência:</p>
+                  <Input readOnly className="glass-input-field h-12 text-sm font-bold cursor-default px-5" value="Brasil" />
+                </div>
+                <div className="md:col-span-2 space-y-1.5">
+                  <p className="text-[10px] font-black text-muted-foreground uppercase ml-2 tracking-widest">Endereço:</p>
+                  <Input 
+                    readOnly={!isEditing} 
+                    className={cn("glass-input-field h-12 text-sm font-bold px-5", !isEditing && "cursor-default")} 
+                    value={isEditing ? (editForm.address || "") : (patient.address || "—")} 
+                    name="address"
+                    onChange={handleEditChange}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Finance Section */}
+            <div className="space-y-4">
+              <h3 className="text-xl font-bold text-primary ml-2 flex items-center gap-2">
+                <div className="w-2 h-8 bg-emerald-400 rounded-full" />
+                Financeiro
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.5fr] gap-6 bg-white/30 p-8 rounded-[32px] border border-white/40 shadow-md items-end">
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-black text-muted-foreground uppercase ml-2 tracking-widest">Moeda:</p>
+                  <Input readOnly className="glass-input-field h-12 text-sm font-bold cursor-default px-5" value="BRL - Real brasileiro" />
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-black text-muted-foreground uppercase ml-2 tracking-widest">Valor da sessão:</p>
+                  <Input 
+                    readOnly={!isEditing} 
+                    className={cn("glass-input-field h-12 text-sm font-black px-5 text-emerald-600", !isEditing && "cursor-default")} 
+                    value={isEditing ? (editForm.session_price || "") : (patient.session_price ? formatCurrency(patient.session_price) : "—")} 
+                    name="session_price"
+                    type={isEditing ? "number" : "text"}
+                    onChange={handleEditChange}
+                  />
+                </div>
+                <Button variant="ghost" className="h-12 rounded-full gradient-primary text-white font-black text-xs shadow-lg shadow-primary/20 hover:opacity-90 active:scale-95 transition-all">
+                  <Wallet className="w-4 h-4 mr-2" />
+                  ACESSAR DASHBOARD FINANCEIRO
+                </Button>
+
+                {((isEditing && editForm.guardian_is_financial && editForm.has_guardian) || (!isEditing && guardian?.is_financial_responsible)) && (
+                  <div className="md:col-span-3 mt-4 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-3 animate-fade-in">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                      <User className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest leading-none mb-1">Pagador Responsável</p>
+                      <p className="text-sm font-bold text-slate-800">{isEditing ? editForm.guardian_name : guardian?.full_name}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Emergency Contacts */}
+            <div className="space-y-4">
+              <h3 className="text-xl font-bold text-primary ml-2 flex items-center gap-2">
+                <div className="w-2 h-8 bg-red-400 rounded-full" />
+                Contatos de Emergência
+              </h3>
+              <div className="bg-white/30 p-8 rounded-[32px] border border-white/40 shadow-md flex flex-col md:flex-row gap-6 items-center justify-between">
+                {patient.emergency_contact_name ? (
+                  <div className="flex items-center gap-4 p-4 rounded-[24px] bg-white/40 border border-white/50 flex-1 w-full">
+                    <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center font-black text-lg shadow-sm">
+                      {patient.emergency_contact_name[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-sm font-black text-slate-800 leading-none mb-1">{patient.emergency_contact_name}</p>
+                      <p className="text-xs font-bold text-muted-foreground">{patient.emergency_contact_phone || "Sem telefone"}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground italic flex-1">Nenhum contato de emergência cadastrado.</p>
+                )}
+                <Button variant="ghost" className="h-12 rounded-full gradient-primary text-white font-black text-xs px-8 shadow-lg shadow-primary/20 hover:opacity-90 active:scale-95 transition-all">
+                  <Plus className="w-4 h-4 mr-2" />
+                  ADICIONAR CONTATO
+                </Button>
+              </div>
+            </div>
+
+            {/* Health and Treatment Placeholder */}
+            <div className="space-y-4">
+              <h3 className="text-xl font-bold text-primary ml-2 flex items-center gap-2">
+                <div className="w-2 h-8 bg-blue-400 rounded-full" />
+                Saúde e Tratamento
+              </h3>
+              <div className="bg-white/30 p-12 rounded-[32px] border border-white/40 shadow-md border-dashed text-center">
+                <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4">
+                  <Heart className="w-8 h-8 text-blue-400 opacity-60" />
+                </div>
+                <p className="text-sm text-muted-foreground italic font-medium">Informações de saúde, alergias e histórico médico do paciente...</p>
+              </div>
+            </div>
+            
+            {isEditing && (
+              <div className="flex justify-end gap-3 pt-6 pb-12">
+                <Button variant="ghost" className="rounded-full px-10 h-12 font-bold" onClick={() => { setIsEditing(false); loadData(); }}>
+                  Cancelar
+                </Button>
+                <Button className="gradient-primary text-white rounded-full px-16 h-12 font-black shadow-lg shadow-primary/20 hover:shadow-primary/40 active:scale-95 transition-all" onClick={handleUpdatePatient} disabled={isSaving}>
+                  {isSaving ? "Salvando..." : "Salvar Alterações"}
+                </Button>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* Prontuário */}
+        <TabsContent value="notes" className="mt-0 space-y-6 w-full animate-fade-in">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/20 p-6 rounded-[32px] border border-white/40 backdrop-blur-md">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-primary">Prontuário e Evolução</h2>
+              <p className="text-sm text-muted-foreground">Registro de notas de evolução e histórico clínico do paciente.</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                className="rounded-full border-primary/20 text-primary hover:bg-primary/5 h-10 px-6 font-bold text-xs"
+                onClick={handleExportFullRecord}
+                disabled={isExporting}
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Relatório Completo
+              </Button>
+              <Button
+                variant="outline"
+                className="rounded-full border-primary/20 text-primary hover:bg-primary/5 h-10 px-6 font-bold text-xs"
+                onClick={handleExportNotes}
+                disabled={isExporting || !patient.notes_encrypted}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Exportar Notas
+              </Button>
+            </div>
+          </div>
+
+          <Card className="glass-panel border-0 shadow-lg rounded-[32px] overflow-hidden">
+            <CardHeader className="pb-4 bg-white/30 backdrop-blur-sm border-b border-white/40">
+              <CardTitle className="text-base font-bold flex items-center gap-2 text-primary">
+                <FileText className="w-5 h-5" />
+                Nova Nota de Evolução
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-8 space-y-4">
+              <Textarea
+                placeholder="Registre a evolução do paciente nesta sessão..."
+                className="min-h-[160px] rounded-[24px] border-white/40 bg-white/50 focus:bg-white/80 transition-all p-6 text-sm leading-relaxed resize-none shadow-inner"
+                value={newNote}
+                onChange={(e) => setNewNote(e.target.value)}
+              />
+              <div className="flex items-center justify-between pt-2">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <p className="text-[11px] font-bold uppercase tracking-widest">Criptografia de ponta-a-ponta ativa</p>
+                </div>
+                <Button
+                  className="gradient-primary text-white rounded-full h-11 px-10 font-black shadow-lg shadow-primary/20 hover:shadow-primary/40 active:scale-95 transition-all"
+                  disabled={!newNote.trim() || savingNote}
+                  onClick={handleAddNote}
+                >
+                  {savingNote ? "Salvando..." : "ADICIONAR NOTA"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
-          {!isEditing && (
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setIsEditing(true)}>
-                <Edit className="w-4 h-4 mr-2" />
-                Editar Dados
-              </Button>
-              <Button 
-                variant="outline" 
-                className="text-destructive border-destructive/30 hover:bg-destructive/5"
-                onClick={handleArchive}
-                disabled={isArchiving || patient.status === "archived"}
-              >
-                {isArchiving ? (
-                  <div className="w-4 h-4 border-2 border-destructive/30 border-t-destructive rounded-full animate-spin mr-2" />
-                ) : (
-                  <Trash2 className="w-4 h-4 mr-2" />
+          <Card className="glass-panel border-0 shadow-lg rounded-[32px] overflow-hidden">
+            <CardContent className="p-8">
+              <div className="flex items-center gap-2 mb-6">
+                <History className="w-5 h-5 text-primary/40" />
+                <h3 className="text-sm font-black text-primary/40 uppercase tracking-widest">Linha do Tempo de Evolução</h3>
+              </div>
+              
+              <div className="space-y-6">
+                {/* Notas Manuais */}
+                {patient.notes_encrypted && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-4">Observações Gerais</p>
+                    <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans text-slate-700 font-medium bg-white/20 p-8 rounded-[24px] border border-white/40">
+                      {patient.notes_encrypted}
+                    </pre>
+                  </div>
                 )}
-                {patient.status === "archived" ? "Paciente Arquivado" : "Arquivar"}
-              </Button>
-            </div>
-          )}
+
+                {/* Evoluções de Sessão */}
+                {sessions.filter(s => s.status === "completed" && s.session_notes_encrypted).map(session => {
+                  let evolution = null;
+                  try {
+                    evolution = JSON.parse(session.session_notes_encrypted || "{}");
+                  } catch (e) {
+                    evolution = { notes: session.session_notes_encrypted };
+                  }
+
+                  return (
+                    <div key={session.id} className="space-y-2 animate-in fade-in slide-in-from-bottom-2">
+                      <div className="flex items-center justify-between ml-4">
+                        <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">
+                          Sessão em {formatDate(session.scheduled_at)} às {formatTime(session.scheduled_at)}
+                        </p>
+                        {evolution.mood_happy_sad && (
+                          <div className="flex gap-2">
+                            <Badge variant="outline" className="bg-emerald-50 text-emerald-600 border-emerald-100 text-[9px] font-black uppercase">
+                              Humor: {evolution.mood_happy_sad}/10
+                            </Badge>
+                          </div>
+                        )}
+                      </div>
+                      <div className="bg-white/40 p-6 rounded-[24px] border border-white/60 shadow-sm">
+                        <p className="text-sm leading-relaxed font-medium text-slate-700">
+                          {evolution.notes || evolution}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {!patient.notes_encrypted && sessions.filter(s => s.status === "completed" && s.session_notes_encrypted).length === 0 && (
+                  <p className="text-sm text-muted-foreground italic text-center py-10">Nenhum registro de evolução encontrado.</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
+
+        {/* Equipe */}
+        <TabsContent value="team" className="mt-0 space-y-6 w-full animate-fade-in">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/20 p-6 rounded-[32px] border border-white/40 backdrop-blur-md">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-primary">Rede de Apoio</h2>
+              <p className="text-sm text-muted-foreground">Gestão da equipe multidisciplinar que acompanha o paciente.</p>
+            </div>
+          </div>
+          <CareNetworkCard patientId={id as string} patient={patient} profile={profile} />
+        </TabsContent>
+
+        {/* Protocolos */}
+        <TabsContent value="protocols" className="mt-0 space-y-6 w-full animate-fade-in">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/20 p-6 rounded-[32px] border border-white/40 backdrop-blur-md">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-primary">Protocolos e Testes</h2>
+              <p className="text-sm text-muted-foreground">Acompanhamento de protocolos clínicos e rastreadores de desenvolvimento.</p>
+            </div>
+          </div>
+          <ProtocolTrackerCard patientId={id as string} patient={patient} profile={profile} />
+        </TabsContent>
+
+        {/* Comportamento */}
+        <TabsContent value="behavior" className="mt-0 space-y-6 w-full animate-fade-in">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/20 p-6 rounded-[32px] border border-white/40 backdrop-blur-md">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-primary">Análise Comportamental</h2>
+              <p className="text-sm text-muted-foreground">Registro de ocorrências (Antecedente, Comportamento e Consequência).</p>
+            </div>
+          </div>
+          <AbcRecordCard patientId={id as string} patient={patient} profile={profile} />
+        </TabsContent>
+
+        {/* Financeiro por paciente */}
+        <TabsContent value="finance" className="mt-0 space-y-6 w-full animate-fade-in">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/20 p-6 rounded-[32px] border border-white/40 backdrop-blur-md">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-primary">Financeiro do Paciente</h2>
+              <p className="text-sm text-muted-foreground">Histórico de pagamentos, sessões faturadas e pendências.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card className="glass-panel border-0 shadow-lg rounded-[32px] overflow-hidden bg-emerald-50/20">
+              <CardContent className="p-8">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center">
+                    <Wallet className="w-6 h-6 text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-emerald-700/60 uppercase tracking-widest mb-0.5">Total Recebido</p>
+                    <p className="text-3xl font-black text-emerald-700 tracking-tight">{formatCurrency(totalPatientIncome)}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="glass-panel border-0 shadow-lg rounded-[32px] overflow-hidden bg-amber-50/20">
+              <CardContent className="p-8">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center">
+                    <AlertCircle className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-amber-700/60 uppercase tracking-widest mb-0.5">Valor Pendente</p>
+                    <p className="text-3xl font-black text-amber-700 tracking-tight">{formatCurrency(pendingPatientIncome)}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 mb-4 ml-2">
+              <div className="w-2 h-6 bg-primary rounded-full" />
+              <h3 className="text-sm font-black text-primary/40 uppercase tracking-widest">Últimos Lançamentos</h3>
+            </div>
+
+            {patientCashFlow.length === 0 ? (
+              <Card className="glass-panel border-0 shadow-md rounded-[32px] bg-white/10">
+                <CardContent className="py-16 text-center">
+                  <Wallet className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground font-medium">Nenhum lançamento financeiro para este paciente.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              patientCashFlow.map((tx) => (
+                <Card key={tx.id} className="glass-panel border-0 shadow-sm rounded-[24px] bg-white/40 hover:bg-white/60 transition-all border border-white/20">
+                  <CardContent className="p-5 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className={cn(
+                        "w-10 h-10 rounded-xl flex items-center justify-center shadow-sm",
+                        tx.type === "income" ? "bg-emerald-100 text-emerald-600" : "bg-red-100 text-red-600"
+                      )}>
+                        {tx.type === "income" ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">{tx.description}</p>
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{formatDate(tx.created_at)}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className={cn("text-lg font-black tracking-tight", tx.type === "income" ? "text-emerald-600" : "text-red-600")}>
+                        {tx.type === "income" ? "+" : "-"} {formatCurrency(Number(tx.amount))}
+                      </p>
+                      <Badge 
+                        variant="outline" 
+                        className={cn(
+                          "text-[9px] font-black uppercase tracking-widest px-2 border-0 shadow-sm mt-1",
+                          tx.status === "confirmed" ? "bg-emerald-100 text-emerald-700" : 
+                          tx.status === "pending" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"
+                        )}
+                      >
+                        {tx.status === "confirmed" ? "Confirmado" : tx.status === "pending" ? "Pendente" : "Cancelado"}
+                      </Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        {/* Arquivo de Sessões */}
+        <TabsContent value="archive" className="mt-0 space-y-6 w-full animate-fade-in">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/20 p-6 rounded-[32px] border border-white/40 backdrop-blur-md">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-primary">Arquivo de Sessões</h2>
+              <p className="text-sm text-muted-foreground">Histórico completo de sessões realizadas, canceladas e faltas.</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {archivedSessions.length === 0 ? (
+              <Card className="glass-panel border-0 shadow-md rounded-[32px] bg-white/10">
+                <CardContent className="py-16 text-center">
+                  <Calendar className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground font-medium">Nenhuma sessão arquivada.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              archivedSessions.map((session) => {
+                const statusCfg = SESSION_STATUS[session.status];
+                return (
+                  <Card key={session.id} className="glass-panel border-0 shadow-sm rounded-[24px] bg-white/40 hover:bg-white/60 transition-all border border-white/20">
+                    <CardContent className="p-5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-2xl bg-primary/5 flex flex-col items-center justify-center border border-primary/10">
+                            <span className="text-[10px] font-black text-primary leading-none uppercase">{new Date(session.scheduled_at).toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')}</span>
+                            <span className="text-lg font-black text-primary leading-none mt-0.5">{new Date(session.scheduled_at).getDate()}</span>
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-bold text-slate-800">{formatTime(session.scheduled_at)}</p>
+                              <Badge className={cn("text-[9px] font-black uppercase tracking-widest h-5 px-2 border-0 shadow-sm", statusCfg.color)}>{statusCfg.label}</Badge>
+                            </div>
+                            <p className="text-xs font-medium text-slate-500 mt-0.5">
+                              {session.duration_minutes} MIN · {session.session_type}
+                            </p>
+                          </div>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="rounded-full text-primary hover:bg-primary/10 transition-all active:scale-95"
+                          onClick={() => {
+                            setViewingSession(session);
+                            setShowSessionModal(true);
+                          }}
+                        >
+                          <ChevronRight className="w-5 h-5" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+        </TabsContent>
+
+        {/* Session Detail Modal */}
+        <Dialog open={showSessionModal} onOpenChange={setShowSessionModal}>
+          <DialogContent className="sm:max-w-xl rounded-[32px] border-white/40 backdrop-blur-2xl bg-white/90 shadow-2xl p-0 overflow-hidden">
+            {viewingSession && (
+              <div className="animate-in fade-in zoom-in-95 duration-200">
+                <div className="p-8 border-b border-indigo-100 bg-white/50 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-black text-primary tracking-tight uppercase leading-none">
+                      Detalhes da Sessão
+                    </h2>
+                    <p className="text-xs font-bold text-muted-foreground/60 mt-1 uppercase tracking-widest">
+                      {formatDate(viewingSession.scheduled_at)} às {formatTime(viewingSession.scheduled_at)}
+                    </p>
+                  </div>
+                  <Badge className={cn("rounded-full px-4 py-1 text-[10px] font-black uppercase tracking-widest border-0", SESSION_STATUS[viewingSession.status].color)}>
+                    {SESSION_STATUS[viewingSession.status].label}
+                  </Badge>
+                </div>
+
+                <div className="p-8 space-y-8 max-h-[60vh] overflow-y-auto">
+                  {/* Evolução */}
+                  <div className="space-y-4">
+                    <Label className="text-[11px] font-black text-primary/60 uppercase ml-2 tracking-widest flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      Evolução Clínica
+                    </Label>
+                    <div className="bg-white/40 p-6 rounded-3xl border border-white/60 shadow-sm italic text-sm leading-relaxed text-slate-700">
+                      {(() => {
+                        try {
+                          const evolution = JSON.parse(viewingSession.session_notes_encrypted || "{}");
+                          return evolution.notes || viewingSession.session_notes_encrypted || "Nenhuma nota registrada.";
+                        } catch (e) {
+                          return viewingSession.session_notes_encrypted || "Nenhuma nota registrada.";
+                        }
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Mood Indices */}
+                  {(() => {
+                    try {
+                      const evolution = JSON.parse(viewingSession.session_notes_encrypted || "{}");
+                      if (!evolution.mood_happy_sad && !evolution.mood_anxious_calm) return null;
+                      
+                      return (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100 space-y-3">
+                            <div className="flex items-center justify-between text-indigo-600">
+                              <Label className="text-[9px] font-black uppercase tracking-widest">Humor</Label>
+                              {evolution.mood_happy_sad >= 7 ? <Smile className="w-4 h-4" /> : <Frown className="w-4 h-4" />}
+                            </div>
+                            <p className="text-2xl font-black text-indigo-700">{evolution.mood_happy_sad}/10</p>
+                          </div>
+                          <div className="bg-amber-50/50 p-4 rounded-2xl border border-amber-100 space-y-3">
+                            <div className="flex items-center justify-between text-amber-600">
+                              <Label className="text-[9px] font-black uppercase tracking-widest">Agitação</Label>
+                              {evolution.mood_anxious_calm >= 7 ? <Waves className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
+                            </div>
+                            <p className="text-2xl font-black text-amber-700">{evolution.mood_anxious_calm}/10</p>
+                          </div>
+                        </div>
+                      );
+                    } catch (e) {
+                      return null;
+                    }
+                  })()}
+
+                  {/* Meta Data */}
+                  <div className="grid grid-cols-2 gap-8 bg-white/40 p-6 rounded-3xl border border-white/60">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-black text-primary/40 uppercase tracking-widest">Duração</p>
+                      <p className="text-base font-black text-primary">{viewingSession.duration_minutes} min</p>
+                    </div>
+                    <div className="text-right space-y-1">
+                      <p className="text-[10px] font-black text-primary/40 uppercase tracking-widest">Tipo</p>
+                      <p className="text-base font-black text-primary capitalize">{viewingSession.session_type}</p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="p-4 bg-white/50 border-t border-indigo-100 flex justify-between items-center px-8">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => handleExportSingleSession(viewingSession)}
+                    disabled={isExporting}
+                    className="rounded-full px-6 h-10 font-bold border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    EXPORTAR PDF
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    onClick={() => setShowSessionModal(false)}
+                    className="rounded-full px-8 font-black text-primary"
+                  >
+                    FECHAR
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Lembretes e Alertas */}
+        <TabsContent value="alerts" className="mt-0 space-y-6 w-full animate-fade-in">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/20 p-6 rounded-[32px] border border-white/40 backdrop-blur-md">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-primary">Alertas e Lembretes</h2>
+              <p className="text-sm text-muted-foreground">Notificações importantes e lembretes configurados para este paciente.</p>
+            </div>
+            <Button className="rounded-full gradient-primary text-white font-black px-8 h-11 shadow-lg shadow-primary/20 active:scale-95 transition-all">
+              <Plus className="w-4 h-4 mr-2" />
+              NOVO ALERTA
+            </Button>
+          </div>
+
+          <div className="space-y-3">
+            {patientTasks.length === 0 ? (
+              <Card className="glass-panel border-0 shadow-md rounded-[32px] bg-white/10 border-dashed border-2 border-white/40">
+                <CardContent className="py-24 text-center">
+                  <div className="w-20 h-20 rounded-full bg-white/50 flex items-center justify-center mx-auto mb-6 shadow-inner border border-white/60">
+                    <Bell className="w-10 h-10 text-primary opacity-30" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-800 mb-2">Tudo em dia!</h3>
+                  <p className="text-sm text-muted-foreground font-medium max-w-[300px] mx-auto">Não há alertas críticos ou lembretes pendentes para este paciente no momento.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              patientTasks.map((task) => (
+                <Card key={task.id} className="glass-panel border-0 shadow-sm rounded-[24px] bg-white/40 hover:bg-white/60 transition-all border border-white/20">
+                  <CardContent className="p-5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className={cn(
+                          "w-10 h-10 rounded-xl flex items-center justify-center",
+                          task.status === "completed" ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"
+                        )}>
+                          <Bell className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">{task.title}</p>
+                          <p className="text-xs font-medium text-slate-500">{task.description}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <Badge 
+                          variant="outline" 
+                          className={cn(
+                            "text-[9px] font-black uppercase tracking-widest px-2 border-0 shadow-sm",
+                            task.status === "completed" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                          )}
+                        >
+                          {task.status === "completed" ? "Concluído" : "Pendente"}
+                        </Badge>
+                        {task.due_date && (
+                          <p className="text-[10px] font-bold text-muted-foreground mt-1 uppercase tracking-widest">
+                            {formatDate(task.due_date)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        {/* Anamnese e Forms */}
+        <TabsContent value="anamnesis" className="mt-0 space-y-6 w-full animate-fade-in">
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/20 p-6 rounded-[32px] border border-white/40 backdrop-blur-md">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight text-primary">Anamnese e Formulários</h2>
+                <p className="text-sm text-muted-foreground">Gerencie o envio e as respostas de questionários clínicos.</p>
+              </div>
+            </div>
+            
+            <AnamnesisRequestCard patientId={patient.id} />
+          </div>
+        </TabsContent>
+          </div>
+        </div>
       </Tabs>
       {/* Error Dialog */}
       <Dialog open={errorDialog.open} onOpenChange={(open) => setErrorDialog(prev => ({ ...prev, open }))}>

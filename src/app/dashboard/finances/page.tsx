@@ -13,8 +13,9 @@ import {
   X,
   Download,
   AlertCircle,
+  FileText,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -34,7 +35,7 @@ import {
   PAYMENT_METHODS,
 } from "@/lib/constants";
 import type { Database, CashFlow, Profile } from "@/types/database";
-import { createPdfDocument, addPdfFooter, addTableToPdf } from "@/lib/pdf-generator";
+import { createPdfDocument, addPdfFooter, addTableToPdf, getBase64ImageFromUrl } from "@/lib/pdf-generator";
 
 export default function FinancesPage() {
   const { therapistId } = useSubscription();
@@ -129,7 +130,7 @@ export default function FinancesPage() {
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
   const monthTransactions = transactions.filter((t) => {
-    const d = new Date(t.created_at);
+    const d = new Date(t.due_date || t.paid_at || t.created_at);
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
   });
 
@@ -170,7 +171,7 @@ export default function FinancesPage() {
       });
 
       const tableData = filtered.map(tx => [
-        new Date(tx.created_at).toLocaleDateString("pt-BR"),
+        new Date(tx.due_date || tx.paid_at || tx.created_at).toLocaleDateString("pt-BR"),
         tx.description,
         CASH_FLOW_CATEGORIES[tx.category as keyof typeof CASH_FLOW_CATEGORIES]?.label || tx.category,
         tx.type === "income" ? "+" + formatCurrency(Number(tx.amount)) : "-" + formatCurrency(Number(tx.amount)),
@@ -189,6 +190,111 @@ export default function FinancesPage() {
       doc.save(`financeiro_${filter}.pdf`);
     } catch (e) {
       showError("Erro na Exportação", "Ocorreu um erro ao gerar o PDF financeiro.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportReceipt = async (tx: CashFlow) => {
+    if (!profile) {
+      showError("Perfil Necessário", "Configure seu perfil com nome completo e dados profissionais para emitir recibos.");
+      return;
+    }
+    setIsExporting(true);
+    
+    try {
+      const docNumber = `${new Date(tx.created_at).getFullYear()}${String(new Date(tx.created_at).getMonth() + 1).padStart(2, '0')}${tx.id.split("-")[0].slice(-4).toUpperCase()}`;
+      const { doc, startY } = await createPdfDocument({
+        title: "Recibo de Pagamento",
+        subtitle: `Nº do Recibo: ${docNumber}`,
+        profile
+      });
+
+      let currentY = startY + 5;
+
+      // 1. Box de Valor (Destaque Superior Direito)
+      doc.setFillColor(245, 243, 255); // Light violet bg
+      doc.roundedRect(140, currentY, 55, 15, 2, 2, 'F');
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(14);
+      doc.setTextColor(109, 40, 217); // Indigo-700
+      doc.text(formatCurrency(Number(tx.amount)), 167.5, currentY + 10, { align: "center" });
+      
+      currentY += 25;
+
+      // 2. Título Centralizado com linha decorativa
+      doc.setFontSize(18);
+      doc.text("RECIBO", 105, currentY, { align: "center" });
+      doc.setDrawColor(109, 40, 217);
+      doc.setLineWidth(0.5);
+      doc.line(90, currentY + 2, 120, currentY + 2);
+      
+      currentY += 20;
+
+      // 3. Texto Formal
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      doc.setTextColor(51, 65, 85); // Slate-700
+      
+      const patientName = tx.description.replace("Sessão - ", "").toUpperCase();
+      const amountExtenso = Number(tx.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      const fullDate = tx.paid_at ? new Date(tx.paid_at) : new Date(tx.created_at);
+      const dateStr = fullDate.toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' });
+      
+      const lines = [
+        `Recebemos de ${patientName},`,
+        `a importância supra de ${formatCurrency(Number(tx.amount))} (${amountExtenso}),`,
+        `referente aos serviços profissionais de: Sessão de Atendimento.`,
+        "",
+        `Para maior clareza, firmamos o presente recibo.`,
+        "",
+        `Data do Pagamento: ${dateStr}`
+      ];
+
+      lines.forEach(line => {
+        if (line) {
+          doc.text(line, 20, currentY);
+          currentY += 8;
+        } else {
+          currentY += 4;
+        }
+      });
+
+      currentY += 35;
+
+      // 4. Área de Assinatura Premium
+      if (profile.signature_url) {
+        try {
+          const sigBase64 = await getBase64ImageFromUrl(profile.signature_url);
+          doc.addImage(sigBase64, 'PNG', 80, currentY - 28, 50, 25);
+        } catch (e) {
+          console.error("Erro ao carregar imagem da assinatura:", e);
+        }
+      }
+
+      doc.setDrawColor(203, 213, 225); // Slate-300
+      doc.setLineWidth(0.2);
+      doc.line(60, currentY, 150, currentY);
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(30, 41, 59);
+      doc.text(profile.full_name.toUpperCase(), 105, currentY + 6, { align: "center" });
+      
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text(profile.crp || "Registro Profissional", 105, currentY + 11, { align: "center" });
+
+      // 5. Rodapé decorativo
+      doc.setFillColor(109, 40, 217);
+      doc.rect(10, 285, 190, 2, 'F');
+
+      addPdfFooter(doc);
+      doc.save(`recibo_${patientName.replace(/\s+/g, '_')}.pdf`);
+    } catch (e) {
+      console.error(e);
+      showError("Erro no Recibo", "Ocorreu um erro ao gerar o arquivo do recibo.");
     } finally {
       setIsExporting(false);
     }
@@ -220,81 +326,107 @@ export default function FinancesPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Receita
-              </p>
-              <ArrowUpRight className="w-4 h-4 text-emerald-500" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="border-0 shadow-lg shadow-emerald-500/5 bg-white overflow-hidden relative group hover:-translate-y-2 transition-all duration-300 rounded-[32px] border-b-4 border-emerald-500/20">
+          <CardContent className="p-7">
+            <div className="flex flex-col gap-6">
+              <div className="flex items-center justify-between">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20 group-hover:scale-110 transition-transform">
+                  <ArrowUpRight className="w-6 h-6" />
+                </div>
+                <p className="text-[10px] font-black text-emerald-600/40 uppercase tracking-[0.2em]">Receita Bruta</p>
+              </div>
+              <div>
+                <p className="text-3xl font-black text-emerald-600 tracking-tighter leading-none mb-2 drop-shadow-sm">
+                  {formatCurrency(totalIncome)}
+                </p>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                  <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Fluxo Confirmado</span>
+                </div>
+              </div>
             </div>
-            <p className="text-lg font-bold text-emerald-600">
-              {formatCurrency(totalIncome)}
-            </p>
           </CardContent>
         </Card>
 
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Despesas
-              </p>
-              <ArrowDownRight className="w-4 h-4 text-red-500" />
+        <Card className="border-0 shadow-lg shadow-rose-500/5 bg-white overflow-hidden relative group hover:-translate-y-2 transition-all duration-300 rounded-[32px] border-b-4 border-rose-500/20">
+          <CardContent className="p-7">
+            <div className="flex flex-col gap-6">
+              <div className="flex items-center justify-between">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-500/20 group-hover:scale-110 transition-transform">
+                  <ArrowDownRight className="w-6 h-6" />
+                </div>
+                <p className="text-[10px] font-black text-rose-600/40 uppercase tracking-[0.2em]">Total Despesas</p>
+              </div>
+              <div>
+                <p className="text-3xl font-black text-rose-600 tracking-tighter leading-none mb-2 drop-shadow-sm">
+                  {formatCurrency(totalExpenses)}
+                </p>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
+                  <span className="text-[9px] font-black text-rose-600 uppercase tracking-widest">Saídas do Mês</span>
+                </div>
+              </div>
             </div>
-            <p className="text-lg font-bold text-red-600">
-              {formatCurrency(totalExpenses)}
-            </p>
           </CardContent>
         </Card>
 
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Lucro Líquido
-              </p>
-              {netProfit >= 0 ? (
-                <TrendingUp className="w-4 h-4 text-violet-500" />
-              ) : (
-                <TrendingDown className="w-4 h-4 text-red-500" />
-              )}
+        <Card className="border-0 shadow-lg shadow-indigo-500/5 bg-white overflow-hidden relative group hover:-translate-y-2 transition-all duration-300 rounded-[32px] border-b-4 border-indigo-500/20">
+          <CardContent className="p-7">
+            <div className="flex flex-col gap-6">
+              <div className="flex items-center justify-between">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/20 group-hover:scale-110 transition-transform">
+                  {netProfit >= 0 ? <TrendingUp className="w-6 h-6" /> : <TrendingDown className="w-6 h-6" />}
+                </div>
+                <p className="text-[10px] font-black text-indigo-600/40 uppercase tracking-[0.2em]">Lucro Líquido</p>
+              </div>
+              <div>
+                <p className={cn(
+                  "text-3xl font-black tracking-tighter leading-none mb-2 drop-shadow-sm",
+                  netProfit >= 0 ? "text-indigo-600" : "text-rose-600"
+                )}>
+                  {formatCurrency(netProfit)}
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-black text-indigo-600/60 uppercase tracking-widest">Resultado Real</span>
+                </div>
+              </div>
             </div>
-            <p
-              className={cn(
-                "text-lg font-bold",
-                netProfit >= 0 ? "text-violet-600" : "text-red-600"
-              )}
-            >
-              {formatCurrency(netProfit)}
-            </p>
           </CardContent>
         </Card>
 
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Pendente
-              </p>
-              <Clock className="w-4 h-4 text-amber-500" />
+        <Card className="border-0 shadow-lg shadow-amber-500/5 bg-white overflow-hidden relative group hover:-translate-y-2 transition-all duration-300 rounded-[32px] border-b-4 border-amber-500/20">
+          <CardContent className="p-7">
+            <div className="flex flex-col gap-6">
+              <div className="flex items-center justify-between">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:scale-110 transition-transform">
+                  <Clock className="w-6 h-6" />
+                </div>
+                <p className="text-[10px] font-black text-amber-600/40 uppercase tracking-[0.2em]">A Receber</p>
+              </div>
+              <div>
+                <p className="text-3xl font-black text-amber-600 tracking-tighter leading-none mb-2 drop-shadow-sm">
+                  {formatCurrency(pendingIncome)}
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">
+                    {pendingCount} lançamento{pendingCount !== 1 ? "s" : ""} pendente{pendingCount !== 1 ? "s" : ""}
+                  </span>
+                </div>
+              </div>
             </div>
-            <p className="text-lg font-bold text-amber-600">
-              {formatCurrency(pendingIncome)}
-            </p>
-            <p className="text-[10px] text-muted-foreground">
-              {pendingCount} pagamento{pendingCount !== 1 ? "s" : ""}
-            </p>
           </CardContent>
         </Card>
       </div>
 
       {/* Transactions */}
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="pb-3 px-4 md:px-6">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Transações</CardTitle>
+      <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-md rounded-3xl overflow-hidden">
+        <CardHeader className="pb-4 px-6 pt-6 border-b border-indigo-50">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-xl font-black text-slate-800">Histórico de Fluxo</CardTitle>
+              <CardDescription className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">Controle total de entradas e saídas</CardDescription>
+            </div>
             <div className="flex gap-2 items-center">
               <SubscriptionGate>
                 <Button 
@@ -302,76 +434,71 @@ export default function FinancesPage() {
                   size="sm" 
                   onClick={handleExportPdf}
                   disabled={isExporting || filtered.length === 0}
-                  className="h-8"
+                  className="h-10 rounded-xl font-bold border-indigo-100 hover:bg-indigo-50 text-indigo-600 transition-all"
                 >
                   <Download className="w-4 h-4 mr-2" />
-                  <span className="hidden sm:inline">Exportar PDF</span>
+                  PDF
                 </Button>
               </SubscriptionGate>
-              <div className="flex gap-1 bg-muted/50 rounded-lg p-0.5">
+              <div className="flex gap-1 bg-indigo-50/50 rounded-xl p-1 border border-indigo-100/50">
                 {(["all", "income", "expense"] as const).map((f) => (
                   <button
                     key={f}
                     onClick={() => setFilter(f)}
                     className={cn(
-                      "px-2.5 py-1 rounded-md text-xs font-medium transition-all",
+                      "px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-tighter",
                       filter === f
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "bg-white text-primary shadow-sm"
+                        : "text-muted-foreground hover:text-primary/60"
                     )}
                   >
-                    {f === "all"
-                      ? "Todas"
-                      : f === "income"
-                      ? "Receitas"
-                      : "Despesas"}
+                    {f === "all" ? "Todas" : f === "income" ? "Receitas" : "Despesas"}
                   </button>
                 ))}
               </div>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="px-4 md:px-6 pb-4">
+        <CardContent className="px-6 pb-6 pt-2">
           {loading ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="animate-pulse flex items-center gap-3 py-3">
-                  <div className="w-9 h-9 rounded-full bg-muted" />
+            <div className="space-y-4 py-4">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="animate-pulse flex items-center gap-4 py-4 border-b border-indigo-50/50 last:border-0">
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-50" />
                   <div className="flex-1 space-y-2">
-                    <div className="w-36 h-4 bg-muted rounded" />
-                    <div className="w-24 h-3 bg-muted rounded" />
+                    <div className="w-48 h-5 bg-indigo-50 rounded" />
+                    <div className="w-32 h-3 bg-indigo-50 rounded" />
                   </div>
-                  <div className="w-20 h-4 bg-muted rounded" />
+                  <div className="w-24 h-6 bg-indigo-50 rounded" />
                 </div>
               ))}
             </div>
           ) : filtered.length === 0 ? (
-            <div className="py-10 text-center">
-              <Wallet className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">
-                Nenhuma transação encontrada.
+            <div className="py-20 text-center">
+              <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Wallet className="w-10 h-10 text-indigo-200" />
+              </div>
+              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">
+                Sem transações registradas
               </p>
             </div>
           ) : (
-            <div className="space-y-1">
+            <div className="divide-y divide-indigo-50">
               {filtered.map((tx) => {
-                const category =
-                  CASH_FLOW_CATEGORIES[
-                    tx.category as keyof typeof CASH_FLOW_CATEGORIES
-                  ];
+                const category = CASH_FLOW_CATEGORIES[tx.category as keyof typeof CASH_FLOW_CATEGORIES];
                 const isIncome = tx.type === "income";
                 const isPending = tx.status === "pending";
 
                 return (
                   <div
                     key={tx.id}
-                    className="flex items-center gap-3 py-3 px-2 rounded-lg hover:bg-muted/30 transition-colors"
+                    className="flex items-center gap-4 py-6 group hover:bg-indigo-50/40 transition-all px-4 -mx-4 rounded-[24px] relative overflow-hidden border border-transparent hover:border-indigo-100/50"
                   >
-                    {/* Icon */}
+                    {/* Icon Container */}
                     <div
                       className={cn(
-                        "w-9 h-9 rounded-full flex items-center justify-center text-base flex-shrink-0",
-                        isIncome ? "bg-emerald-100" : "bg-red-100"
+                        "w-14 h-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 shadow-lg transition-all group-hover:scale-110 group-hover:rotate-3",
+                        isIncome ? "bg-emerald-500 text-white shadow-emerald-500/20" : "bg-rose-500 text-white shadow-rose-500/20"
                       )}
                     >
                       {category?.icon || (isIncome ? "💰" : "💸")}
@@ -379,53 +506,47 @@ export default function FinancesPage() {
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium truncate">
+                      <div className="flex items-center gap-3 mb-1">
+                        <p className="text-base font-bold text-[#1e1b4b] truncate group-hover:text-indigo-600 transition-colors">
                           {tx.description}
                         </p>
                         {isPending && (
-                          <Badge
-                            variant="outline"
-                            className="text-[9px] h-4 px-1 text-amber-600 border-amber-200"
-                          >
-                            Pendente
+                          <Badge className="text-[9px] h-5 px-2 font-black uppercase tracking-widest bg-amber-100 text-amber-700 border-0 rounded-full animate-pulse">
+                            Aguardando
                           </Badge>
                         )}
                       </div>
-                      <p className="text-[11px] text-muted-foreground">
-                        {formatDate(tx.created_at)} · {category?.label || tx.category}
-                      </p>
+                      <div className="flex items-center gap-3">
+                        <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.15em] flex items-center gap-2">
+                          <span>{formatDate(tx.due_date || tx.paid_at || tx.created_at)}</span>
+                          <span className="w-1 h-1 rounded-full bg-indigo-200" />
+                          <span className="text-indigo-600/60">{category?.label || tx.category}</span>
+                        </p>
+                      </div>
                     </div>
 
                     {/* Amount + Actions */}
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex flex-col items-end gap-2 flex-shrink-0">
                       <span
                         className={cn(
-                          "text-sm font-semibold",
-                          isIncome ? "text-emerald-600" : "text-red-600"
+                          "text-lg font-black tracking-tighter drop-shadow-sm",
+                          isIncome ? "text-emerald-600" : "text-rose-600"
                         )}
                       >
-                        {isIncome ? "+" : "-"}
-                        {formatCurrency(Number(tx.amount))}
+                        {isIncome ? "+" : "-"} {formatCurrency(Number(tx.amount))}
                       </span>
 
                       {isPending && isIncome && (
                         <SubscriptionGate>
-                          <div className="flex gap-1">
+                          <div className="flex gap-1.5">
                             {["pix", "cash", "credit_card"].map((method) => (
                               <button
                                 key={method}
-                                onClick={() =>
-                                  handleConfirmPayment(tx.id, method)
-                                }
-                                className="h-6 px-2 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+                                onClick={() => handleConfirmPayment(tx.id, method)}
+                                className="h-8 px-2.5 rounded-lg text-[10px] font-bold uppercase tracking-tighter bg-emerald-50 text-emerald-700 hover:bg-emerald-500 hover:text-white transition-all shadow-sm active:scale-95"
                                 title={`Confirmar como ${PAYMENT_METHODS[method as keyof typeof PAYMENT_METHODS]?.label}`}
                               >
-                                {method === "pix"
-                                  ? "⚡ Pix"
-                                  : method === "cash"
-                                  ? "💵"
-                                  : "💳"}
+                                {method === "pix" ? "Pix" : method === "cash" ? "💵" : "💳"}
                               </button>
                             ))}
                           </div>
@@ -433,7 +554,23 @@ export default function FinancesPage() {
                       )}
 
                       {tx.status === "confirmed" && (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        <div className="flex items-center gap-2">
+                          {isIncome && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 px-3 text-[10px] font-black uppercase tracking-widest text-primary hover:text-primary hover:bg-primary/5 rounded-xl transition-all"
+                              onClick={() => handleExportReceipt(tx)}
+                              disabled={isExporting}
+                            >
+                              <FileText className="w-3 h-3 mr-1.5" />
+                              Recibo
+                            </Button>
+                          )}
+                          <div className="w-5 h-5 rounded-full bg-emerald-50 flex items-center justify-center">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -446,16 +583,25 @@ export default function FinancesPage() {
 
       {/* New Expense Dialog */}
       <Dialog open={showExpense} onOpenChange={setShowExpense}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Registrar Despesa</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleAddExpense} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Descrição *</Label>
+        <DialogContent className="sm:max-w-md p-0 overflow-hidden border-0 rounded-[32px] shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="bg-rose-500 p-8 text-white relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl" />
+            <div className="absolute bottom-0 left-0 w-24 h-24 bg-black/5 rounded-full -ml-12 -mb-12 blur-xl" />
+            <div className="relative z-10">
+              <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-4 backdrop-blur-md border border-white/30">
+                <ArrowDownRight className="w-6 h-6 text-white" />
+              </div>
+              <DialogTitle className="text-3xl font-black tracking-tight">Nova Despesa</DialogTitle>
+              <p className="text-rose-100 text-[10px] font-black uppercase tracking-[0.2em] mt-1 opacity-80">Registro de Saída de Caixa</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleAddExpense} className="p-8 space-y-6 bg-white">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Descrição do Gasto</Label>
               <Input
-                placeholder="Ex: Aluguel do consultório"
-                className="h-10"
+                placeholder="Ex: Aluguel, Materiais, etc"
+                className="h-14 px-5 rounded-2xl bg-slate-50 border-slate-100 focus:bg-white focus:border-rose-200 transition-all font-bold text-slate-700"
                 value={expenseForm.description}
                 onChange={(e) =>
                   setExpenseForm((p) => ({
@@ -467,25 +613,28 @@ export default function FinancesPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Valor (R$) *</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  className="h-10"
-                  value={expenseForm.amount}
-                  onChange={(e) =>
-                    setExpenseForm((p) => ({ ...p, amount: e.target.value }))
-                  }
-                  required
-                />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Valor Total</Label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-black text-xs">R$</span>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="0,00"
+                    className="h-14 pl-10 rounded-2xl bg-slate-50 border-slate-100 focus:bg-white focus:border-rose-200 transition-all font-black text-slate-700 text-lg"
+                    value={expenseForm.amount}
+                    onChange={(e) =>
+                      setExpenseForm((p) => ({ ...p, amount: e.target.value }))
+                    }
+                    required
+                  />
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label>Categoria</Label>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Categoria</Label>
                 <select
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex h-14 w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2 text-sm font-bold focus:bg-white focus:border-rose-200 focus:outline-none transition-all appearance-none cursor-pointer"
                   value={expenseForm.category}
                   onChange={(e) =>
                     setExpenseForm((p) => ({
@@ -505,11 +654,11 @@ export default function FinancesPage() {
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label>Observações</Label>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Notas Internas</Label>
               <Textarea
-                placeholder="Observações opcionais..."
-                className="min-h-[80px] resize-none"
+                placeholder="Detalhes adicionais..."
+                className="min-h-[100px] rounded-2xl bg-slate-50 border-slate-100 focus:bg-white focus:border-rose-200 transition-all font-medium text-slate-600 p-4 resize-none"
                 value={expenseForm.notes}
                 onChange={(e) =>
                   setExpenseForm((p) => ({ ...p, notes: e.target.value }))
@@ -520,21 +669,21 @@ export default function FinancesPage() {
             <div className="flex gap-3 pt-2">
               <Button
                 type="button"
-                variant="outline"
-                className="flex-1"
+                variant="ghost"
+                className="flex-1 h-12 rounded-xl font-bold text-slate-400 hover:text-slate-600"
                 onClick={() => setShowExpense(false)}
               >
                 Cancelar
               </Button>
               <Button
                 type="submit"
-                className="flex-1 gradient-primary text-white"
+                className="flex-[1.5] h-12 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-black shadow-lg shadow-rose-200 active:scale-95 transition-all"
                 disabled={saving}
               >
                 {saving ? (
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
-                  "Registrar"
+                  "REGISTRAR GASTO"
                 )}
               </Button>
             </div>
@@ -544,17 +693,22 @@ export default function FinancesPage() {
 
       {/* Error Dialog */}
       <Dialog open={errorDialog.open} onOpenChange={(open) => setErrorDialog((prev) => ({ ...prev, open }))}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <AlertCircle className="w-5 h-5" />
-              {errorDialog.title}
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground py-2">{errorDialog.message}</p>
-          <div className="flex justify-end">
-            <Button variant="outline" onClick={() => setErrorDialog((prev) => ({ ...prev, open: false }))}>
-              Fechar
+        <DialogContent className="sm:max-w-[400px] p-0 overflow-hidden border-0 rounded-[32px] shadow-2xl">
+          <div className="bg-rose-50 p-8 flex flex-col items-center text-center">
+            <div className="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mb-4">
+              <AlertCircle className="w-8 h-8 text-rose-600" />
+            </div>
+            <DialogTitle className="text-xl font-black text-slate-800 tracking-tight">Ops! Algo deu errado</DialogTitle>
+            <p className="text-sm font-bold text-slate-500 mt-2 leading-relaxed">
+              {errorDialog.message}
+            </p>
+          </div>
+          <div className="p-6 bg-white flex justify-center">
+            <Button 
+              className="w-full h-12 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-black transition-all active:scale-95"
+              onClick={() => setErrorDialog((prev) => ({ ...prev, open: false }))}
+            >
+              ENTENDI
             </Button>
           </div>
         </DialogContent>

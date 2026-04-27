@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Bell, Search, Brain, CalendarDays, Wallet, ArrowRight } from "lucide-react";
+import { useCallback, useEffect, useState, useRef } from "react";
+import { Bell, Search, Brain, CalendarDays, Wallet, ArrowRight, FileText, CheckCheck } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -21,48 +21,129 @@ export function Header() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [sessionsTodayCount, setSessionsTodayCount] = useState(0);
   const [pendingPaymentsCount, setPendingPaymentsCount] = useState(0);
+  const [newAnamnesis, setNewAnamnesis] = useState<any[]>([]);
+  const [dismissedNotifications, setDismissedNotifications] = useState<string[]>([]);
   const supabase = createClient() as any;
+  const channelRef = useRef<any>(null);
 
+  // Carregar notificações dispensadas do localStorage
   useEffect(() => {
-    async function loadData() {
+    const saved = localStorage.getItem("dismissed_notifications");
+    if (saved) {
+      setDismissedNotifications(JSON.parse(saved));
+    }
+  }, []);
+
+  const saveDismissed = (ids: string[]) => {
+    localStorage.setItem("dismissed_notifications", JSON.stringify(ids));
+    setDismissedNotifications(ids);
+  };
+
+  const loadNotificationData = useCallback(async () => {
+    try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 1. Perfil
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-      setProfile(profileData);
+      if (!profile) {
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .single();
+        setProfile(profileData);
+      }
 
-      // 2. Sessões de hoje
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
       const todayEnd = new Date();
       todayEnd.setHours(23, 59, 59, 999);
 
-      const { count: sessionsToday } = await supabase
-        .from("sessions")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .gte("scheduled_at", todayStart.toISOString())
-        .lte("scheduled_at", todayEnd.toISOString());
+      const [sessionsRes, paymentsRes, anamnesisRes] = await Promise.all([
+        supabase.from("sessions").select("*", { count: "exact", head: true }).eq("user_id", user.id).gte("scheduled_at", todayStart.toISOString()).lte("scheduled_at", todayEnd.toISOString()),
+        supabase.from("cash_flow").select("*").eq("user_id", user.id).eq("type", "income").eq("status", "pending"),
+        supabase
+          .from("anamnesis_responses")
+          .select("*, patients(full_name), anamnesis_templates!inner(title, user_id)")
+          .eq("anamnesis_templates.user_id", user.id)
+          .eq("status", "completed")
+          .order("created_at", { ascending: false })
+          .limit(10)
+      ]);
 
-      // 3. Pagamentos pendentes (sessions completed sem pagamento confirmado)
-      const { count: pendingPayments } = await supabase
-        .from("cash_flow")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .eq("type", "income")
-        .eq("status", "pending");
+      setSessionsTodayCount(sessionsRes.count || 0);
+      
+      // Filtrar notificações já dispensadas
+      const savedDismissed = JSON.parse(localStorage.getItem("dismissed_notifications") || "[]");
+      const anamnesisData = (anamnesisRes.data || []).filter((item: any) => !savedDismissed.includes(`anamnesis-${item.id}`));
+      const paymentsData = (paymentsRes.data || []).filter((item: any) => !savedDismissed.includes(`payment-${item.id}`));
 
-      setSessionsTodayCount(sessionsToday || 0);
-      setPendingPaymentsCount(pendingPayments || 0);
+      setPendingPaymentsCount(paymentsData.length);
+      setNewAnamnesis(anamnesisData);
+    } catch (err) {
+      console.error("Erro ao carregar notificações:", err);
     }
-    loadData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [supabase, profile]);
+
+  useEffect(() => {
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // 1. Carga inicial
+      loadNotificationData();
+
+      // 2. Setup Realtime (apenas uma vez)
+      if (!channelRef.current) {
+        const channelName = `header-notifications-${user.id}`;
+        channelRef.current = supabase
+          .channel(channelName)
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "sessions", filter: `user_id=eq.${user.id}` },
+            () => loadNotificationData()
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "cash_flow", filter: `user_id=eq.${user.id}` },
+            () => loadNotificationData()
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "anamnesis_responses" },
+            () => loadNotificationData()
+          )
+          .subscribe();
+      }
+    };
+
+    init();
+
+    const handleManualRefresh = () => {
+      loadNotificationData();
+    };
+
+    window.addEventListener("notifications:refresh", handleManualRefresh);
+
+    return () => {
+      window.removeEventListener("notifications:refresh", handleManualRefresh);
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [loadNotificationData, supabase]);
+
+  const handleMarkAsRead = () => {
+    const newDismissed = [...dismissedNotifications];
+    newAnamnesis.forEach(item => newDismissed.push(`anamnesis-${item.id}`));
+    // Para pagamentos pendentes, como eles são baseados no estado do banco,
+    // podemos dispensar os IDs atuais que foram carregados.
+    // Mas note que novos pagamentos que surgirem depois aparecerão normalmente.
+    saveDismissed(newDismissed);
+    // Resetar contagens locais para feedback imediato
+    setNewAnamnesis([]);
+    setPendingPaymentsCount(0);
+  };
 
   const userName = profile?.full_name || "Psicóloga";
   const initials = userName
@@ -72,45 +153,70 @@ export function Header() {
     .slice(0, 2)
     .toUpperCase();
 
+  const totalNotifications = (sessionsTodayCount > 0 ? 1 : 0) + (pendingPaymentsCount > 0 ? 1 : 0) + newAnamnesis.length;
+
   return (
     <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-xl border-b border-border/50">
-      <div className="flex items-center justify-between px-4 py-3 md:px-6 md:py-4">
+      <div className="flex items-center justify-between px-4 py-3 md:px-6 md:py-4 max-w-7xl mx-auto w-full">
         {/* Left: Logo (mobile only) + Greeting */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           {/* Mobile logo */}
-          <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center shadow-sm md:hidden">
-            <Brain className="w-4 h-4 text-white" />
+          <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center shadow-lg md:hidden">
+            <Brain className="w-5 h-5 text-white" />
           </div>
           <div>
-            <p className="text-sm text-muted-foreground">{greeting} 👋</p>
-            <h2 className="text-base font-semibold tracking-tight -mt-0.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-black uppercase tracking-[0.2em] text-primary/40 leading-none">
+                {greeting}
+              </span>
+              <span className="text-sm">👋</span>
+            </div>
+            <h2 className="text-lg font-bold tracking-tight text-slate-700 -mt-1 leading-tight">
               {userName}
             </h2>
           </div>
         </div>
 
         {/* Right: Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {/* Search button */}
-          <button className="p-2.5 rounded-xl hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
-            <Search className="w-5 h-5" />
+          <button className="p-3 rounded-xl hover:bg-indigo-50 transition-all text-slate-400 hover:text-primary group active:scale-90">
+            <Search className="w-5 h-5 group-hover:scale-110 transition-transform" />
           </button>
 
           {/* Notifications */}
           <Popover>
-            <PopoverTrigger className="relative p-2.5 rounded-xl hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
-              <Bell className="w-5 h-5" />
-              {(sessionsTodayCount + pendingPaymentsCount) > 0 && (
-                <Badge className="absolute -top-0.5 -right-0.5 h-4 w-4 p-0 flex items-center justify-center text-[9px] bg-destructive text-white border-2 border-background">
-                  {sessionsTodayCount + pendingPaymentsCount}
+            <PopoverTrigger className="relative p-3 rounded-xl hover:bg-rose-50 transition-all text-slate-400 hover:text-rose-500 group active:scale-90 outline-none border-none bg-transparent cursor-pointer">
+              <Bell className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+              {totalNotifications > 0 && (
+                <Badge className="absolute top-2 right-2 h-4 w-4 p-0 flex items-center justify-center text-[9px] font-black bg-rose-500 text-white border-2 border-white shadow-sm animate-bounce">
+                  {totalNotifications}
                 </Badge>
               )}
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-80 p-0 overflow-hidden">
-              <PopoverHeader className="px-4 py-3 border-b border-border/50 bg-muted/20">
+            <PopoverContent align="end" className="w-80 p-0 overflow-hidden rounded-2xl border-border/50 shadow-2xl">
+              <PopoverHeader className="px-4 py-3 border-b border-border/50 bg-muted/20 flex flex-row items-center justify-between">
                 <PopoverTitle className="text-sm font-semibold">Notificações</PopoverTitle>
+                {totalNotifications > 0 && (
+                  <button 
+                    onClick={handleMarkAsRead}
+                    className="text-[10px] font-bold text-primary hover:text-primary/70 transition-colors flex items-center gap-1"
+                  >
+                    <CheckCheck className="w-3 h-3" />
+                    Limpar
+                  </button>
+                )}
               </PopoverHeader>
-              <div className="p-2 space-y-1">
+              <div className="p-2 space-y-1 max-h-[400px] overflow-y-auto">
+                {totalNotifications === 0 && (
+                  <div className="py-8 text-center space-y-2">
+                    <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto text-muted-foreground/40">
+                      <Bell className="w-6 h-6" />
+                    </div>
+                    <p className="text-xs text-muted-foreground font-medium">Nenhuma nova notificação</p>
+                  </div>
+                )}
+
                 {sessionsTodayCount > 0 && (
                   <Link
                     href="/dashboard/schedule"
@@ -128,6 +234,25 @@ export function Header() {
                     <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                   </Link>
                 )}
+
+                {newAnamnesis.map((item) => (
+                  <Link
+                    key={item.id}
+                    href={`/dashboard/patients/${item.patient_id}?tab=anamnesis`}
+                    className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted transition-colors group"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs font-medium">Anamnese Preenchida</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {item.patients?.name} preencheu: {item.anamnesis_templates?.title}
+                      </p>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </Link>
+                ))}
 
                 {pendingPaymentsCount > 0 && (
                   <Link
@@ -147,7 +272,7 @@ export function Header() {
                   </Link>
                 )}
 
-                {sessionsTodayCount === 0 && pendingPaymentsCount === 0 && (
+                {totalNotifications === 0 && (
                   <div className="py-8 text-center">
                     <p className="text-xs text-muted-foreground">Tudo em dia por aqui! ✨</p>
                   </div>

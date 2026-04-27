@@ -72,9 +72,13 @@ export function AnamnesisBuilder() {
 
   async function loadTemplates() {
     setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
     const { data, error } = await supabase
       .from("anamnesis_templates")
       .select("*")
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
     if (!error && data) {
@@ -263,6 +267,7 @@ export function AnamnesisBuilder() {
                 <Input 
                   id="template-title" 
                   placeholder="Ex: Anamnese Infantil, Avaliação Adulto..." 
+                  className="glass-input-field h-10"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                 />
@@ -310,7 +315,7 @@ export function AnamnesisBuilder() {
                                 placeholder="Pergunta / Rótulo do campo"
                                 value={field.label}
                                 onChange={(e) => handleFieldChange(field.id, { label: e.target.value })}
-                                className="h-9"
+                                className="glass-input-field h-9"
                               />
                             </div>
                             <div className="col-span-4">

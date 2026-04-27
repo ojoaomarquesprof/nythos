@@ -11,6 +11,7 @@ export const SESSION_STATUS = {
   completed: { label: 'Realizado', color: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
   missed: { label: 'Faltou', color: 'bg-red-100 text-red-700', dot: 'bg-red-500' },
   cancelled: { label: 'Cancelado', color: 'bg-gray-100 text-gray-700', dot: 'bg-gray-500' },
+  rescheduled: { label: 'Remarcado', color: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
 } as const;
 
 // Session type labels
@@ -102,13 +103,13 @@ export function formatDate(date: string | Date, options?: Intl.DateTimeFormatOpt
 
 // Multidisciplinary specialties for care network
 export const SPECIALTIES = [
-  { value: "fono", label: "Fonoaudiologia" },
-  { value: "to", label: "Terapia Ocupacional" },
-  { value: "neuro", label: "Neuropediatria" },
-  { value: "psico", label: "Psicopedagogia" },
-  { value: "at", label: "Acompanhante Terapêutico" },
-  { value: "escola", label: "Escola" },
-  { value: "outros", label: "Outros" },
+  { value: "Fonoaudiologia", label: "Fonoaudiologia" },
+  { value: "Terapia Ocupacional", label: "Terapia Ocupacional" },
+  { value: "Neuropediatria", label: "Neuropediatria" },
+  { value: "Psicopedagogia", label: "Psicopedagogia" },
+  { value: "Acompanhamento Terapêutico", label: "Acompanhamento Terapêutico" },
+  { value: "Escola", label: "Escola" },
+  { value: "Outros", label: "Outros" },
 ] as const;
 
 // Format time

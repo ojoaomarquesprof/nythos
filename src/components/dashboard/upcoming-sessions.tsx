@@ -63,30 +63,32 @@ export function UpcomingSessions() {
   }
 
   return (
-    <Card className="border-0 shadow-sm animate-fade-in delay-300">
-      <CardHeader className="pb-3 px-4 md:px-6">
+    <Card className="border-0 shadow-xl shadow-slate-200/40 bg-white/80 backdrop-blur-md rounded-[32px] overflow-hidden animate-fade-in delay-300">
+      <CardHeader className="pb-4 px-8 pt-8 border-b border-indigo-50/50">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base font-semibold">
+          <CardTitle className="text-[11px] font-black text-indigo-600/40 uppercase tracking-[0.2em]">
             Próximas Sessões
           </CardTitle>
           <Link
             href="/dashboard/schedule"
-            className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+            className="text-[10px] font-black text-indigo-600 hover:text-indigo-700 transition-colors uppercase tracking-widest bg-indigo-50 px-4 py-2 rounded-full border border-indigo-100/50 shadow-sm active:scale-95 transition-all"
           >
-            Ver agenda →
+            Ver Agenda
           </Link>
         </div>
       </CardHeader>
-      <CardContent className="px-4 md:px-6 pb-4">
+      <CardContent className="p-8">
         {sessions.length === 0 ? (
-          <div className="py-8 text-center">
-            <Clock className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground">
-              Sem sessões pendentes hoje
+          <div className="py-12 text-center">
+            <div className="w-16 h-16 bg-indigo-50 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-indigo-100/50 shadow-inner">
+              <Clock className="w-8 h-8 text-indigo-200" />
+            </div>
+            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">
+              Sem sessões hoje
             </p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-4">
             {sessions.map((session, index) => {
               const statusConfig =
                 SESSION_STATUS[session.status] || SESSION_STATUS.scheduled;
@@ -104,12 +106,12 @@ export function UpcomingSessions() {
                 <Link
                   key={session.id}
                   href={`/dashboard/patients/${session.patient_id}`}
-                  className="group flex items-center gap-3 p-3 rounded-xl hover:bg-muted/40 transition-all duration-200 cursor-pointer"
+                  className="group flex items-center gap-4 p-4 rounded-[28px] hover:bg-indigo-50/40 transition-all duration-300 border border-transparent hover:border-indigo-100/30"
                 >
-                  <Avatar className="w-10 h-10 flex-shrink-0">
+                  <Avatar className="w-14 h-14 flex-shrink-0 shadow-md group-hover:scale-105 transition-transform rounded-2xl">
                     <AvatarFallback
                       className={cn(
-                        "text-xs font-semibold",
+                        "text-sm font-black",
                         avatarColors[index % avatarColors.length]
                       )}
                     >
@@ -118,47 +120,38 @@ export function UpcomingSessions() {
                   </Avatar>
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium truncate">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <p className="text-base font-bold text-[#1e1b4b] truncate group-hover:text-indigo-600 transition-colors">
                         {session.patient?.full_name || "Paciente"}
                       </p>
                       {isOnline && (
-                        <Badge
-                          variant="outline"
-                          className="h-5 gap-1 text-[10px] px-1.5 border-sky-200 text-sky-700 bg-sky-50"
-                        >
-                          <Video className="w-3 h-3" />
-                          Online
-                        </Badge>
+                        <div className="w-6 h-6 rounded-lg bg-sky-100 text-sky-600 flex items-center justify-center shadow-sm">
+                          <Video className="w-3.5 h-3.5" />
+                        </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Clock className="w-3 h-3" />
-                        {formatTime(session.scheduled_at)} ·{" "}
+                    <div className="flex items-center gap-3">
+                      <span className="flex items-center gap-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        <Clock className="w-3.5 h-3.5 text-indigo-300" />
+                        {formatTime(session.scheduled_at)}
+                      </span>
+                      <span className="w-1 h-1 rounded-full bg-slate-200" />
+                      <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">
                         {session.duration_minutes} min
                       </span>
-                      {!isOnline && (
-                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <MapPin className="w-3 h-3" />
-                          Consultório
-                        </span>
-                      )}
                     </div>
                   </div>
 
-                  <Badge
-                    variant="secondary"
-                    className={cn("text-[10px] h-5", statusConfig.color)}
-                  >
-                    <span
+                  <div className="flex-shrink-0">
+                    <Badge
                       className={cn(
-                        "w-1.5 h-1.5 rounded-full mr-1",
-                        statusConfig.dot
+                        "rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-widest border-0 shadow-sm",
+                        statusConfig.color
                       )}
-                    />
-                    {statusConfig.label}
-                  </Badge>
+                    >
+                      {statusConfig.label}
+                    </Badge>
+                  </div>
                 </Link>
               );
             })}

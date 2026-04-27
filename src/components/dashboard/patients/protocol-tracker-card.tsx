@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { createPdfDocument, addPdfFooter, addTableToPdf } from "@/lib/pdf-generator";
 import type { Profile, Patient } from "@/types/database";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -187,171 +187,179 @@ export function ProtocolTrackerCard({
   }
 
   return (
-    <Card className="border-0 shadow-sm overflow-hidden">
-      <CardHeader className="flex flex-row items-center justify-between pb-2 bg-muted/30">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
-            <ClipboardCheck className="w-4 h-4 text-indigo-600" />
+    <Card className="glass-panel border-0 shadow-lg overflow-hidden rounded-[32px] animate-fade-in">
+      <CardHeader className="pb-4 bg-white/30 backdrop-blur-sm border-b border-white/40">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-100 flex items-center justify-center">
+              <ClipboardCheck className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <CardTitle className="text-lg font-bold text-indigo-900">Protocolos e Avaliações</CardTitle>
+              <CardDescription className="text-xs">
+                Rastreamento de testes e avaliações aplicadas.
+              </CardDescription>
+            </div>
           </div>
-          <CardTitle className="text-base font-bold">Protocolos e Rastreadores</CardTitle>
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <Button 
-            size="sm" 
-            variant="outline" 
-            className="h-8 gap-1.5 text-muted-foreground hover:text-indigo-600"
-            onClick={handleExportPdf}
-            disabled={evaluations.length === 0 || !profile || !patient}
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Exportar PDF</span>
-          </Button>
+          
+          <div className="flex items-center gap-2">
+            <Button 
+              size="sm" 
+              variant="outline" 
+              className="h-9 px-4 rounded-full border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-all"
+              onClick={handleExportPdf}
+              disabled={evaluations.length === 0 || !profile || !patient}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              <span className="hidden sm:inline">PDF</span>
+            </Button>
 
-          <Dialog open={open} onOpenChange={setOpen}>
-          <Button 
-            size="sm" 
-            variant="ghost" 
-            className="h-8 gap-1.5 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50"
-            onClick={() => {
-              if (!hasSubscription && !subLoading) {
-                router.push("/dashboard/settings/billing");
-              } else {
-                setOpen(true);
-              }
-            }}
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Registrar</span>
-          </Button>
-          <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Registrar Avaliação</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleAddEvaluation} className="space-y-4 pt-2">
-                <div className="space-y-1.5">
-                  <Label>Protocolo / Teste *</Label>
-                  <Select
-                    value={formData.protocol}
-                    onValueChange={(val: any) => setFormData({ ...formData, protocol: val || "" })}
-                  >
-                    <SelectTrigger className="h-10">
-                      <SelectValue placeholder="Selecione o protocolo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {protocols.map((p: string) => (
-                        <SelectItem key={p} value={p}>
-                          {p}
-                        </SelectItem>
+            <Dialog open={open} onOpenChange={setOpen}>
+              <Button 
+                size="sm" 
+                className="bg-indigo-600 hover:bg-indigo-700 text-white h-9 px-5 rounded-full shadow-lg shadow-indigo-200 transition-all active:scale-95" 
+                onClick={() => {
+                  if (!hasSubscription && !subLoading) {
+                    router.push("/dashboard/settings/billing");
+                  } else {
+                    setOpen(true);
+                  }
+                }}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                <span>Novo</span>
+              </Button>
+              <DialogContent className="sm:max-w-md rounded-[32px] border-0 shadow-2xl">
+                <DialogHeader className="p-4">
+                  <DialogTitle className="text-xl font-bold text-indigo-900">Registrar Avaliação</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleAddEvaluation} className="space-y-5 p-4 pt-0">
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-bold text-slate-700">Protocolo / Teste *</Label>
+                    <Select
+                      value={formData.protocol}
+                      onValueChange={(val: any) => setFormData({ ...formData, protocol: val || "" })}
+                    >
+                      <SelectTrigger className="glass-input-field h-12 bg-slate-50/50">
+                        <SelectValue placeholder="Selecione o protocolo" />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-2xl border-white/40 backdrop-blur-xl">
+                        {protocols.map((p: string) => (
+                          <SelectItem key={p} value={p} className="rounded-lg">
+                            {p}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-sm font-bold text-slate-700">Data *</Label>
+                      <Input
+                        type="date"
+                        value={formData.date}
+                        onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                        required
+                        className="glass-input-field h-12 bg-slate-50/50"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm font-bold text-slate-700">Score</Label>
+                      <Input
+                        placeholder="Ex: 15/20"
+                        value={formData.score}
+                        onChange={(e) => setFormData({ ...formData, score: e.target.value })}
+                        className="glass-input-field h-12 bg-slate-50/50"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-bold text-slate-700">Status</Label>
+                    <div className="flex gap-2 p-1 bg-slate-100 rounded-2xl">
+                      {(["completed", "in_progress"] as const).map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setFormData({ ...formData, status: s })}
+                          className={cn(
+                            "flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all",
+                            formData.status === s
+                              ? "bg-white text-indigo-700 shadow-sm"
+                              : "text-slate-500 hover:bg-white/50"
+                          )}
+                        >
+                          {s === "completed" ? "Concluído" : "Andamento"}
+                        </button>
                       ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>Data da Aplicação *</Label>
-                    <Input
-                      type="date"
-                      value={formData.date}
-                      onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                      required
-                      className="h-10"
-                    />
+                    </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label>Score / Resultado</Label>
-                    <Input
-                      placeholder="Ex: 15/20"
-                      value={formData.score}
-                      onChange={(e) => setFormData({ ...formData, score: e.target.value })}
-                      className="h-10"
-                    />
-                  </div>
-                </div>
 
-                <div className="space-y-1.5">
-                  <Label>Status</Label>
-                  <div className="flex gap-2">
-                    {(["completed", "in_progress"] as const).map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => setFormData({ ...formData, status: s })}
-                        className={cn(
-                          "flex-1 py-2 px-3 rounded-md text-xs font-medium border transition-all",
-                          formData.status === s
-                            ? "bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm"
-                            : "bg-background border-input text-muted-foreground hover:bg-muted"
-                        )}
-                      >
-                        {s === "completed" ? "Concluído" : "Em andamento"}
-                      </button>
-                    ))}
+                  <div className="flex gap-3 pt-4">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="flex-1 rounded-full h-12"
+                      onClick={() => setOpen(false)}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="submit"
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full h-12 font-bold shadow-lg shadow-indigo-200"
+                      disabled={saving}
+                    >
+                      {saving ? "Salvando..." : "Registrar"}
+                    </Button>
                   </div>
-                </div>
-
-                <div className="flex gap-3 pt-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => setOpen(false)}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button
-                    type="submit"
-                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
-                    disabled={saving}
-                  >
-                    {saving ? "Salvando..." : "Registrar"}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
       </CardHeader>
       
       <CardContent className="p-0">
         <Table>
-          <TableHeader className="bg-muted/10">
-            <TableRow>
-              <TableHead className="text-xs font-bold py-3 pl-4">Protocolo</TableHead>
-              <TableHead className="text-xs font-bold py-3">Data</TableHead>
-              <TableHead className="text-xs font-bold py-3">Score</TableHead>
-              <TableHead className="text-xs font-bold py-3">Status</TableHead>
-              <TableHead className="text-xs font-bold py-3 text-right pr-4">Ações</TableHead>
+          <TableHeader className="bg-indigo-50/30">
+            <TableRow className="border-b border-indigo-100/50 hover:bg-transparent">
+              <TableHead className="text-[10px] font-bold text-indigo-900/60 uppercase tracking-widest py-4 pl-8">Protocolo</TableHead>
+              <TableHead className="text-[10px] font-bold text-indigo-900/60 uppercase tracking-widest py-4">Data</TableHead>
+              <TableHead className="text-[10px] font-bold text-indigo-900/60 uppercase tracking-widest py-4">Score</TableHead>
+              <TableHead className="text-[10px] font-bold text-indigo-900/60 uppercase tracking-widest py-4">Status</TableHead>
+              <TableHead className="text-[10px] font-bold text-indigo-900/60 uppercase tracking-widest py-4 text-right pr-8">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               [1, 2].map((i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={5} className="py-4 text-center">
-                    <div className="animate-pulse h-4 bg-muted rounded w-3/4 mx-auto" />
+                  <TableCell colSpan={5} className="py-8 text-center">
+                    <div className="animate-pulse h-4 bg-indigo-100/20 rounded-full w-3/4 mx-auto" />
                   </TableCell>
                 </TableRow>
               ))
             ) : evaluations.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-12 text-center">
-                  <ClipboardCheck className="w-8 h-8 text-muted-foreground mx-auto mb-2 opacity-30" />
-                  <p className="text-sm text-muted-foreground font-medium">Nenhum protocolo registrado.</p>
+                <TableCell colSpan={5} className="py-16 text-center">
+                  <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center mx-auto mb-3">
+                    <ClipboardCheck className="w-6 h-6 text-indigo-300" />
+                  </div>
+                  <p className="text-sm text-slate-400 font-medium">Nenhum protocolo registrado.</p>
                 </TableCell>
               </TableRow>
             ) : (
               evaluations.map((e: any) => (
-                <TableRow key={e.id} className="group hover:bg-muted/10 transition-colors">
-                  <TableCell className="text-sm font-bold pl-4">
+                <TableRow key={e.id} className="group hover:bg-white/40 transition-colors border-b border-white/20 last:border-0">
+                  <TableCell className="text-sm font-bold text-indigo-900/80 py-5 pl-8">
                     {e.protocol_name}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
+                  <TableCell className="text-[11px] text-slate-500 font-medium">
                     {formatDate(e.evaluation_date)}
                   </TableCell>
                   <TableCell>
-                    <span className="text-sm font-medium text-foreground">
+                    <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded-lg">
                       {e.score || "—"}
                     </span>
                   </TableCell>
@@ -359,23 +367,23 @@ export function ProtocolTrackerCard({
                     <Badge 
                       variant="outline" 
                       className={cn(
-                        "text-[10px] h-5 font-bold uppercase tracking-tight px-1.5",
+                        "text-[9px] h-5 font-bold uppercase tracking-widest px-2 rounded-full border-0 shadow-sm",
                         e.status === "completed" 
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-100" 
-                          : "bg-amber-50 text-amber-700 border-amber-100"
+                          ? "bg-emerald-100 text-emerald-700" 
+                          : "bg-amber-100 text-amber-700"
                       )}
                     >
-                      {e.status === "completed" ? "Concluído" : "Andamento"}
+                      {e.status === "completed" ? "Concluído" : "Em andamento"}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right pr-4">
+                  <TableCell className="text-right pr-8">
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="w-8 h-8 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-600 hover:bg-red-50"
+                      className="w-9 h-9 rounded-full opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-red-600 hover:bg-red-50"
                       onClick={() => handleDelete(e.id)}
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-4 h-4" />
                     </Button>
                   </TableCell>
                 </TableRow>
