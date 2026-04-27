@@ -87,7 +87,7 @@ export function CashFlowChart() {
             <p className="text-[9px] text-emerald-600 font-black uppercase tracking-widest">
               Receita
             </p>
-            <p className="text-sm font-black text-emerald-700 mt-1">
+            <p className="text-sm font-bold text-emerald-700 mt-1">
               {formatCurrency(currentMonth.income)}
             </p>
           </div>
@@ -95,7 +95,7 @@ export function CashFlowChart() {
             <p className="text-[9px] text-rose-600 font-black uppercase tracking-widest">
               Despesas
             </p>
-            <p className="text-sm font-black text-rose-700 mt-1">
+            <p className="text-sm font-bold text-rose-700 mt-1">
               {formatCurrency(currentMonth.expenses)}
             </p>
           </div>
@@ -103,7 +103,7 @@ export function CashFlowChart() {
             <p className="text-[9px] text-indigo-600 font-black uppercase tracking-widest">
               Lucro
             </p>
-            <p className="text-sm font-black text-indigo-700 mt-1">
+            <p className="text-sm font-bold text-indigo-700 mt-1">
               {formatCurrency(profit)}
             </p>
           </div>

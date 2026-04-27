@@ -337,7 +337,7 @@ export default function FinancesPage() {
                 <p className="text-[10px] font-black text-emerald-600/40 uppercase tracking-[0.2em]">Receita Bruta</p>
               </div>
               <div>
-                <p className="text-3xl font-black text-emerald-600 tracking-tighter leading-none mb-2 drop-shadow-sm">
+                <p className="text-2xl font-bold text-emerald-600 tracking-tight leading-none mb-2">
                   {formatCurrency(totalIncome)}
                 </p>
                 <div className="flex items-center gap-2">
@@ -359,7 +359,7 @@ export default function FinancesPage() {
                 <p className="text-[10px] font-black text-rose-600/40 uppercase tracking-[0.2em]">Total Despesas</p>
               </div>
               <div>
-                <p className="text-3xl font-black text-rose-600 tracking-tighter leading-none mb-2 drop-shadow-sm">
+                <p className="text-2xl font-bold text-rose-600 tracking-tight leading-none mb-2">
                   {formatCurrency(totalExpenses)}
                 </p>
                 <div className="flex items-center gap-2">
@@ -382,7 +382,7 @@ export default function FinancesPage() {
               </div>
               <div>
                 <p className={cn(
-                  "text-3xl font-black tracking-tighter leading-none mb-2 drop-shadow-sm",
+                  "text-2xl font-bold tracking-tight leading-none mb-2",
                   netProfit >= 0 ? "text-indigo-600" : "text-rose-600"
                 )}>
                   {formatCurrency(netProfit)}
@@ -405,7 +405,7 @@ export default function FinancesPage() {
                 <p className="text-[10px] font-black text-amber-600/40 uppercase tracking-[0.2em]">A Receber</p>
               </div>
               <div>
-                <p className="text-3xl font-black text-amber-600 tracking-tighter leading-none mb-2 drop-shadow-sm">
+                <p className="text-2xl font-bold text-amber-600 tracking-tight leading-none mb-2">
                   {formatCurrency(pendingIncome)}
                 </p>
                 <div className="flex items-center gap-2">
@@ -529,7 +529,7 @@ export default function FinancesPage() {
                     <div className="flex flex-col items-end gap-2 flex-shrink-0">
                       <span
                         className={cn(
-                          "text-lg font-black tracking-tighter drop-shadow-sm",
+                          "text-base font-bold tracking-tight",
                           isIncome ? "text-emerald-600" : "text-rose-600"
                         )}
                       >

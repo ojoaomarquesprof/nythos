@@ -69,7 +69,7 @@ function StatCard({
           </div>
           
           <div className="space-y-1.5">
-            <p className="text-2xl font-black text-[#1e1b4b] tracking-tighter leading-none group-hover:translate-x-1 transition-transform">
+            <p className="text-xl font-bold text-[#1e1b4b] tracking-tight leading-none group-hover:translate-x-1 transition-transform">
               {value}
             </p>
             {subtitle && (
