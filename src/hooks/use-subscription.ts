@@ -12,7 +12,7 @@ export function useSubscription() {
   const [therapistId, setTherapistId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   
-  const supabase = createClient();
+  const supabase = createClient() as any;
   const router = useRouter();
 
   useEffect(() => {
