@@ -9,10 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function NewPatientPage() {
   const router = useRouter();
   const supabase = createClient();
+  const { therapistId } = useSubscription();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,6 +32,14 @@ export default function NewPatientPage() {
     session_price: "",
     insurance_provider: "",
     insurance_number: "",
+    // Campos do Responsável
+    has_guardian: false,
+    guardian_name: "",
+    guardian_email: "",
+    guardian_phone: "",
+    guardian_cpf: "",
+    guardian_relationship: "mother",
+    guardian_is_financial: true,
   });
 
   const handleChange = (
@@ -54,29 +64,55 @@ export default function NewPatientPage() {
     }
 
     try {
-      const { error: insertError } = await supabase.from("patients").insert({
-        user_id: user.id,
-        full_name: form.full_name,
-        email: form.email || null,
-        phone: form.phone || null,
-        cpf: form.cpf || null,
-        date_of_birth: form.date_of_birth || null,
-        gender: form.gender,
-        emergency_contact_name: form.emergency_contact_name || null,
-        emergency_contact_phone: form.emergency_contact_phone || null,
-        address: form.address || null,
-        notes_encrypted: form.notes || null,
-        session_price: form.session_price ? parseFloat(form.session_price) : null,
-        insurance_provider: form.insurance_provider || null,
-        insurance_number: form.insurance_number || null,
-        status: "active",
-      });
+      const { data: patientData, error: insertError } = await supabase
+        .from("patients")
+        .insert({
+          user_id: therapistId || user.id,
+          full_name: form.full_name,
+          email: form.email || null,
+          phone: form.phone || null,
+          cpf: form.cpf || null,
+          date_of_birth: form.date_of_birth || null,
+          gender: form.gender,
+          emergency_contact_name: form.emergency_contact_name || null,
+          emergency_contact_phone: form.emergency_contact_phone || null,
+          address: form.address || null,
+          notes_encrypted: form.notes || null,
+          session_price: form.session_price ? parseFloat(form.session_price) : null,
+          insurance_provider: form.insurance_provider || null,
+          insurance_number: form.insurance_number || null,
+          status: "active",
+        })
+        .select("id")
+        .single();
 
       if (insertError) {
-        console.error("Supabase error:", insertError);
+        console.error("Supabase error (patient):", insertError);
         setError(insertError.message);
         setIsLoading(false);
         return;
+      }
+
+      // Se tiver responsável, insere agora
+      if (form.has_guardian && patientData) {
+        const { error: guardianError } = await supabase
+          .from("patient_guardians")
+          .insert({
+            patient_id: patientData.id,
+            full_name: form.guardian_name,
+            email: form.guardian_email || null,
+            phone: form.guardian_phone || null,
+            cpf: form.guardian_cpf || null,
+            relationship: form.guardian_relationship,
+            is_financial_responsible: form.guardian_is_financial,
+          });
+
+        if (guardianError) {
+          console.error("Supabase error (guardian):", guardianError);
+          // Não vamos travar o processo todo, pois o paciente já foi criado.
+          // Mas vamos avisar.
+          alert("Paciente criado, mas houve um erro ao salvar o responsável: " + guardianError.message);
+        }
       }
 
       router.push("/dashboard/patients");
@@ -208,6 +244,100 @@ export default function NewPatientPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Responsável (Opcional) */}
+        <div className="flex items-center space-x-2 bg-muted/30 p-4 rounded-xl border border-muted/50">
+          <Checkbox 
+            id="has_guardian" 
+            checked={form.has_guardian}
+            onCheckedChange={(checked) => setForm(prev => ({ ...prev, has_guardian: !!checked }))}
+          />
+          <Label htmlFor="has_guardian" className="text-sm font-medium leading-none cursor-pointer">
+            Adicionar Responsável (Para pacientes menores de idade)
+          </Label>
+        </div>
+
+        {form.has_guardian && (
+          <Card className="border-0 shadow-sm bg-primary/5">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base text-primary">Dados do Responsável</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor="guardian_name">Nome Completo do Responsável *</Label>
+                  <Input
+                    id="guardian_name"
+                    name="guardian_name"
+                    placeholder="Nome completo do pai, mãe ou guardião"
+                    className="h-10 border-primary/20 focus-visible:ring-primary"
+                    value={form.guardian_name}
+                    onChange={handleChange}
+                    required={form.has_guardian}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="guardian_email">E-mail</Label>
+                  <Input
+                    id="guardian_email"
+                    name="guardian_email"
+                    type="email"
+                    className="h-10 border-primary/20 focus-visible:ring-primary"
+                    value={form.guardian_email}
+                    onChange={handleChange}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="guardian_phone">Telefone</Label>
+                  <Input
+                    id="guardian_phone"
+                    name="guardian_phone"
+                    placeholder="(11) 99999-9999"
+                    className="h-10 border-primary/20 focus-visible:ring-primary"
+                    value={form.guardian_phone}
+                    onChange={handleChange}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="guardian_cpf">CPF do Responsável</Label>
+                  <Input
+                    id="guardian_cpf"
+                    name="guardian_cpf"
+                    placeholder="000.000.000-00"
+                    className="h-10 border-primary/20 focus-visible:ring-primary"
+                    value={form.guardian_cpf}
+                    onChange={handleChange}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="guardian_relationship">Parentesco</Label>
+                  <select
+                    id="guardian_relationship"
+                    name="guardian_relationship"
+                    className="flex h-10 w-full rounded-md border border-primary/20 bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    value={form.guardian_relationship}
+                    onChange={handleChange}
+                  >
+                    <option value="mother">Mãe</option>
+                    <option value="father">Pai</option>
+                    <option value="grandparent">Avô/Avó</option>
+                    <option value="other">Outro</option>
+                  </select>
+                </div>
+                <div className="flex items-center space-x-2 md:col-span-2 pt-2">
+                  <Checkbox 
+                    id="guardian_is_financial" 
+                    checked={form.guardian_is_financial}
+                    onCheckedChange={(checked) => setForm(prev => ({ ...prev, guardian_is_financial: !!checked }))}
+                  />
+                  <Label htmlFor="guardian_is_financial" className="text-sm font-medium leading-none cursor-pointer">
+                    É o responsável financeiro pelas sessões?
+                  </Label>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Contato de Emergência */}
         <Card className="border-0 shadow-sm">

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
+import { useSubscription } from "@/hooks/use-subscription";
 import { cn } from "@/lib/utils";
 
 interface MonthData {
@@ -14,13 +15,16 @@ interface MonthData {
 }
 
 export function CashFlowChart() {
+  const { therapistId } = useSubscription();
   const supabase = createClient();
   const [monthlyData, setMonthlyData] = useState<MonthData[]>([]);
   const [currentMonth, setCurrentMonth] = useState({ income: 0, expenses: 0 });
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (therapistId) {
+      loadData();
+    }
+  }, [therapistId]);
 
   async function loadData() {
     const now = new Date();
@@ -36,7 +40,7 @@ export function CashFlowChart() {
         .select("type, amount, status")
         .gte("created_at", start.toISOString())
         .lte("created_at", end.toISOString())
-        .eq("status", "confirmed");
+        .in("status", ["confirmed", "pending"]);
 
       const income = (data || [])
         .filter((t: { type: string; amount: number }) => t.type === "income")
@@ -118,22 +122,24 @@ export function CashFlowChart() {
                 className="flex-1 flex flex-col items-center gap-1"
               >
                 <div className="flex items-end gap-0.5 w-full h-24">
-                  <div className="flex-1 flex flex-col justify-end">
+                  <div className="flex-1 flex flex-col justify-end h-full">
                     <div
                       className={cn(
-                        "w-full rounded-t-md transition-all duration-500 ease-out",
+                        "w-full rounded-t-sm transition-all duration-500 ease-out hover:opacity-80 cursor-default",
                         isLast ? "bg-emerald-500" : "bg-emerald-300"
                       )}
-                      style={{ height: `${Math.max(incomeHeight, 2)}%` }}
+                      style={{ height: `${Math.max(incomeHeight, 3)}%` }}
+                      title={`Receita: ${formatCurrency(data.income)}`}
                     />
                   </div>
-                  <div className="flex-1 flex flex-col justify-end">
+                  <div className="flex-1 flex flex-col justify-end h-full">
                     <div
                       className={cn(
-                        "w-full rounded-t-md transition-all duration-500 ease-out",
+                        "w-full rounded-t-sm transition-all duration-500 ease-out hover:opacity-80 cursor-default",
                         isLast ? "bg-red-400" : "bg-red-200"
                       )}
-                      style={{ height: `${Math.max(expenseHeight, 2)}%` }}
+                      style={{ height: `${Math.max(expenseHeight, 3)}%` }}
+                      title={`Despesa: ${formatCurrency(data.expenses)}`}
                     />
                   </div>
                 </div>

@@ -45,6 +45,8 @@ export const viewport: Viewport = {
 
 import Script from "next/script";
 
+import { Toaster } from "sonner";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -60,6 +62,7 @@ export default function RootLayout({
         <TooltipProvider>
           {children}
         </TooltipProvider>
+        <Toaster position="top-center" richColors />
 
         {/* Service Worker Registration */}
         <Script

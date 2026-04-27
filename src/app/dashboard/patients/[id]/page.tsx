@@ -30,6 +30,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { SESSION_STATUS, formatCurrency, formatDate, formatTime, SPECIALTIES } from "@/lib/constants";
@@ -39,11 +42,13 @@ import { CareNetworkCard } from "@/components/dashboard/patients/care-network-ca
 import { ProtocolTrackerCard } from "@/components/dashboard/patients/protocol-tracker-card";
 import { AbcRecordCard } from "@/components/dashboard/patients/abc-record-card";
 import { AnamnesisRequestCard } from "@/components/dashboard/patients/anamnesis-request-card";
+import { useSubscription } from "@/hooks/use-subscription";
 
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const supabase = createClient();
+  const { isSecretary } = useSubscription();
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -53,6 +58,10 @@ export default function PatientDetailPage() {
   const [savingNote, setSavingNote] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [guardian, setGuardian] = useState<any>(null);
+  const [editForm, setEditForm] = useState<any>(null);
   const [errorDialog, setErrorDialog] = useState({ open: false, title: "", message: "" });
 
   function showError(title: string, message: string) {
@@ -68,18 +77,33 @@ export default function PatientDetailPage() {
 
     const idStr = Array.isArray(id) ? id[0] : id;
 
-    const [patientRes, sessionsRes, authRes] = await Promise.all([
+    const [patientRes, sessionsRes, authRes, guardianRes] = await Promise.all([
       supabase.from("patients").select("*").eq("id", idStr).single(),
       supabase
         .from("sessions")
         .select("*")
         .eq("patient_id", idStr)
         .order("scheduled_at", { ascending: false }),
-      supabase.auth.getUser()
+      supabase.auth.getUser(),
+      supabase.from("patient_guardians").select("*").eq("patient_id", idStr).maybeSingle()
     ]);
 
-    if (patientRes.data) setPatient(patientRes.data);
+    if (patientRes.data) {
+      setPatient(patientRes.data);
+      // Inicializar form de edição
+      setEditForm({
+        ...patientRes.data,
+        has_guardian: !!guardianRes.data,
+        guardian_name: guardianRes.data?.full_name || "",
+        guardian_email: guardianRes.data?.email || "",
+        guardian_phone: guardianRes.data?.phone || "",
+        guardian_cpf: guardianRes.data?.cpf || "",
+        guardian_relationship: guardianRes.data?.relationship || "mother",
+        guardian_is_financial: guardianRes.data?.is_financial_responsible ?? true,
+      });
+    }
     if (sessionsRes.data) setSessions(sessionsRes.data);
+    if (guardianRes.data) setGuardian(guardianRes.data);
     
     if (authRes.data.user) {
       const { data: profileData } = await supabase.from("profiles").select("*").eq("id", authRes.data.user.id).single();
@@ -137,6 +161,72 @@ export default function PatientDetailPage() {
     } else {
       setIsArchiving(false);
       showError("Erro", "Erro ao arquivar paciente: " + error.message);
+    }
+  };
+
+  const handleUpdatePatient = async () => {
+    if (!patient || !editForm) return;
+    setIsSaving(true);
+
+    try {
+      // 1. Atualizar Paciente
+      const { error: pError } = await supabase
+        .from("patients")
+        .update({
+          full_name: editForm.full_name,
+          email: editForm.email || null,
+          phone: editForm.phone || null,
+          cpf: editForm.cpf || null,
+          date_of_birth: editForm.date_of_birth || null,
+          gender: editForm.gender,
+          address: editForm.address || null,
+          emergency_contact_name: editForm.emergency_contact_name || null,
+          emergency_contact_phone: editForm.emergency_contact_phone || null,
+          session_price: editForm.session_price ? parseFloat(editForm.session_price) : null,
+          insurance_provider: editForm.insurance_provider || null,
+          insurance_number: editForm.insurance_number || null,
+        })
+        .eq("id", patient.id);
+
+      if (pError) throw pError;
+
+      // 2. Atualizar ou Criar Responsável
+      if (editForm.has_guardian) {
+        const guardianData = {
+          full_name: editForm.guardian_name,
+          email: editForm.guardian_email || null,
+          phone: editForm.guardian_phone || null,
+          cpf: editForm.guardian_cpf || null,
+          relationship: editForm.guardian_relationship,
+          is_financial_responsible: editForm.guardian_is_financial,
+        };
+
+        if (guardian) {
+          // Update existente
+          const { error: gError } = await supabase
+            .from("patient_guardians")
+            .update(guardianData)
+            .eq("id", guardian.id);
+          if (gError) throw gError;
+        } else {
+          // Criar novo
+          const { error: gError } = await supabase
+            .from("patient_guardians")
+            .insert({ ...guardianData, patient_id: patient.id });
+          if (gError) throw gError;
+        }
+      } else if (guardian) {
+        // Se tinha e agora desmarcou, talvez queira deletar ou apenas ignorar? 
+        // Por segurança, vamos apenas ignorar ou arquivar. 
+        // Mas para manter simples, se desmarcou o checkbox não atualizamos o responsável.
+      }
+
+      await loadData();
+      setIsEditing(false);
+    } catch (err: any) {
+      showError("Erro ao salvar", err.message || "Erro inesperado.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -430,6 +520,11 @@ export default function PatientDetailPage() {
   const completedSessions = sessions.filter((s) => s.status === "completed").length;
   const scheduledSessions = sessions.filter((s) => s.status === "scheduled").length;
 
+  const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setEditForm((prev: any) => ({ ...prev, [name]: value }));
+  };
+
   return (
     <div className="px-4 py-5 md:px-6 md:py-6 max-w-5xl mx-auto w-full space-y-5">
       {/* Header */}
@@ -517,18 +612,20 @@ export default function PatientDetailPage() {
               </div>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 border-primary/30 text-primary hover:bg-primary/5 shadow-sm"
-                onClick={handleExportFullRecord}
-                disabled={isExporting}
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Prontuário Completo
-              </Button>
-            </div>
+            {!isSecretary && (
+              <div className="flex flex-col gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 border-primary/30 text-primary hover:bg-primary/5 shadow-sm"
+                  onClick={handleExportFullRecord}
+                  disabled={isExporting}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Prontuário Completo
+                </Button>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -540,26 +637,32 @@ export default function PatientDetailPage() {
             <Clock className="w-3.5 h-3.5 mr-1.5" />
             Sessões ({sessions.length})
           </TabsTrigger>
-          <TabsTrigger value="notes" className="text-xs data-[state=active]:shadow-sm">
-            <FileText className="w-3.5 h-3.5 mr-1.5" />
-            Prontuário
-          </TabsTrigger>
+          {!isSecretary && (
+            <TabsTrigger value="notes" className="text-xs data-[state=active]:shadow-sm">
+              <FileText className="w-3.5 h-3.5 mr-1.5" />
+              Prontuário
+            </TabsTrigger>
+          )}
           <TabsTrigger value="info" className="text-xs data-[state=active]:shadow-sm">
             <User className="w-3.5 h-3.5 mr-1.5" />
             Dados
           </TabsTrigger>
-          <TabsTrigger value="network" className="text-xs data-[state=active]:shadow-sm">
-            <Users className="w-3.5 h-3.5 mr-1.5" />
-            Equipe & Protocolos
-          </TabsTrigger>
-          <TabsTrigger value="behavior" className="text-xs data-[state=active]:shadow-sm">
-            <Activity className="w-3.5 h-3.5 mr-1.5" />
-            Comportamento
-          </TabsTrigger>
-          <TabsTrigger value="anamnesis" className="text-xs data-[state=active]:shadow-sm">
-            <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
-            Anamneses
-          </TabsTrigger>
+          {!isSecretary && (
+            <>
+              <TabsTrigger value="network" className="text-xs data-[state=active]:shadow-sm">
+                <Users className="w-3.5 h-3.5 mr-1.5" />
+                Equipe & Protocolos
+              </TabsTrigger>
+              <TabsTrigger value="behavior" className="text-xs data-[state=active]:shadow-sm">
+                <Activity className="w-3.5 h-3.5 mr-1.5" />
+                Comportamento
+              </TabsTrigger>
+              <TabsTrigger value="anamnesis" className="text-xs data-[state=active]:shadow-sm">
+                <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
+                Anamneses
+              </TabsTrigger>
+            </>
+          )}
         </TabsList>
 
         {/* Sessions Tab */}
@@ -637,7 +740,7 @@ export default function PatientDetailPage() {
                       )}
                     </div>
 
-                    {session.session_notes_encrypted && (
+                    {session.session_notes_encrypted && !isSecretary && (
                       <div className="mt-3 p-3 rounded-lg bg-muted/30 text-sm">
                         <p className="text-xs font-medium text-muted-foreground mb-1">
                           Nota de Evolução:
@@ -764,54 +867,214 @@ export default function PatientDetailPage() {
         {/* Info Tab */}
         <TabsContent value="info" className="mt-4 space-y-4">
           <Card className="border-0 shadow-sm">
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-3 flex flex-row items-center justify-between">
               <CardTitle className="text-base">Informações Pessoais</CardTitle>
+              {isEditing && (
+                <div className="flex gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => { setIsEditing(false); loadData(); }}>
+                    Cancelar
+                  </Button>
+                  <Button size="sm" className="gradient-primary text-white" onClick={handleUpdatePatient} disabled={isSaving}>
+                    {isSaving ? "Salvando..." : "Salvar Alterações"}
+                  </Button>
+                </div>
+              )}
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  { label: "CPF", value: patient.cpf },
-                  { label: "Data de Nascimento", value: patient.date_of_birth ? formatDate(patient.date_of_birth) : null },
-                  { label: "Gênero", value: patient.gender === "female" ? "Feminino" : patient.gender === "male" ? "Masculino" : patient.gender === "other" ? "Outro" : "Não informado" },
-                  { label: "Endereço", value: patient.address },
-                  { label: "Contato de Emergência", value: patient.emergency_contact_name },
-                  { label: "Tel. Emergência", value: patient.emergency_contact_phone },
-                  { label: "Convênio", value: patient.insurance_provider },
-                  { label: "Nº Convênio", value: patient.insurance_number },
-                ].map((field) => (
-                  <div key={field.label}>
-                    <p className="text-xs text-muted-foreground">{field.label}</p>
-                    <p className="text-sm font-medium mt-0.5">
-                      {field.value || "—"}
-                    </p>
+              {isEditing ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5 md:col-span-2">
+                    <Label>Nome Completo</Label>
+                    <Input name="full_name" value={editForm.full_name} onChange={handleEditChange} />
                   </div>
-                ))}
-              </div>
+                  <div className="space-y-1.5">
+                    <Label>E-mail</Label>
+                    <Input name="email" value={editForm.email || ""} onChange={handleEditChange} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Telefone</Label>
+                    <Input name="phone" value={editForm.phone || ""} onChange={handleEditChange} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>CPF</Label>
+                    <Input name="cpf" value={editForm.cpf || ""} onChange={handleEditChange} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Data de Nascimento</Label>
+                    <Input name="date_of_birth" type="date" value={editForm.date_of_birth || ""} onChange={handleEditChange} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Gênero</Label>
+                    <select
+                      name="gender"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      value={editForm.gender}
+                      onChange={handleEditChange}
+                    >
+                      <option value="prefer_not_to_say">Não informado</option>
+                      <option value="female">Feminino</option>
+                      <option value="male">Masculino</option>
+                      <option value="other">Outro</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <Label>Endereço</Label>
+                    <Input name="address" value={editForm.address || ""} onChange={handleEditChange} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Contato de Emergência</Label>
+                    <Input name="emergency_contact_name" value={editForm.emergency_contact_name || ""} onChange={handleEditChange} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Tel. Emergência</Label>
+                    <Input name="emergency_contact_phone" value={editForm.emergency_contact_phone || ""} onChange={handleEditChange} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Convênio</Label>
+                    <Input name="insurance_provider" value={editForm.insurance_provider || ""} onChange={handleEditChange} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Nº Convênio</Label>
+                    <Input name="insurance_number" value={editForm.insurance_number || ""} onChange={handleEditChange} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Valor da Sessão (R$)</Label>
+                    <Input name="session_price" type="number" value={editForm.session_price || ""} onChange={handleEditChange} />
+                  </div>
+
+                  <Separator className="md:col-span-2 my-2" />
+                  
+                  <div className="md:col-span-2 flex items-center space-x-2">
+                    <Checkbox 
+                      id="edit_has_guardian" 
+                      checked={editForm.has_guardian}
+                      onCheckedChange={(checked) => setEditForm((prev: any) => ({ ...prev, has_guardian: !!checked }))}
+                    />
+                    <Label htmlFor="edit_has_guardian" className="font-semibold text-primary">Possui Responsável (Paciente Infantil)</Label>
+                  </div>
+
+                  {editForm.has_guardian && (
+                    <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 bg-primary/5 p-4 rounded-lg border border-primary/10">
+                      <div className="space-y-1.5 md:col-span-2">
+                        <Label>Nome do Responsável</Label>
+                        <Input name="guardian_name" value={editForm.guardian_name} onChange={handleEditChange} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>E-mail</Label>
+                        <Input name="guardian_email" value={editForm.guardian_email} onChange={handleEditChange} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Telefone</Label>
+                        <Input name="guardian_phone" value={editForm.guardian_phone} onChange={handleEditChange} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>CPF do Responsável</Label>
+                        <Input name="guardian_cpf" value={editForm.guardian_cpf} onChange={handleEditChange} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Parentesco</Label>
+                        <select
+                          name="guardian_relationship"
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          value={editForm.guardian_relationship}
+                          onChange={handleEditChange}
+                        >
+                          <option value="mother">Mãe</option>
+                          <option value="father">Pai</option>
+                          <option value="grandparent">Avô/Avó</option>
+                          <option value="other">Outro</option>
+                        </select>
+                      </div>
+                      <div className="md:col-span-2 flex items-center space-x-2">
+                        <Checkbox 
+                          id="edit_guardian_is_financial" 
+                          checked={editForm.guardian_is_financial}
+                          onCheckedChange={(checked) => setEditForm((prev: any) => ({ ...prev, guardian_is_financial: !!checked }))}
+                        />
+                        <Label htmlFor="edit_guardian_is_financial">Responsável financeiro</Label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {[
+                    { label: "CPF", value: patient.cpf },
+                    { label: "Data de Nascimento", value: patient.date_of_birth ? formatDate(patient.date_of_birth) : null },
+                    { label: "Gênero", value: patient.gender === "female" ? "Feminino" : patient.gender === "male" ? "Masculino" : patient.gender === "other" ? "Outro" : "Não informado" },
+                    { label: "Endereço", value: patient.address },
+                    { label: "Contato de Emergência", value: patient.emergency_contact_name },
+                    { label: "Tel. Emergência", value: patient.emergency_contact_phone },
+                    { label: "Convênio", value: patient.insurance_provider },
+                    { label: "Nº Convênio", value: patient.insurance_number },
+                    { label: "Valor da Sessão", value: patient.session_price ? formatCurrency(patient.session_price) : null },
+                  ].map((field) => (
+                    <div key={field.label}>
+                      <p className="text-xs text-muted-foreground">{field.label}</p>
+                      <p className="text-sm font-medium mt-0.5">
+                        {field.value || "—"}
+                      </p>
+                    </div>
+                  ))}
+                  
+                  {guardian && (
+                    <div className="md:col-span-2 mt-4 p-4 rounded-xl bg-primary/5 border border-primary/10">
+                      <p className="text-xs font-bold text-primary uppercase tracking-wider mb-3">Responsável Cadastrado</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-[10px] text-muted-foreground uppercase">Nome</p>
+                          <p className="text-sm font-medium">{guardian.full_name}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-muted-foreground uppercase">Parentesco</p>
+                          <p className="text-sm font-medium">
+                            {guardian.relationship === 'mother' ? 'Mãe' : 
+                             guardian.relationship === 'father' ? 'Pai' : 
+                             guardian.relationship === 'grandparent' ? 'Avô/Avó' : 'Outro'}
+                          </p>
+                        </div>
+                        {guardian.phone && (
+                          <div>
+                            <p className="text-[10px] text-muted-foreground uppercase">Telefone</p>
+                            <p className="text-sm font-medium">{guardian.phone}</p>
+                          </div>
+                        )}
+                        {guardian.is_financial_responsible && (
+                          <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 w-fit">
+                            Responsável Financeiro
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          <div className="flex gap-3">
-            <Button variant="outline" className="flex-1" onClick={() => alert("A edição de paciente será implementada em breve.")}>
-              <Edit className="w-4 h-4 mr-2" />
-              Editar Dados
-            </Button>
-            <Button 
-              variant="outline" 
-              className="text-destructive border-destructive/30 hover:bg-destructive/5"
-              onClick={handleArchive}
-              disabled={isArchiving || patient.status === "archived"}
-            >
-              {isArchiving ? (
-                <div className="w-4 h-4 border-2 border-destructive/30 border-t-destructive rounded-full animate-spin mr-2" />
-              ) : (
-                <Trash2 className="w-4 h-4 mr-2" />
-              )}
-              {patient.status === "archived" ? "Paciente Arquivado" : "Arquivar"}
-            </Button>
-          </div>
+          {!isEditing && (
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setIsEditing(true)}>
+                <Edit className="w-4 h-4 mr-2" />
+                Editar Dados
+              </Button>
+              <Button 
+                variant="outline" 
+                className="text-destructive border-destructive/30 hover:bg-destructive/5"
+                onClick={handleArchive}
+                disabled={isArchiving || patient.status === "archived"}
+              >
+                {isArchiving ? (
+                  <div className="w-4 h-4 border-2 border-destructive/30 border-t-destructive rounded-full animate-spin mr-2" />
+                ) : (
+                  <Trash2 className="w-4 h-4 mr-2" />
+                )}
+                {patient.status === "archived" ? "Paciente Arquivado" : "Arquivar"}
+              </Button>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
-
       {/* Error Dialog */}
       <Dialog open={errorDialog.open} onOpenChange={(open) => setErrorDialog(prev => ({ ...prev, open }))}>
         <DialogContent className="sm:max-w-md">

@@ -11,6 +11,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { SubscriptionGate } from "@/components/auth/subscription-gate";
+import { useSubscription } from "@/hooks/use-subscription";
 import type { Patient } from "@/types/database";
 
 const statusConfig = {
@@ -31,6 +32,7 @@ const avatarColors = [
 ];
 
 export default function PatientsPage() {
+  const { therapistId } = useSubscription();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "inactive" | "archived">("all");
@@ -38,8 +40,10 @@ export default function PatientsPage() {
   const supabase = createClient();
 
   useEffect(() => {
-    loadPatients();
-  }, []);
+    if (therapistId) {
+      loadPatients();
+    }
+  }, [therapistId]);
 
   async function loadPatients() {
     setLoading(true);

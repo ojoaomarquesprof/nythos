@@ -14,6 +14,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/constants";
+import { useSubscription } from "@/hooks/use-subscription";
 import type { Session } from "@/types/database";
 
 interface StatCardProps {
@@ -89,6 +90,7 @@ function StatCard({
 }
 
 export function StatsCards() {
+  const { therapistId } = useSubscription();
   const supabase = createClient();
   const [stats, setStats] = useState({
     sessionsToday: 0,
@@ -100,8 +102,10 @@ export function StatsCards() {
   });
 
   useEffect(() => {
-    loadStats();
-  }, []);
+    if (therapistId) {
+      loadStats();
+    }
+  }, [therapistId]);
 
   async function loadStats() {
     const today = new Date();

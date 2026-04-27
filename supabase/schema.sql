@@ -11,41 +11,72 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- FUNÇÕES AUXILIARES: Simulação de Criptografia (Dados Sensíveis)
 -- ============================================================
 
--- Função para "criptografar" texto sensível (encode base64 + prefixo)
-CREATE OR REPLACE FUNCTION encrypt_sensitive_text(plain_text TEXT, secret_key TEXT DEFAULT 'nythos_health_key_2024')
+-- Função para "criptografar" texto sensível usando Supabase Vault
+CREATE OR REPLACE FUNCTION encrypt_sensitive_text(plain_text TEXT)
 RETURNS TEXT AS $$
+DECLARE
+  v_secret_key TEXT;
 BEGIN
   IF plain_text IS NULL THEN
     RETURN NULL;
   END IF;
+  
+  -- Buscar a chave de criptografia no Supabase Vault
+  SELECT secret INTO v_secret_key 
+  FROM vault.decrypted_secrets 
+  WHERE name = 'nythos_encryption_key'
+  LIMIT 1;
+  
+  IF v_secret_key IS NULL THEN
+    RAISE EXCEPTION 'A chave de criptografia não está configurada no Supabase Vault (nythos_encryption_key).';
+  END IF;
+
   RETURN 'ENC::' || encode(
     encrypt(
       convert_to(plain_text, 'UTF8'),
-      convert_to(secret_key, 'UTF8'),
+      convert_to(v_secret_key, 'UTF8'),
       'aes'
     ),
     'base64'
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
--- Função para "descriptografar" texto sensível
-CREATE OR REPLACE FUNCTION decrypt_sensitive_text(encrypted_text TEXT, secret_key TEXT DEFAULT 'nythos_health_key_2024')
+-- Função para "descriptografar" texto sensível usando Supabase Vault
+CREATE OR REPLACE FUNCTION decrypt_sensitive_text(encrypted_text TEXT)
 RETURNS TEXT AS $$
+DECLARE
+  v_secret_key TEXT;
 BEGIN
   IF encrypted_text IS NULL OR NOT starts_with(encrypted_text, 'ENC::') THEN
     RETURN encrypted_text;
   END IF;
+
+  -- Bloqueio para Secretárias (Sigilo de Prontuário)
+  IF (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'secretary' THEN
+    RETURN '[CONTEÚDO PROTEGIDO - ACESSO RESTRITO]';
+  END IF;
+
+  -- Buscar a chave de criptografia no Supabase Vault
+  SELECT secret INTO v_secret_key 
+  FROM vault.decrypted_secrets 
+  WHERE name = 'nythos_encryption_key'
+  LIMIT 1;
+  
+  IF v_secret_key IS NULL THEN
+    RAISE EXCEPTION 'A chave de criptografia não está configurada no Supabase Vault (nythos_encryption_key).';
+  END IF;
+
   RETURN convert_from(
     decrypt(
       decode(substring(encrypted_text from 6), 'base64'),
-      convert_to(secret_key, 'UTF8'),
+      convert_to(v_secret_key, 'UTF8'),
       'aes'
     ),
     'UTF8'
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
 -- ============================================================
 -- TABELA: profiles (extensão de auth.users)
@@ -63,6 +94,9 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   push_subscription JSONB,  -- Web Push subscription object
   biometric_credential_id TEXT,  -- WebAuthn credential ID
   timezone TEXT DEFAULT 'America/Sao_Paulo',
+  role TEXT DEFAULT 'therapist' CHECK (role IN ('therapist', 'secretary', 'admin')),
+  employer_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  email TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -114,21 +148,94 @@ CREATE INDEX idx_patients_access_token ON public.patients(access_token);
 
 ALTER TABLE public.patients ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Therapists can view own patients"
+CREATE POLICY "Users can view relevant patients"
   ON public.patients FOR SELECT
-  USING (auth.uid() = user_id);
+  USING (
+    auth.uid() = user_id 
+    OR 
+    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND employer_id = patients.user_id)
+  );
 
-CREATE POLICY "Therapists can insert own patients"
+CREATE POLICY "Users can insert relevant patients"
   ON public.patients FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
+  WITH CHECK (
+    auth.uid() = user_id 
+    OR 
+    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND employer_id = patients.user_id)
+  );
 
-CREATE POLICY "Therapists can update own patients"
+CREATE POLICY "Users can update relevant patients"
   ON public.patients FOR UPDATE
-  USING (auth.uid() = user_id);
+  USING (
+    auth.uid() = user_id 
+    OR 
+    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND employer_id = patients.user_id)
+  );
 
 CREATE POLICY "Therapists can delete own patients"
   ON public.patients FOR DELETE
   USING (auth.uid() = user_id);
+
+-- ============================================================
+-- TABELA: patient_guardians (Responsáveis / Guardiões)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.patient_guardians (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  patient_id UUID NOT NULL REFERENCES public.patients(id) ON DELETE CASCADE,
+  full_name TEXT NOT NULL,
+  cpf TEXT,
+  email TEXT,
+  phone TEXT,
+  relationship TEXT CHECK (relationship IN ('mother', 'father', 'grandparent', 'other')),
+  is_financial_responsible BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_guardians_patient_id ON public.patient_guardians(patient_id);
+
+ALTER TABLE public.patient_guardians ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Therapists can view own patient_guardians"
+  ON public.patient_guardians FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.patients
+      WHERE patients.id = patient_guardians.patient_id
+      AND patients.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Therapists can insert own patient_guardians"
+  ON public.patient_guardians FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.patients
+      WHERE patients.id = patient_guardians.patient_id
+      AND patients.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Therapists can update own patient_guardians"
+  ON public.patient_guardians FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.patients
+      WHERE patients.id = patient_guardians.patient_id
+      AND patients.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Therapists can delete own patient_guardians"
+  ON public.patient_guardians FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.patients
+      WHERE patients.id = patient_guardians.patient_id
+      AND patients.user_id = auth.uid()
+    )
+  );
 
 -- ============================================================
 -- TABELA: sessions (Sessões / Agenda)
@@ -159,17 +266,29 @@ CREATE INDEX idx_sessions_status ON public.sessions(status);
 
 ALTER TABLE public.sessions ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Therapists can view own sessions"
+CREATE POLICY "Users can view relevant sessions"
   ON public.sessions FOR SELECT
-  USING (auth.uid() = user_id);
+  USING (
+    auth.uid() = user_id 
+    OR 
+    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND employer_id = sessions.user_id)
+  );
 
-CREATE POLICY "Therapists can insert own sessions"
+CREATE POLICY "Users can insert relevant sessions"
   ON public.sessions FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
+  WITH CHECK (
+    auth.uid() = user_id 
+    OR 
+    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND employer_id = sessions.user_id)
+  );
 
-CREATE POLICY "Therapists can update own sessions"
+CREATE POLICY "Users can update relevant sessions"
   ON public.sessions FOR UPDATE
-  USING (auth.uid() = user_id);
+  USING (
+    auth.uid() = user_id 
+    OR 
+    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND employer_id = sessions.user_id)
+  );
 
 CREATE POLICY "Therapists can delete own sessions"
   ON public.sessions FOR DELETE
@@ -195,6 +314,7 @@ CREATE TABLE IF NOT EXISTS public.cash_flow (
   paid_at TIMESTAMPTZ,
   payment_method TEXT CHECK (payment_method IN ('cash', 'pix', 'credit_card', 'debit_card', 'bank_transfer', 'other')),
   notes TEXT,
+  guardian_id UUID REFERENCES public.patient_guardians(id) ON DELETE SET NULL, -- Responsável financeiro
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -207,17 +327,29 @@ CREATE INDEX idx_cash_flow_created_at ON public.cash_flow(created_at);
 
 ALTER TABLE public.cash_flow ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Therapists can view own cash_flow"
+CREATE POLICY "Users can view relevant cash_flow"
   ON public.cash_flow FOR SELECT
-  USING (auth.uid() = user_id);
+  USING (
+    auth.uid() = user_id 
+    OR 
+    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND employer_id = cash_flow.user_id)
+  );
 
-CREATE POLICY "Therapists can insert own cash_flow"
+CREATE POLICY "Users can insert relevant cash_flow"
   ON public.cash_flow FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
+  WITH CHECK (
+    auth.uid() = user_id 
+    OR 
+    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND employer_id = cash_flow.user_id)
+  );
 
-CREATE POLICY "Therapists can update own cash_flow"
+CREATE POLICY "Users can update relevant cash_flow"
   ON public.cash_flow FOR UPDATE
-  USING (auth.uid() = user_id);
+  USING (
+    auth.uid() = user_id 
+    OR 
+    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND employer_id = cash_flow.user_id)
+  );
 
 CREATE POLICY "Therapists can delete own cash_flow"
   ON public.cash_flow FOR DELETE
@@ -342,6 +474,7 @@ RETURNS TRIGGER AS $$
 DECLARE
   v_price DECIMAL(10,2);
   v_patient_name TEXT;
+  v_guardian_id UUID;
 BEGIN
   -- Só executa quando status muda para 'completed'
   IF NEW.status = 'completed' AND (OLD.status IS NULL OR OLD.status != 'completed') THEN
@@ -356,8 +489,15 @@ BEGIN
     JOIN public.profiles pr ON pr.id = NEW.user_id
     WHERE p.id = NEW.patient_id;
 
+    -- Buscar responsável financeiro
+    SELECT id INTO v_guardian_id
+    FROM public.patient_guardians
+    WHERE patient_id = NEW.patient_id
+    AND is_financial_responsible = true
+    LIMIT 1;
+
     -- Criar entrada financeira pendente
-    INSERT INTO public.cash_flow (user_id, session_id, type, amount, description, category, status, due_date)
+    INSERT INTO public.cash_flow (user_id, session_id, type, amount, description, category, status, due_date, guardian_id)
     VALUES (
       NEW.user_id,
       NEW.id,
@@ -366,7 +506,8 @@ BEGIN
       'Sessão - ' || COALESCE(v_patient_name, 'Paciente'),
       'session',
       'pending',
-      CURRENT_DATE
+      CURRENT_DATE,
+      v_guardian_id
     );
   END IF;
 
@@ -423,6 +564,10 @@ CREATE TRIGGER update_patient_tasks_updated_at
   BEFORE UPDATE ON public.patient_tasks
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
+CREATE TRIGGER update_patient_guardians_updated_at
+  BEFORE UPDATE ON public.patient_guardians
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
 -- ============================================================
 -- VIEWS: Visões úteis para o Dashboard
 -- ============================================================
@@ -439,6 +584,66 @@ SELECT
   COUNT(CASE WHEN type = 'income' AND status = 'pending' THEN 1 END) AS pending_payments
 FROM public.cash_flow
 GROUP BY user_id, DATE_TRUNC('month', created_at);
+
+-- ============================================================
+-- TABELA: audit_logs (Logs de Auditoria)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL, -- INSERT, UPDATE, DELETE
+  table_name TEXT NOT NULL,
+  record_id UUID NOT NULL,
+  old_data JSONB,
+  new_data JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- Ninguém via API pública pode inserir, alterar ou deletar logs.
+-- Apenas service_role ou lógica de admin futura terá acesso de leitura.
+CREATE POLICY "Audit logs are read-only for system"
+  ON public.audit_logs FOR SELECT
+  USING (false); -- Bloqueia SELECT via API pública por padrão.
+
+-- Função trigger para Auditoria
+CREATE OR REPLACE FUNCTION public.handle_audit_log()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF (TG_OP = 'INSERT') THEN
+    INSERT INTO public.audit_logs (user_id, action, table_name, record_id, new_data)
+    VALUES (auth.uid(), TG_OP, TG_TABLE_NAME, NEW.id, to_jsonb(NEW));
+    RETURN NEW;
+  ELSIF (TG_OP = 'UPDATE') THEN
+    INSERT INTO public.audit_logs (user_id, action, table_name, record_id, old_data, new_data)
+    VALUES (auth.uid(), TG_OP, TG_TABLE_NAME, NEW.id, to_jsonb(OLD), to_jsonb(NEW));
+    RETURN NEW;
+  ELSIF (TG_OP = 'DELETE') THEN
+    INSERT INTO public.audit_logs (user_id, action, table_name, record_id, old_data)
+    VALUES (auth.uid(), TG_OP, TG_TABLE_NAME, OLD.id, to_jsonb(OLD));
+    RETURN OLD;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Aplicar trigger nas tabelas solicitadas
+DROP TRIGGER IF EXISTS audit_patients ON public.patients;
+CREATE TRIGGER audit_patients
+  AFTER INSERT OR UPDATE OR DELETE ON public.patients
+  FOR EACH ROW EXECUTE FUNCTION public.handle_audit_log();
+
+DROP TRIGGER IF EXISTS audit_sessions ON public.sessions;
+CREATE TRIGGER audit_sessions
+  AFTER INSERT OR UPDATE OR DELETE ON public.sessions
+  FOR EACH ROW EXECUTE FUNCTION public.handle_audit_log();
+
+DROP TRIGGER IF EXISTS audit_patient_tasks ON public.patient_tasks;
+CREATE TRIGGER audit_patient_tasks
+  AFTER INSERT OR UPDATE OR DELETE ON public.patient_tasks
+  FOR EACH ROW EXECUTE FUNCTION public.handle_audit_log();
 
 -- ============================================================
 -- FIM DO SCHEMA

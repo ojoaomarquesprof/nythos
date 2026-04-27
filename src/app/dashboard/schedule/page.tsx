@@ -22,10 +22,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { SubscriptionGate } from "@/components/auth/subscription-gate";
+import { useSubscription } from "@/hooks/use-subscription";
 import { SESSION_STATUS, formatTime, formatCurrency } from "@/lib/constants";
 import type { Session, Patient } from "@/types/database";
 
 export default function SchedulePage() {
+  const { therapistId } = useSubscription();
   const supabase = createClient();
   const [sessions, setSessions] = useState<(Session & { patient?: Patient })[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -63,8 +65,10 @@ export default function SchedulePage() {
   } | null>(null);
 
   useEffect(() => {
-    loadData();
-  }, [currentDate]);
+    if (therapistId) {
+      loadData();
+    }
+  }, [currentDate, therapistId]);
 
   async function loadData() {
     setLoading(true);
@@ -162,7 +166,7 @@ export default function SchedulePage() {
       }
 
       sessionsToInsert.push({
-        user_id: user.id,
+        user_id: therapistId || user.id,
         patient_id: newSession.patient_id,
         scheduled_at: scheduledAt.toISOString(),
         duration_minutes: parseInt(newSession.duration_minutes),

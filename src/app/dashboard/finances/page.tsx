@@ -25,6 +25,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { SubscriptionGate } from "@/components/auth/subscription-gate";
+import { useSubscription } from "@/hooks/use-subscription";
 import {
   formatCurrency,
   formatDate,
@@ -35,6 +36,7 @@ import type { CashFlow, Profile } from "@/types/database";
 import { createPdfDocument, addPdfFooter, addTableToPdf } from "@/lib/pdf-generator";
 
 export default function FinancesPage() {
+  const { therapistId } = useSubscription();
   const supabase = createClient();
   const [transactions, setTransactions] = useState<CashFlow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,16 +59,18 @@ export default function FinancesPage() {
   });
 
   useEffect(() => {
-    loadTransactions();
-  }, []);
+    if (therapistId) {
+      loadTransactions();
+    }
+  }, [therapistId]);
 
   async function loadTransactions() {
     setLoading(true);
     
-    // Load profile
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data: profileData } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+    // Load profile (of the therapist, for branding)
+    const targetId = therapistId;
+    if (targetId) {
+      const { data: profileData } = await supabase.from("profiles").select("*").eq("id", targetId).single();
       if (profileData) setProfile(profileData);
     }
 
@@ -103,7 +107,7 @@ export default function FinancesPage() {
     }
 
     const { error } = await supabase.from("cash_flow").insert({
-      user_id: user.id,
+      user_id: therapistId || user.id,
       type: "expense",
       amount: parseFloat(expenseForm.amount),
       description: expenseForm.description,

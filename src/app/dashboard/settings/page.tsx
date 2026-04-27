@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { User, Bell, Shield, Save, CheckCircle2, AlertCircle, Upload, ImageIcon, Fingerprint } from "lucide-react";
+import { User, Bell, Shield, Save, CheckCircle2, AlertCircle, Upload, ImageIcon, Fingerprint, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -434,6 +434,33 @@ export default function SettingsPage() {
 
       {/* Anamnesis Builder */}
       <AnamnesisBuilder />
+
+      {/* Team Management */}
+      <Card className="border-0 shadow-sm overflow-hidden border-l-4 border-l-indigo-500">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Users className="w-4 h-4 text-indigo-500" />
+            Gestão de Equipe
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Secretárias e Auxiliares</p>
+              <p className="text-xs text-muted-foreground max-w-[280px]">
+                Cadastre sua secretária para que ela possa gerenciar sua agenda e financeiro com sigilo total dos prontuários.
+              </p>
+            </div>
+          </div>
+          <Button 
+            variant="outline" 
+            className="w-full sm:w-auto border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+            onClick={() => window.location.href = '/dashboard/settings/team'}
+          >
+            Gerenciar Equipe
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Notifications */}
       <Card className="border-0 shadow-sm overflow-hidden">

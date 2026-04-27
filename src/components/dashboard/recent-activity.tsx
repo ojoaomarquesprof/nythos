@@ -12,6 +12,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { useSubscription } from "@/hooks/use-subscription";
 import { formatCurrency, formatTime, formatDate } from "@/lib/constants";
 import type { Patient, Session, CashFlow } from "@/types/database";
 
@@ -72,13 +73,16 @@ function getTimeAgo(date: Date) {
 }
 
 export function RecentActivity() {
+  const { therapistId } = useSubscription();
   const supabase = createClient();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadActivities();
-  }, []);
+    if (therapistId) {
+      loadActivities();
+    }
+  }, [therapistId]);
 
   async function loadActivities() {
     setLoading(true);

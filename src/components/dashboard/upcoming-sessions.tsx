@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { SESSION_STATUS, formatTime } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
+import { useSubscription } from "@/hooks/use-subscription";
 import type { Session, Patient } from "@/types/database";
 
 const avatarColors = [
@@ -21,12 +22,15 @@ const avatarColors = [
 ];
 
 export function UpcomingSessions() {
+  const { therapistId } = useSubscription();
   const supabase = createClient();
   const [sessions, setSessions] = useState<(Session & { patient?: Patient })[]>([]);
 
   useEffect(() => {
-    loadSessions();
-  }, []);
+    if (therapistId) {
+      loadSessions();
+    }
+  }, [therapistId]);
 
   async function loadSessions() {
     const now = new Date();
