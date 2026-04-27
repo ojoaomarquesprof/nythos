@@ -47,7 +47,7 @@ import { useSubscription } from "@/hooks/use-subscription";
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = createClient() as any;
   const { isSecretary } = useSubscription();
 
   const [patient, setPatient] = useState<Patient | null>(null);
