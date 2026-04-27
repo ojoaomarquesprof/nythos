@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
+import { SupabaseClient } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
 import { SubscriptionGate } from "@/components/auth/subscription-gate";
 import { useSubscription } from "@/hooks/use-subscription";
@@ -37,7 +38,7 @@ import { createPdfDocument, addPdfFooter, addTableToPdf } from "@/lib/pdf-genera
 
 export default function FinancesPage() {
   const { therapistId } = useSubscription();
-  const supabase = createClient();
+  const supabase = createClient() as SupabaseClient<Database>;
   const [transactions, setTransactions] = useState<CashFlow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showExpense, setShowExpense] = useState(false);
