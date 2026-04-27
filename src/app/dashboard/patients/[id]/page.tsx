@@ -982,7 +982,7 @@ export default function PatientDetailPage() {
                     <Checkbox 
                       id="has_guardian" 
                       checked={editForm.has_guardian} 
-                      onCheckedChange={(checked) => setEditForm(prev => ({ ...prev, has_guardian: checked }))}
+                      onCheckedChange={(checked) => setEditForm((prev: any) => ({ ...prev, has_guardian: checked }))}
                     />
                     <Label htmlFor="has_guardian" className="text-xs font-bold text-primary cursor-pointer">Possui responsável legal?</Label>
                   </div>
@@ -1067,7 +1067,7 @@ export default function PatientDetailPage() {
                         id="guardian_is_financial" 
                         disabled={!isEditing}
                         checked={editForm.guardian_is_financial} 
-                        onCheckedChange={(checked) => setEditForm(prev => ({ ...prev, guardian_is_financial: checked }))}
+                        onCheckedChange={(checked) => setEditForm((prev: any) => ({ ...prev, guardian_is_financial: checked }))}
                       />
                       <Label htmlFor="guardian_is_financial" className="text-sm font-bold text-primary cursor-pointer">Responsável Financeiro?</Label>
                     </div>

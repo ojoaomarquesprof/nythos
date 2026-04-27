@@ -516,7 +516,7 @@ export default function SchedulePage() {
         if (fetchError) throw fetchError;
 
         if (futureSessions) {
-          const updates = futureSessions.map(async (s) => {
+          const updates = futureSessions.map(async (s: any) => {
             const sDate = new Date(s.scheduled_at);
             const nextDate = new Date(sDate.getTime() + diffMs);
             const nextDateIso = nextDate.toISOString();
