@@ -201,7 +201,7 @@ export default function LoginPage() {
                   href="/register"
                   className="text-primary font-medium hover:underline"
                 >
-                  Cadastre-se grátis
+                  Cadastre-se gratuitamente!
                 </a>
               </p>
             </form>
