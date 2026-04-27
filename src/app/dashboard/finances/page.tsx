@@ -85,15 +85,12 @@ export default function FinancesPage() {
   }
 
   const handleConfirmPayment = async (id: string, method: string) => {
-    const payload: Database["public"]["Tables"]["cash_flow"]["Update"] = {
-      status: "confirmed",
-      paid_at: new Date().toISOString(),
-      payment_method: method as CashFlow["payment_method"],
-    };
-
-    const { error } = await supabase
-      .from("cash_flow")
-      .update(payload)
+    const { error } = await (supabase.from("cash_flow") as any)
+      .update({
+        status: "confirmed",
+        paid_at: new Date().toISOString(),
+        payment_method: method,
+      })
       .eq("id", id);
 
     if (!error) loadTransactions();
