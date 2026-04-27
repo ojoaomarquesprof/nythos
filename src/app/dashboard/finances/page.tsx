@@ -106,7 +106,7 @@ export default function FinancesPage() {
       return;
     }
 
-    const { error } = await supabase.from("cash_flow").insert({
+    const { error } = await (supabase.from("cash_flow") as any).insert({
       user_id: therapistId || user.id,
       type: "expense",
       amount: parseFloat(expenseForm.amount),
