@@ -1033,11 +1033,12 @@ export default function SchedulePage() {
                 <DialogTitle className="text-lg font-bold text-white tracking-tight">Agendar Sessão</DialogTitle>
                 <p className="text-[10px] text-white/60 font-medium mt-0.5">Preencha os dados do atendimento</p>
               </div>
-              <DialogClose asChild>
-                <button className="w-8 h-8 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all active:scale-90 shrink-0">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </DialogClose>
+              <button
+                type="button"
+                onClick={() => setShowNewSession(false)}
+                className="w-8 h-8 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all active:scale-90 shrink-0">
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
 
