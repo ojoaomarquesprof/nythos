@@ -1453,116 +1453,132 @@ export default function SchedulePage() {
 
       {/* Session Manager Modal */}
       <Dialog open={showSessionManager} onOpenChange={setShowSessionManager}>
-        <DialogContent className="sm:max-w-4xl rounded-[32px] border-white/40 backdrop-blur-2xl bg-white/90 shadow-2xl p-0 overflow-hidden h-[90vh] flex flex-col">
+        <DialogContent className="sm:max-w-2xl p-0 overflow-hidden border-0 rounded-[32px] shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col h-[90vh] [&>button.absolute]:hidden">
           {selectedSessionDetails && (
             <>
-              <div className="p-8 border-b border-teal- bg-white/50 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <Avatar className="w-14 h-14 border-2 border-primary/20">
-                    <AvatarFallback className="bg-primary/10 text-primary font-black uppercase">
+              {/* ── HEADER ── */}
+              <div className="h-28 bg-primary relative overflow-hidden shrink-0">
+                <div className="absolute top-0 right-0 w-48 h-48 bg-white/5 rounded-full -mr-24 -mt-24 blur-3xl" />
+                <div className="absolute bottom-0 left-0 w-36 h-36 bg-black/10 rounded-full -ml-18 -mb-18 blur-2xl" />
+                <div className="absolute inset-0 flex items-center px-6 gap-4 z-10">
+                  <Avatar className="w-12 h-12 rounded-2xl border-2 border-white/30 shrink-0">
+                    <AvatarFallback className="bg-white/20 text-white text-lg font-bold rounded-2xl backdrop-blur-md">
                       {selectedSessionDetails.patient?.full_name?.charAt(0)}
                     </AvatarFallback>
                   </Avatar>
-                  <div>
-                    <h2 className="text-2xl font-black text-primary tracking-tight uppercase leading-none">
+                  <div className="flex-1 min-w-0">
+                    <h2 className="text-base font-bold text-white tracking-tight truncate">
                       {selectedSessionDetails.patient?.full_name}
                     </h2>
-                    <div className="flex items-center gap-3 mt-1">
-                      <Badge className="bg-teal-/10 text-teal- border-0 rounded-full px-3 py-0.5 text-[10px] font-black tracking-widest uppercase">
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <Badge className="bg-white/20 text-white border-0 rounded-full px-2.5 py-0.5 text-[9px] font-semibold tracking-wide backdrop-blur-md">
                         Em Sessão
                       </Badge>
-                      <span className="text-xs font-bold text-muted-foreground/60 flex items-center gap-1.5">
-                        <Timer className="w-3.5 h-3.5" />
+                      <span className="text-xs text-white/70 flex items-center gap-1">
+                        <Timer className="w-3 h-3" />
                         {sessionStartTime?.toLocaleTimeString()}
                       </span>
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowSessionManager(false)}
+                    className="w-8 h-8 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all active:scale-90 shrink-0">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-                <Button 
-                  onClick={handleFinishSession}
-                  disabled={saving}
-                  className="gradient-primary text-white rounded-full px-8 h-12 font-black shadow-lg flex items-center gap-2 active:scale-95 transition-all"
-                >
-                  <CheckCircle className="w-5 h-5" />
-                  FINALIZAR SESSÃO
-                </Button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-8 space-y-12">
-                {/* Notas de Evolução */}
-                <div className="space-y-4">
-                  <Label className="text-sm font-black text-primary uppercase tracking-widest ml-1 flex items-center gap-2">
-                    <Pencil className="w-4 h-4" />
-                    Evolução da Sessão
-                  </Label>
-                  <textarea
-                    className="w-full h-64 rounded-3xl border-teal- bg-white/50 p-6 text-base font-medium focus:ring-2 focus:ring-primary/20 outline-none transition-all placeholder:text-muted-foreground/40 resize-none shadow-inner"
-                    placeholder="Descreva aqui o que ocorreu durante a sessão..."
-                    value={sessionNotes}
-                    onChange={(e) => setSessionNotes(e.target.value)}
-                  />
-                </div>
+              {/* ── SCROLLABLE CONTENT ── */}
+              <ScrollArea className="flex-1 min-h-0">
+                <div className="px-6 py-5 space-y-6">
 
-                {/* Mood/Status Sliders */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                  {/* Happy/Sad Slider */}
-                  <div className="space-y-6">
-                    <Label className="text-sm font-black text-primary uppercase tracking-widest ml-1">Humor do Paciente</Label>
-                    <div className="bg-white/40 p-8 rounded-3xl border border-teal- shadow-sm space-y-6">
-                      <div className="flex items-center justify-between px-2">
-                        <Frown className={cn("w-8 h-8 transition-all", moodHappySad <= 3 ? "text-rose-500 scale-125" : "text-muted-foreground/30")} />
-                        <span className="text-2xl font-black text-primary">{moodHappySad}</span>
-                        <Smile className={cn("w-8 h-8 transition-all", moodHappySad >= 8 ? "text-emerald-500 scale-125" : "text-muted-foreground/30")} />
+                  {/* Notas de Evolução */}
+                  <div className="space-y-2">
+                    <Label className="text-[9px] font-semibold text-primary/50 uppercase tracking-widest ml-1 flex items-center gap-1.5">
+                      <Pencil className="w-3 h-3" />
+                      Evolução da Sessão
+                    </Label>
+                    <textarea
+                      className="w-full h-48 rounded-2xl border border-primary/15 bg-white p-4 text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none transition-all placeholder:text-muted-foreground/40 resize-none"
+                      placeholder="Descreva aqui o que ocorreu durante a sessão..."
+                      value={sessionNotes}
+                      onChange={(e) => setSessionNotes(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Mood Sliders */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Humor do Paciente */}
+                    <div className="space-y-2">
+                      <Label className="text-[9px] font-semibold text-primary/50 uppercase tracking-widest ml-1">Humor do Paciente</Label>
+                      <div className="bg-white p-4 rounded-2xl border border-primary/10 space-y-3">
+                        <div className="flex items-center justify-between px-1">
+                          <Frown className={cn("w-6 h-6 transition-all", moodHappySad <= 3 ? "text-rose-500 scale-125" : "text-muted-foreground/25")} />
+                          <span className="text-xl font-bold text-primary">{moodHappySad}</span>
+                          <Smile className={cn("w-6 h-6 transition-all", moodHappySad >= 8 ? "text-emerald-500 scale-125" : "text-muted-foreground/25")} />
+                        </div>
+                        <input
+                          type="range" min="1" max="10" step="1"
+                          value={moodHappySad}
+                          onChange={(e) => setMoodHappySad(parseInt(e.target.value))}
+                          className="w-full h-2 rounded-full appearance-none cursor-pointer accent-primary"
+                        />
+                        <div className="flex justify-between text-[8px] font-medium text-muted-foreground/50 uppercase tracking-wide">
+                          <span>Triste</span>
+                          <span>Feliz</span>
+                        </div>
                       </div>
-                      <input 
-                        type="range" 
-                        min="1" max="10" step="1"
-                        value={moodHappySad}
-                        onChange={(e) => setMoodHappySad(parseInt(e.target.value))}
-                        className="w-full h-3 bg-teal- rounded-full appearance-none cursor-pointer accent-primary"
-                      />
-                      <div className="flex justify-between text-[9px] font-black text-muted-foreground/60 uppercase tracking-tighter">
-                        <span>Triste / Desanimado</span>
-                        <span>Feliz / Disposto</span>
+                    </div>
+
+                    {/* Nível de Agitação */}
+                    <div className="space-y-2">
+                      <Label className="text-[9px] font-semibold text-primary/50 uppercase tracking-widest ml-1">Nível de Agitação</Label>
+                      <div className="bg-white p-4 rounded-2xl border border-primary/10 space-y-3">
+                        <div className="flex items-center justify-between px-1">
+                          <Zap className={cn("w-6 h-6 transition-all", moodAnxiousCalm <= 3 ? "text-amber-500 scale-125 rotate-12" : "text-muted-foreground/25")} />
+                          <span className="text-xl font-bold text-primary">{moodAnxiousCalm}</span>
+                          <Waves className={cn("w-6 h-6 transition-all", moodAnxiousCalm >= 8 ? "text-sky-500 scale-125" : "text-muted-foreground/25")} />
+                        </div>
+                        <input
+                          type="range" min="1" max="10" step="1"
+                          value={moodAnxiousCalm}
+                          onChange={(e) => setMoodAnxiousCalm(parseInt(e.target.value))}
+                          className="w-full h-2 rounded-full appearance-none cursor-pointer accent-primary"
+                        />
+                        <div className="flex justify-between text-[8px] font-medium text-muted-foreground/50 uppercase tracking-wide">
+                          <span>Ansioso</span>
+                          <span>Calmo</span>
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Anxious/Calm Slider */}
-                  <div className="space-y-6">
-                    <Label className="text-sm font-black text-primary uppercase tracking-widest ml-1">Nível de Agitação</Label>
-                    <div className="bg-white/40 p-8 rounded-3xl border border-teal- shadow-sm space-y-6">
-                      <div className="flex items-center justify-between px-2">
-                        <Zap className={cn("w-8 h-8 transition-all", moodAnxiousCalm <= 3 ? "text-amber-500 scale-125 rotate-12" : "text-muted-foreground/30")} />
-                        <span className="text-2xl font-black text-primary">{moodAnxiousCalm}</span>
-                        <Waves className={cn("w-8 h-8 transition-all", moodAnxiousCalm >= 8 ? "text-sky-500 scale-125" : "text-muted-foreground/30")} />
-                      </div>
-                      <input 
-                        type="range" 
-                        min="1" max="10" step="1"
-                        value={moodAnxiousCalm}
-                        onChange={(e) => setMoodAnxiousCalm(parseInt(e.target.value))}
-                        className="w-full h-3 bg-teal- rounded-full appearance-none cursor-pointer accent-primary"
-                      />
-                      <div className="flex justify-between text-[9px] font-black text-muted-foreground/60 uppercase tracking-tighter">
-                        <span>Ansioso / Agitado</span>
-                        <span>Calmo / Tranquilo</span>
-                      </div>
-                    </div>
+                  {/* Info */}
+                  <div className="bg-amber-50 rounded-xl p-3.5 flex gap-3 border border-amber-100">
+                    <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-700 leading-relaxed font-medium">
+                      As notas de evolução são armazenadas de forma segura. Em breve, transcrição automática de áudio com IA estará disponível.
+                    </p>
                   </div>
                 </div>
+              </ScrollArea>
 
-                <div className="bg-amber-50 rounded-2xl p-4 flex gap-3 border border-amber-100">
-                  <Info className="w-5 h-5 text-amber-600 shrink-0" />
-                  <p className="text-xs text-amber-800 leading-relaxed font-medium">
-                    As notas de evolução são armazenadas de forma segura. Em breve, você poderá usar a inteligência artificial para transcrever automaticamente o áudio da sessão.
-                  </p>
-                </div>
+              {/* ── FIXED FOOTER ── */}
+              <div className="shrink-0 px-5 py-3.5 bg-white border-t border-primary/8 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+                <Button
+                  onClick={handleFinishSession}
+                  disabled={saving}
+                  className="w-full gradient-primary text-white rounded-full h-10 font-semibold text-sm shadow-md shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-2">
+                  <CheckCircle className="w-4 h-4" />
+                  {saving ? "Finalizando..." : "Finalizar Sessão"}
+                </Button>
               </div>
             </>
           )}
         </DialogContent>
       </Dialog>
+
       {/* Series Action Dialog (Delete/Reschedule) */}
       <Dialog open={showSeriesDialog} onOpenChange={setShowSeriesDialog}>
         <DialogContent className="sm:max-w-md rounded-[32px] border-white/40 backdrop-blur-2xl bg-white/90 shadow-2xl p-8">
