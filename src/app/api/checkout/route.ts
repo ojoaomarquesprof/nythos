@@ -1,151 +1,194 @@
-import { NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 
-export async function POST(req: Request) {
-  console.log('API Checkout: Recebendo requisição POST');
+const ASAAS_BASE_URL =
+  process.env.NODE_ENV === "production"
+    ? "https://api.asaas.com/v3"
+    : "https://sandbox.asaas.com/api/v3";
+
+function getAsaasKey(): string {
+  let key = process.env.ASAAS_API_KEY ?? "";
+  if (!key) throw new Error("ASAAS_API_KEY não configurada.");
+  if (!key.startsWith("$")) key = "$" + key;
+  return key;
+}
+
+async function asaasFetch(path: string, options: RequestInit = {}) {
+  const res = await fetch(`${ASAAS_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      access_token: getAsaasKey(),
+      ...(options.headers ?? {}),
+    },
+  });
+  const data = await res.json();
+  return { ok: res.ok, status: res.status, data };
+}
+
+// Preços definidos SERVER-SIDE — nunca confiar no frontend
+const PLAN_CONFIG = {
+  monthly: { value: 89.0,  cycle: "MONTHLY", label: "Mensal" },
+  yearly:  { value: 890.0, cycle: "YEARLY",  label: "Anual"  },
+} as const;
+
+type PlanType = keyof typeof PLAN_CONFIG;
+
+function friendlyCardError(raw: string): string {
+  const r = raw.toLowerCase();
+  if (r.includes("insufficient") || r.includes("saldo"))   return "Saldo insuficiente no cartão.";
+  if (r.includes("invalid card") || r.includes("inválido")) return "Número do cartão inválido.";
+  if (r.includes("expired") || r.includes("expirado"))     return "Cartão expirado.";
+  if (r.includes("cvv") || r.includes("security"))         return "CVV inválido.";
+  if (r.includes("blocked") || r.includes("bloqueado"))    return "Cartão bloqueado pelo banco.";
+  if (r.includes("holder") || r.includes("titular"))       return "Nome do titular não confere.";
+  if (r.includes("cpf") || r.includes("cnpj"))             return "CPF do titular inválido.";
+  return `Pagamento recusado: ${raw}`;
+}
+
+export async function POST(request: Request) {
   try {
-    const { plan, price } = await req.json();
+    // 1. Autenticar
     const cookieStore = await cookies();
-    
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value;
-          },
+          getAll() { return cookieStore.getAll(); },
+          setAll(s) { s.forEach(({ name, value, options }) => cookieStore.set(name, value, options)); },
         },
       }
     ) as any;
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name, cpf')
-      .eq('id', user.id)
-      .single();
+    // 2. Parsear body
+    let body: {
+      planType: PlanType;
+      cardNumber: string;
+      cardHolder: string;
+      expiryMonth: string;
+      expiryYear: string;
+      cvv: string;
+      holderCpf: string;
+    };
+    try { body = await request.json(); }
+    catch { return NextResponse.json({ error: "Body inválido." }, { status: 400 }); }
 
-    // Tenta pegar o CPF do perfil ou do metadata do usuário (como fallback)
-    const cpf = profile?.cpf || user.user_metadata?.cpf;
-    
-    if (!cpf) {
-      console.error('CPF não encontrado para o usuário:', user.id, 'Metadata:', user.user_metadata);
-      return NextResponse.json({ 
-        error: 'CPF ou CNPJ não encontrado. Por favor, saia e entre novamente ou complete seu cadastro.' 
-      }, { status: 400 });
+    const { planType, cardNumber, cardHolder, expiryMonth, expiryYear, cvv, holderCpf } = body;
+
+    if (!planType || !PLAN_CONFIG[planType]) {
+      return NextResponse.json({ error: "Plano inválido." }, { status: 422 });
     }
 
-    let asaasKey = process.env.ASAAS_API_KEY;
-    if (!asaasKey) {
-      throw new Error('ASAAS_API_KEY não configurada no ambiente');
-    }
+    const cardDigits = cardNumber.replace(/\s/g, "");
+    if (cardDigits.length < 13) return NextResponse.json({ error: "Número do cartão inválido." }, { status: 422 });
+    if (!cardHolder?.trim())    return NextResponse.json({ error: "Nome do titular obrigatório." }, { status: 422 });
+    if (!expiryMonth || !expiryYear || !cvv) return NextResponse.json({ error: "Validade/CVV obrigatórios." }, { status: 422 });
+    if (!holderCpf?.replace(/\D/g, ""))     return NextResponse.json({ error: "CPF do titular obrigatório." }, { status: 422 });
 
-    // Adiciona o $ de volta se o Next.js o removeu do .env.local
-    if (!asaasKey.startsWith('$')) {
-      asaasKey = '$' + asaasKey;
-    }
+    const plan = PLAN_CONFIG[planType];
 
-    // Usando a URL do Sandbox para testes
-    const asaasUrl = 'https://sandbox.asaas.com/api/v3';
+    // 3. Buscar perfil
+    const { data: profile } = await supabaseAdmin
+      .from("profiles").select("full_name, cpf, phone").eq("id", user.id).maybeSingle();
 
-    // 0. Busca se o cliente já existe pelo email
-    if (!user.email) {
-      return NextResponse.json({ error: 'Email do usuário não encontrado.' }, { status: 400 });
-    }
+    const customerEmail = user.email!;
+    const customerCpf   = (profile?.cpf || holderCpf).replace(/\D/g, "");
+    const customerName  = profile?.full_name || customerEmail;
 
-    const searchRes = await fetch(`${asaasUrl}/customers?email=${encodeURIComponent(user.email)}`, {
-      method: 'GET',
-      headers: {
-        'access_token': asaasKey,
-      },
-    });
-    const searchData = await searchRes.json();
-    
-    let customerId = '';
-    
-    if (searchRes.ok && searchData.data && searchData.data.length > 0) {
-      customerId = searchData.data[0].id;
-      // Opcional: Atualizar o CPF se estiver faltando
-      if (!searchData.data[0].cpfCnpj) {
-        await fetch(`${asaasUrl}/customers/${customerId}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'access_token': asaasKey,
-          },
-          body: JSON.stringify({ cpfCnpj: cpf }),
+    // 4. Criar/recuperar cliente Asaas
+    let customerId: string;
+    const search = await asaasFetch(`/customers?email=${encodeURIComponent(customerEmail)}&limit=1`);
+
+    if (search.ok && search.data?.data?.length > 0) {
+      customerId = search.data.data[0].id;
+      if (!search.data.data[0].cpfCnpj && customerCpf) {
+        await asaasFetch(`/customers/${customerId}`, {
+          method: "PUT",
+          body: JSON.stringify({ cpfCnpj: customerCpf }),
         });
       }
     } else {
-      // 1. Cria o cliente no Asaas se não existir
-      const customerRes = await fetch(`${asaasUrl}/customers`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'access_token': asaasKey,
-        },
+      const created = await asaasFetch("/customers", {
+        method: "POST",
         body: JSON.stringify({
-          name: profile?.full_name || user.email,
-          email: user.email,
-          cpfCnpj: cpf,
+          name: customerName,
+          email: customerEmail,
+          cpfCnpj: customerCpf,
           externalReference: user.id,
+          ...(profile?.phone ? { phone: profile.phone } : {}),
         }),
       });
-
-      const customerData = await customerRes.json();
-      if (!customerRes.ok) {
-        console.error('Asaas Customer Error:', customerData);
-        throw new Error(customerData.errors?.[0]?.description || 'Erro ao criar cliente no Asaas');
+      if (!created.ok) {
+        const msg = created.data?.errors?.[0]?.description || "Erro ao registrar cliente.";
+        return NextResponse.json({ error: msg }, { status: 422 });
       }
-      customerId = customerData.id;
+      customerId = created.data.id;
     }
 
-    // 2. Cria a assinatura mensal e gera a cobrança
-    const subRes = await fetch(`${asaasUrl}/subscriptions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'access_token': asaasKey,
-      },
+    // 5. Criar assinatura com cartão — PASS-THROUGH, nunca persiste no Supabase
+    const subResult = await asaasFetch("/subscriptions", {
+      method: "POST",
       body: JSON.stringify({
         customer: customerId,
-        billingType: 'UNDEFINED', // Deixa em aberto para PIX, Boleto ou Cartão
-        value: price,
-        nextDueDate: new Date().toISOString().split('T')[0],
-        cycle: 'MONTHLY',
-        description: `Assinatura Nythos - Plano ${plan}`,
+        billingType: "CREDIT_CARD",
+        value: plan.value,
+        nextDueDate: new Date().toISOString().split("T")[0],
+        cycle: plan.cycle,
+        description: `Assinatura Nythos — Plano ${plan.label}`,
+        externalReference: user.id,
+        creditCard: {
+          holderName: cardHolder.trim(),
+          number: cardDigits,
+          expiryMonth: expiryMonth.padStart(2, "0"),
+          expiryYear,
+          ccv: cvv,
+        },
+        creditCardHolderInfo: {
+          name: cardHolder.trim(),
+          email: customerEmail,
+          cpfCnpj: holderCpf.replace(/\D/g, ""),
+          ...(profile?.phone ? { phone: profile.phone } : {}),
+        },
       }),
     });
 
-    const subData = await subRes.json();
-    if (!subRes.ok) {
-      console.error('Asaas Subscription Error:', subData);
-      throw new Error(subData.errors?.[0]?.description || 'Erro ao criar assinatura');
+    if (!subResult.ok) {
+      const raw = subResult.data?.errors?.[0]?.description || subResult.data?.errors?.[0]?.code || "Recusado.";
+      console.error("[checkout] Asaas error:", subResult.data);
+      return NextResponse.json({ error: friendlyCardError(raw) }, { status: 422 });
     }
 
-    // 3. Busca a primeira cobrança gerada para esta assinatura
-    const paymentsRes = await fetch(`${asaasUrl}/subscriptions/${subData.id}/payments`, {
-      method: 'GET',
-      headers: {
-        'access_token': asaasKey,
+    // 6. Persistir apenas metadados (sem dados do cartão) no Supabase
+    await supabaseAdmin.from("subscriptions").upsert(
+      {
+        user_id: user.id,
+        status: "active",
+        gateway_subscription_id: subResult.data.id,
+        gateway_customer_id: customerId,
+        current_period_end: new Date(
+          Date.now() + (planType === "yearly" ? 365 : 30) * 24 * 60 * 60 * 1000
+        ).toISOString(),
+        updated_at: new Date().toISOString(),
       },
-    });
-    const paymentsData = await paymentsRes.json();
-    
-    // Pega a URL da primeira cobrança pendente
-    const checkoutUrl = paymentsData.data?.[0]?.invoiceUrl || paymentsData.data?.[0]?.bankSlipUrl;
-    
-    console.log('Checkout URL generated from payment:', checkoutUrl);
-    return NextResponse.json({ checkoutUrl });
+      { onConflict: "user_id" }
+    );
 
+    return NextResponse.json({
+      success: true,
+      plan: planType,
+      subscriptionId: subResult.data.id,
+      message: `Assinatura ${plan.label} ativada!`,
+    });
   } catch (error: any) {
-    console.error('Erro no checkout:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[checkout] Erro inesperado:", error);
+    return NextResponse.json({ error: "Erro interno. Tente novamente." }, { status: 500 });
   }
 }
