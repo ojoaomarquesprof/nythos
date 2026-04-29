@@ -80,12 +80,18 @@ export async function POST(request: Request) {
     );
   }
 
-  // Garantir que quem chama é terapeuta ou admin (não secretária criando pacientes)
-  const { data: profile } = await supabase
+  // Garantir que quem chama é terapeuta ou admin
+  // Usa supabaseAdmin para evitar inferência 'never' em partial selects com union types
+  const { data: profileData } = await supabaseAdmin
     .from("profiles")
     .select("role, employer_id")
     .eq("id", therapist.id)
     .maybeSingle();
+
+  const profile = profileData as {
+    role: "therapist" | "secretary" | "admin";
+    employer_id: string | null;
+  } | null;
 
   const callerRole = profile?.role ?? "therapist";
   const effectiveTherapistId =
@@ -99,6 +105,7 @@ export async function POST(request: Request) {
       { status: 403 }
     );
   }
+
 
   // ── 2. Validar e parsear o body ──
   let body: CreatePatientRequest;
