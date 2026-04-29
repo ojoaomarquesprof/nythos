@@ -382,7 +382,7 @@ export default function PatientDetailPage() {
 
       if (conflictError) throw conflictError;
 
-      const hasConflict = conflicts?.some(s => {
+      const hasConflict = conflicts?.some((s: { scheduled_at: string; duration_minutes: number }) => {
         const start = new Date(s.scheduled_at);
         const end = new Date(start.getTime() + s.duration_minutes * 60000);
         const newStart = scheduledAt;
