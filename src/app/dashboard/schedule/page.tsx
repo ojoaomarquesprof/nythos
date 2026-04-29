@@ -1495,7 +1495,7 @@ export default function SchedulePage() {
 
                   {/* Notas de Evolução */}
                   <div className="space-y-2">
-                    <Label className="text-[9px] font-semibold text-primary/50 uppercase tracking-widest ml-1 flex items-center gap-1.5">
+                    <Label className="text-[9px] font-semibold text-primary/70 uppercase tracking-widest ml-1 flex items-center gap-1.5">
                       <Pencil className="w-3 h-3" />
                       Evolução da Sessão
                     </Label>
@@ -1511,20 +1511,24 @@ export default function SchedulePage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {/* Humor do Paciente */}
                     <div className="space-y-2">
-                      <Label className="text-[9px] font-semibold text-primary/50 uppercase tracking-widest ml-1">Humor do Paciente</Label>
-                      <div className="bg-white p-4 rounded-2xl border border-primary/10 space-y-3">
+                      <Label className="text-[9px] font-semibold text-primary/70 uppercase tracking-widest ml-1">Humor do Paciente</Label>
+                      <div className="bg-white p-4 rounded-2xl border border-primary/15 space-y-3">
                         <div className="flex items-center justify-between px-1">
-                          <Frown className={cn("w-6 h-6 transition-all", moodHappySad <= 3 ? "text-rose-500 scale-125" : "text-muted-foreground/25")} />
+                          <Frown className={cn("w-6 h-6 transition-all", moodHappySad <= 3 ? "text-rose-500 scale-125" : "text-primary/25")} />
                           <span className="text-xl font-bold text-primary">{moodHappySad}</span>
-                          <Smile className={cn("w-6 h-6 transition-all", moodHappySad >= 8 ? "text-emerald-500 scale-125" : "text-muted-foreground/25")} />
+                          <Smile className={cn("w-6 h-6 transition-all", moodHappySad >= 8 ? "text-emerald-500 scale-125" : "text-primary/25")} />
                         </div>
-                        <input
-                          type="range" min="1" max="10" step="1"
-                          value={moodHappySad}
-                          onChange={(e) => setMoodHappySad(parseInt(e.target.value))}
-                          className="w-full h-2 rounded-full appearance-none cursor-pointer accent-primary"
-                        />
-                        <div className="flex justify-between text-[8px] font-medium text-muted-foreground/50 uppercase tracking-wide">
+                        {/* Slider with visible track */}
+                        <div className="relative py-1">
+                          <div className="absolute h-2 rounded-full bg-primary/15 left-0 right-0 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="range" min="1" max="10" step="1"
+                            value={moodHappySad}
+                            onChange={(e) => setMoodHappySad(parseInt(e.target.value))}
+                            className="relative w-full h-2 rounded-full appearance-none cursor-pointer accent-primary bg-transparent"
+                          />
+                        </div>
+                        <div className="flex justify-between text-[9px] font-semibold text-primary/60 uppercase tracking-wide">
                           <span>Triste</span>
                           <span>Feliz</span>
                         </div>
@@ -1533,20 +1537,24 @@ export default function SchedulePage() {
 
                     {/* Nível de Agitação */}
                     <div className="space-y-2">
-                      <Label className="text-[9px] font-semibold text-primary/50 uppercase tracking-widest ml-1">Nível de Agitação</Label>
-                      <div className="bg-white p-4 rounded-2xl border border-primary/10 space-y-3">
+                      <Label className="text-[9px] font-semibold text-primary/70 uppercase tracking-widest ml-1">Nível de Agitação</Label>
+                      <div className="bg-white p-4 rounded-2xl border border-primary/15 space-y-3">
                         <div className="flex items-center justify-between px-1">
-                          <Zap className={cn("w-6 h-6 transition-all", moodAnxiousCalm <= 3 ? "text-amber-500 scale-125 rotate-12" : "text-muted-foreground/25")} />
+                          <Zap className={cn("w-6 h-6 transition-all", moodAnxiousCalm <= 3 ? "text-amber-500 scale-125 rotate-12" : "text-primary/25")} />
                           <span className="text-xl font-bold text-primary">{moodAnxiousCalm}</span>
-                          <Waves className={cn("w-6 h-6 transition-all", moodAnxiousCalm >= 8 ? "text-sky-500 scale-125" : "text-muted-foreground/25")} />
+                          <Waves className={cn("w-6 h-6 transition-all", moodAnxiousCalm >= 8 ? "text-sky-500 scale-125" : "text-primary/25")} />
                         </div>
-                        <input
-                          type="range" min="1" max="10" step="1"
-                          value={moodAnxiousCalm}
-                          onChange={(e) => setMoodAnxiousCalm(parseInt(e.target.value))}
-                          className="w-full h-2 rounded-full appearance-none cursor-pointer accent-primary"
-                        />
-                        <div className="flex justify-between text-[8px] font-medium text-muted-foreground/50 uppercase tracking-wide">
+                        {/* Slider with visible track */}
+                        <div className="relative py-1">
+                          <div className="absolute h-2 rounded-full bg-primary/15 left-0 right-0 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="range" min="1" max="10" step="1"
+                            value={moodAnxiousCalm}
+                            onChange={(e) => setMoodAnxiousCalm(parseInt(e.target.value))}
+                            className="relative w-full h-2 rounded-full appearance-none cursor-pointer accent-primary bg-transparent"
+                          />
+                        </div>
+                        <div className="flex justify-between text-[9px] font-semibold text-primary/60 uppercase tracking-wide">
                           <span>Ansioso</span>
                           <span>Calmo</span>
                         </div>
