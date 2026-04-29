@@ -38,8 +38,8 @@ const activityConfig = {
   },
   patient_added: {
     icon: UserPlus,
-    color: "text-violet-600",
-    bg: "bg-violet-100",
+    color: "text-teal-",
+    bg: "bg-teal-",
   },
   payment_received: {
     icon: CreditCard,
@@ -194,12 +194,12 @@ export function RecentActivity() {
 
   return (
     <Card className="border-0 shadow-xl shadow-slate-200/40 bg-white/80 backdrop-blur-md rounded-[32px] overflow-hidden animate-fade-in delay-400">
-      <CardHeader className="pb-4 px-8 pt-8 border-b border-indigo-50/50">
+      <CardHeader className="pb-4 px-8 pt-8 border-b border-teal-/50">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-[11px] font-black text-indigo-600/40 uppercase tracking-[0.2em]">
+          <CardTitle className="text-[11px] font-black text-teal-/40 uppercase tracking-[0.2em]">
             Linha do Tempo
           </CardTitle>
-          <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-inner">
+          <div className="w-8 h-8 rounded-xl bg-teal- text-teal- flex items-center justify-center shadow-inner">
             <Clock className="w-4 h-4" />
           </div>
         </div>
@@ -209,10 +209,10 @@ export function RecentActivity() {
           <div className="space-y-6">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="flex gap-4 animate-pulse">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex-shrink-0" />
+                <div className="w-12 h-12 rounded-2xl bg-teal- flex-shrink-0" />
                 <div className="flex-1 space-y-2 py-2">
-                  <div className="h-4 bg-indigo-50 rounded w-3/4" />
-                  <div className="h-3 bg-indigo-50 rounded w-1/4" />
+                  <div className="h-4 bg-teal- rounded w-3/4" />
+                  <div className="h-3 bg-teal- rounded w-1/4" />
                 </div>
               </div>
             ))}
@@ -226,7 +226,7 @@ export function RecentActivity() {
         ) : (
           <div className="relative">
             {/* Subtle Timeline line */}
-            <div className="absolute left-[23px] top-6 bottom-6 w-0.5 bg-indigo-50/80" />
+            <div className="absolute left-[23px] top-6 bottom-6 w-0.5 bg-teal-/80" />
 
             <div className="space-y-6">
               {activities.map((activity) => {
@@ -250,7 +250,7 @@ export function RecentActivity() {
 
                     {/* Content Section */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-[#1e1b4b] truncate group-hover:text-indigo-600 transition-colors">
+                      <p className="text-sm font-bold text-[#1e1b4b] truncate group-hover:text-teal- transition-colors">
                         {activity.description}
                       </p>
                       <div className="flex items-center gap-3 mt-1">
@@ -258,8 +258,8 @@ export function RecentActivity() {
                           {getTimeAgo(activity.date)}
                         </span>
                         {activity.highlight && (
-                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-indigo-50/50 text-[9px] font-black text-indigo-600 uppercase tracking-widest border border-indigo-100/50">
-                            <span className="w-1 h-1 rounded-full bg-indigo-400" />
+                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-teal-/50 text-[9px] font-black text-teal- uppercase tracking-widest border border-teal-/50">
+                            <span className="w-1 h-1 rounded-full bg-teal-" />
                             {activity.highlight}
                           </div>
                         )}

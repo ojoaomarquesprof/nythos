@@ -30,24 +30,17 @@ export function useSubscription() {
           .from('profiles')
           .select('role, employer_id, created_at')
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
 
         const role = profile?.role || 'therapist';
         const employerId = profile?.employer_id;
         const userCreatedAt = profile?.created_at || user.created_at;
         
-        console.log('--- DEBUG NYTHOS ---');
-        console.log('User:', user.email);
-        console.log('Role:', role);
-        console.log('EmployerId:', employerId);
-
         setIsSecretary(role === 'secretary');
 
         // 2. Determinar qual ID usar para checar a assinatura e qual data para o trial
         const targetUserId = (role === 'secretary' && employerId) ? employerId : user.id;
         setTherapistId(targetUserId);
-        
-        console.log('Resolved TherapistId:', targetUserId);
         
         let referenceCreatedAt = userCreatedAt;
 
@@ -57,33 +50,37 @@ export function useSubscription() {
             .from('profiles')
             .select('created_at')
             .eq('id', employerId)
-            .single();
+            .maybeSingle();
           if (employerProfile) referenceCreatedAt = employerProfile.created_at;
         }
 
         // 3. Verificar assinatura no banco para o targetUserId
-        const { data: subscription } = await supabase
+        // Usamos uma consulta simples sem .single() para evitar erro 406 em alguns ambientes
+        const { data: subscriptions } = await supabase
           .from('subscriptions')
           .select('status')
           .eq('user_id', targetUserId)
-          .single();
+          .limit(1);
 
+        const subscription = subscriptions && subscriptions.length > 0 ? subscriptions[0] : null;
         const active = subscription && ['active', 'trialing'].includes(subscription.status);
+
         
         if (active) {
           setHasSubscription(true);
           setIsTrial(subscription.status === 'trialing');
         } else {
-          // 4. Lógica de Fallback (Trial Grátis de 48h baseada no chefe ou em si mesmo)
+          // 4. Lógica de Fallback (Trial Grátis de 7 dias baseada no chefe ou em si mesmo)
           const createdAt = new Date(referenceCreatedAt);
           const now = new Date();
           const diffInMs = now.getTime() - createdAt.getTime();
           const diffInHours = diffInMs / (1000 * 60 * 60);
+          const trialHours = 168; // 7 dias
           
-          if (diffInHours < 48) {
+          if (diffInHours < trialHours) {
             setHasSubscription(true);
             setIsTrial(true);
-            setDaysLeft(Math.ceil((48 - diffInHours) / 24));
+            setDaysLeft(Math.ceil((trialHours - diffInHours) / 24));
           } else {
             setHasSubscription(false);
             setIsTrial(false);

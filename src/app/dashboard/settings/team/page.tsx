@@ -313,7 +313,7 @@ export default function TeamPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-50 border-indigo-100">
+                        <Badge variant="secondary" className="bg-teal- text-teal- hover:bg-teal- border-teal-">
                           Secretária
                         </Badge>
                       </TableCell>

@@ -37,7 +37,7 @@ function StatCard({
   delay = "",
 }: StatCardProps) {
   const colorMap: Record<string, { bg: string, text: string, shadow: string, border: string }> = {
-    "gradient-primary": { bg: "bg-indigo-600", text: "text-indigo-600", shadow: "shadow-indigo-500/20", border: "border-indigo-500/20" },
+    "gradient-primary": { bg: "bg-teal-500", text: "text-teal-600", shadow: "shadow-teal-500/20", border: "border-teal-500/20" },
     "gradient-sage": { bg: "bg-emerald-500", text: "text-emerald-600", shadow: "shadow-emerald-500/20", border: "border-emerald-500/20" },
     "gradient-warm": { bg: "bg-amber-500", text: "text-amber-600", shadow: "shadow-amber-500/20", border: "border-amber-500/20" },
     "gradient-rose": { bg: "bg-rose-500", text: "text-rose-600", shadow: "shadow-rose-500/20", border: "border-rose-500/20" },

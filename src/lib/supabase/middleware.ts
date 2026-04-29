@@ -1,4 +1,4 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function updateSession(request: NextRequest) {
@@ -13,44 +13,41 @@ export async function updateSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
+        getAll() {
+          return request.cookies.getAll()
         },
-        set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({ name, value, ...options })
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
           supabaseResponse = NextResponse.next({
-            request: { headers: request.headers },
+            request,
           })
-          supabaseResponse.cookies.set({ name, value, ...options })
-        },
-        remove(name: string, options: CookieOptions) {
-          request.cookies.set({ name, value: '', ...options })
-          supabaseResponse = NextResponse.next({
-            request: { headers: request.headers },
-          })
-          supabaseResponse.cookies.set({ name, value: '', ...options })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          )
         },
       },
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  // This will refresh session if expired - essential for SSR
+  const { data } = await supabase.auth.getUser()
+  const user = data?.user
 
-  // Proteger rotas do dashboard
-  if (request.nextUrl.pathname.startsWith('/dashboard')) {
-    if (!user) {
-      return NextResponse.redirect(new URL('/login', request.url))
-    }
-  }
-
-  // Redirecionar usuários autenticados para fora das páginas de auth
+  // Protected routes logic
+  const isDashboardRoute = request.nextUrl.pathname.startsWith('/dashboard');
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || 
                       request.nextUrl.pathname.startsWith('/register');
-  
-  if (user && isAuthRoute) {
+
+  if (isDashboardRoute && !user) {
+    return NextResponse.redirect(new URL('/login', request.url))
+  }
+
+  if (isAuthRoute && user) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
   return supabaseResponse
 }
+
+
 

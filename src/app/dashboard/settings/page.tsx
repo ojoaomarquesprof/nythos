@@ -528,9 +528,9 @@ export default function SettingsPage() {
         {/* Side Actions Column */}
         <div className="lg:col-span-4 space-y-8">
           {/* Team Management */}
-          <Card className="border-0 shadow-sm overflow-hidden rounded-[32px] glass-panel border-l-4 border-l-indigo-500">
+          <Card className="border-0 shadow-sm overflow-hidden rounded-[32px] glass-panel border-l-4 border-l-teal-">
             <CardHeader className="pb-4">
-              <CardTitle className="text-lg flex items-center gap-2 text-indigo-700">
+              <CardTitle className="text-lg flex items-center gap-2 text-teal-">
                 <Users className="w-5 h-5" />
                 Gestão de Equipe
               </CardTitle>
@@ -541,7 +541,7 @@ export default function SettingsPage() {
               </p>
               <Button 
                 variant="outline" 
-                className="w-full h-12 rounded-2xl border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold transition-all"
+                className="w-full h-12 rounded-2xl border-teal- text-teal- hover:bg-teal- font-bold transition-all"
                 onClick={() => window.location.href = '/dashboard/settings/team'}
               >
                 Configurar Acessos da Equipe

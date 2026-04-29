@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useRef } from "react";
 import { Bell, Search, Brain, CalendarDays, Wallet, ArrowRight, FileText, CheckCheck } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Popover,
@@ -161,8 +161,8 @@ export function Header() {
         {/* Left: Logo (mobile only) + Greeting */}
         <div className="flex items-center gap-4">
           {/* Mobile logo */}
-          <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center shadow-lg md:hidden">
-            <Brain className="w-5 h-5 text-white" />
+          <div className="w-10 h-10 flex items-center justify-center md:hidden shrink-0">
+            <img src="/logo-icon.png" alt="Nythos Logo" className="w-full h-full object-contain" />
           </div>
           <div>
             <div className="flex items-center gap-1.5">
@@ -283,6 +283,9 @@ export function Header() {
 
           {/* Avatar (mobile only) */}
           <Avatar className="w-9 h-9 md:hidden ring-2 ring-primary/20">
+            {profile?.avatar_url && (
+              <AvatarImage src={profile.avatar_url} alt={profile.full_name || ""} />
+            )}
             <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
               {initials}
             </AvatarFallback>

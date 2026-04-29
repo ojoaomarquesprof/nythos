@@ -13,7 +13,7 @@ import { useSubscription } from "@/hooks/use-subscription";
 import type { Session, Patient } from "@/types/database";
 
 const avatarColors = [
-  "bg-violet-100 text-violet-700",
+  "bg-teal- text-teal-",
   "bg-emerald-100 text-emerald-700",
   "bg-rose-100 text-rose-700",
   "bg-amber-100 text-amber-700",
@@ -64,14 +64,14 @@ export function UpcomingSessions() {
 
   return (
     <Card className="border-0 shadow-xl shadow-slate-200/40 bg-white/80 backdrop-blur-md rounded-[32px] overflow-hidden animate-fade-in delay-300">
-      <CardHeader className="pb-4 px-8 pt-8 border-b border-indigo-50/50">
+      <CardHeader className="pb-4 px-8 pt-8 border-b border-teal-/50">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-[11px] font-black text-indigo-600/40 uppercase tracking-[0.2em]">
+          <CardTitle className="text-[11px] font-black text-teal-/40 uppercase tracking-[0.2em]">
             Próximas Sessões
           </CardTitle>
           <Link
             href="/dashboard/schedule"
-            className="text-[10px] font-black text-indigo-600 hover:text-indigo-700 transition-colors uppercase tracking-widest bg-indigo-50 px-4 py-2 rounded-full border border-indigo-100/50 shadow-sm active:scale-95 transition-all"
+            className="text-[10px] font-black text-teal- hover:text-teal- transition-colors uppercase tracking-widest bg-teal- px-4 py-2 rounded-full border border-teal-/50 shadow-sm active:scale-95 transition-all"
           >
             Ver Agenda
           </Link>
@@ -80,8 +80,8 @@ export function UpcomingSessions() {
       <CardContent className="p-8">
         {sessions.length === 0 ? (
           <div className="py-12 text-center">
-            <div className="w-16 h-16 bg-indigo-50 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-indigo-100/50 shadow-inner">
-              <Clock className="w-8 h-8 text-indigo-200" />
+            <div className="w-16 h-16 bg-teal- rounded-3xl flex items-center justify-center mx-auto mb-4 border border-teal-/50 shadow-inner">
+              <Clock className="w-8 h-8 text-teal-" />
             </div>
             <p className="text-xs font-black text-slate-400 uppercase tracking-widest">
               Sem sessões hoje
@@ -106,7 +106,7 @@ export function UpcomingSessions() {
                 <Link
                   key={session.id}
                   href={`/dashboard/patients/${session.patient_id}`}
-                  className="group flex items-center gap-4 p-4 rounded-[28px] hover:bg-indigo-50/40 transition-all duration-300 border border-transparent hover:border-indigo-100/30"
+                  className="group flex items-center gap-4 p-4 rounded-[28px] hover:bg-teal-/40 transition-all duration-300 border border-transparent hover:border-teal-/30"
                 >
                   <Avatar className="w-14 h-14 flex-shrink-0 shadow-md group-hover:scale-105 transition-transform rounded-2xl">
                     <AvatarFallback
@@ -121,7 +121,7 @@ export function UpcomingSessions() {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
-                      <p className="text-base font-bold text-[#1e1b4b] truncate group-hover:text-indigo-600 transition-colors">
+                      <p className="text-base font-bold text-[#1e1b4b] truncate group-hover:text-teal- transition-colors">
                         {session.patient?.full_name || "Paciente"}
                       </p>
                       {isOnline && (
@@ -132,11 +132,11 @@ export function UpcomingSessions() {
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="flex items-center gap-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                        <Clock className="w-3.5 h-3.5 text-indigo-300" />
+                        <Clock className="w-3.5 h-3.5 text-teal-" />
                         {formatTime(session.scheduled_at)}
                       </span>
                       <span className="w-1 h-1 rounded-full bg-slate-200" />
-                      <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">
+                      <span className="text-[10px] font-black text-teal- uppercase tracking-widest">
                         {session.duration_minutes} min
                       </span>
                     </div>

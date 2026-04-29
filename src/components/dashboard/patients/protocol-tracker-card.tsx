@@ -191,11 +191,11 @@ export function ProtocolTrackerCard({
       <CardHeader className="pb-4 bg-white/30 backdrop-blur-sm border-b border-white/40">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-100 flex items-center justify-center">
-              <ClipboardCheck className="w-5 h-5 text-indigo-600" />
+            <div className="w-10 h-10 rounded-2xl bg-teal- flex items-center justify-center">
+              <ClipboardCheck className="w-5 h-5 text-teal-" />
             </div>
             <div>
-              <CardTitle className="text-lg font-bold text-indigo-900">Protocolos e Avaliações</CardTitle>
+              <CardTitle className="text-lg font-bold text-teal-">Protocolos e Avaliações</CardTitle>
               <CardDescription className="text-xs">
                 Rastreamento de testes e avaliações aplicadas.
               </CardDescription>
@@ -206,7 +206,7 @@ export function ProtocolTrackerCard({
             <Button 
               size="sm" 
               variant="outline" 
-              className="h-9 px-4 rounded-full border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-all"
+              className="h-9 px-4 rounded-full border-teal- text-teal- hover:bg-teal- transition-all"
               onClick={handleExportPdf}
               disabled={evaluations.length === 0 || !profile || !patient}
             >
@@ -217,7 +217,7 @@ export function ProtocolTrackerCard({
             <Dialog open={open} onOpenChange={setOpen}>
               <Button 
                 size="sm" 
-                className="bg-indigo-600 hover:bg-indigo-700 text-white h-9 px-5 rounded-full shadow-lg shadow-indigo-200 transition-all active:scale-95" 
+                className="bg-teal- hover:bg-teal- text-white h-9 px-5 rounded-full shadow-lg shadow-teal- transition-all active:scale-95" 
                 onClick={() => {
                   if (!hasSubscription && !subLoading) {
                     router.push("/dashboard/settings/billing");
@@ -231,7 +231,7 @@ export function ProtocolTrackerCard({
               </Button>
               <DialogContent className="sm:max-w-md rounded-[32px] border-0 shadow-2xl">
                 <DialogHeader className="p-4">
-                  <DialogTitle className="text-xl font-bold text-indigo-900">Registrar Avaliação</DialogTitle>
+                  <DialogTitle className="text-xl font-bold text-teal-">Registrar Avaliação</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleAddEvaluation} className="space-y-5 p-4 pt-0">
                   <div className="space-y-1.5">
@@ -286,7 +286,7 @@ export function ProtocolTrackerCard({
                           className={cn(
                             "flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all",
                             formData.status === s
-                              ? "bg-white text-indigo-700 shadow-sm"
+                              ? "bg-white text-teal- shadow-sm"
                               : "text-slate-500 hover:bg-white/50"
                           )}
                         >
@@ -307,7 +307,7 @@ export function ProtocolTrackerCard({
                     </Button>
                     <Button
                       type="submit"
-                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full h-12 font-bold shadow-lg shadow-indigo-200"
+                      className="flex-1 bg-teal- hover:bg-teal- text-white rounded-full h-12 font-bold shadow-lg shadow-teal-"
                       disabled={saving}
                     >
                       {saving ? "Salvando..." : "Registrar"}
@@ -322,13 +322,13 @@ export function ProtocolTrackerCard({
       
       <CardContent className="p-0">
         <Table>
-          <TableHeader className="bg-indigo-50/30">
-            <TableRow className="border-b border-indigo-100/50 hover:bg-transparent">
-              <TableHead className="text-[10px] font-bold text-indigo-900/60 uppercase tracking-widest py-4 pl-8">Protocolo</TableHead>
-              <TableHead className="text-[10px] font-bold text-indigo-900/60 uppercase tracking-widest py-4">Data</TableHead>
-              <TableHead className="text-[10px] font-bold text-indigo-900/60 uppercase tracking-widest py-4">Score</TableHead>
-              <TableHead className="text-[10px] font-bold text-indigo-900/60 uppercase tracking-widest py-4">Status</TableHead>
-              <TableHead className="text-[10px] font-bold text-indigo-900/60 uppercase tracking-widest py-4 text-right pr-8">Ações</TableHead>
+          <TableHeader className="bg-teal-/30">
+            <TableRow className="border-b border-teal-/50 hover:bg-transparent">
+              <TableHead className="text-[10px] font-bold text-teal-/60 uppercase tracking-widest py-4 pl-8">Protocolo</TableHead>
+              <TableHead className="text-[10px] font-bold text-teal-/60 uppercase tracking-widest py-4">Data</TableHead>
+              <TableHead className="text-[10px] font-bold text-teal-/60 uppercase tracking-widest py-4">Score</TableHead>
+              <TableHead className="text-[10px] font-bold text-teal-/60 uppercase tracking-widest py-4">Status</TableHead>
+              <TableHead className="text-[10px] font-bold text-teal-/60 uppercase tracking-widest py-4 text-right pr-8">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -336,15 +336,15 @@ export function ProtocolTrackerCard({
               [1, 2].map((i) => (
                 <TableRow key={i}>
                   <TableCell colSpan={5} className="py-8 text-center">
-                    <div className="animate-pulse h-4 bg-indigo-100/20 rounded-full w-3/4 mx-auto" />
+                    <div className="animate-pulse h-4 bg-teal-/20 rounded-full w-3/4 mx-auto" />
                   </TableCell>
                 </TableRow>
               ))
             ) : evaluations.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="py-16 text-center">
-                  <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center mx-auto mb-3">
-                    <ClipboardCheck className="w-6 h-6 text-indigo-300" />
+                  <div className="w-12 h-12 rounded-full bg-teal- flex items-center justify-center mx-auto mb-3">
+                    <ClipboardCheck className="w-6 h-6 text-teal-" />
                   </div>
                   <p className="text-sm text-slate-400 font-medium">Nenhum protocolo registrado.</p>
                 </TableCell>
@@ -352,7 +352,7 @@ export function ProtocolTrackerCard({
             ) : (
               evaluations.map((e: any) => (
                 <TableRow key={e.id} className="group hover:bg-white/40 transition-colors border-b border-white/20 last:border-0">
-                  <TableCell className="text-sm font-bold text-indigo-900/80 py-5 pl-8">
+                  <TableCell className="text-sm font-bold text-teal-/80 py-5 pl-8">
                     {e.protocol_name}
                   </TableCell>
                   <TableCell className="text-[11px] text-slate-500 font-medium">

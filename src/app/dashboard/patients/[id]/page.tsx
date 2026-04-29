@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -28,6 +28,8 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronRight,
+  ChevronLeft,
+  Check,
   History,
   Smile,
   Frown,
@@ -42,10 +44,19 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogTrigger, 
+  DialogClose,
+  DialogDescription,
+  DialogFooter
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { SESSION_STATUS, formatCurrency, formatDate, formatTime, SPECIALTIES } from "@/lib/constants";
@@ -56,6 +67,15 @@ import { ProtocolTrackerCard } from "@/components/dashboard/patients/protocol-tr
 import { AbcRecordCard } from "@/components/dashboard/patients/abc-record-card";
 import { AnamnesisRequestCard } from "@/components/dashboard/patients/anamnesis-request-card";
 import { useSubscription } from "@/hooks/use-subscription";
+
+const getWeekStart = (date: Date) => {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
 
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -92,6 +112,21 @@ export default function PatientDetailPage() {
   const [errorDialog, setErrorDialog] = useState({ open: false, title: "", message: "" });
   const [viewingSession, setViewingSession] = useState<Session | null>(null);
   const [showSessionModal, setShowSessionModal] = useState(false);
+  const [isEditingSession, setIsEditingSession] = useState(false);
+  const [sessionEditForm, setSessionEditForm] = useState({
+    notes: "",
+    mood_happy_sad: 5,
+    mood_anxious_calm: 5,
+  });
+
+  const [rescheduleSession, setRescheduleSession] = useState<Session | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState("");
+  const [rescheduleTime, setRescheduleTime] = useState("");
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [rescheduleWeekOffset, setRescheduleWeekOffset] = useState(0);
+  const [therapistSessions, setTherapistSessions] = useState<Session[]>([]);
+  const [showCancelSeriesModal, setShowCancelSeriesModal] = useState(false);
+  const [cancellingSession, setCancellingSession] = useState<Session | null>(null);
 
   function showError(title: string, message: string) {
     setErrorDialog({ open: true, title, message });
@@ -100,6 +135,39 @@ export default function PatientDetailPage() {
   useEffect(() => {
     loadData();
   }, [id]);
+
+  const rescheduleWeekDays = useMemo(() => {
+    const start = getWeekStart(new Date());
+    start.setDate(start.getDate() + (rescheduleWeekOffset * 7));
+    return Array.from({ length: 6 }, (_, i) => { // Seg-Sáb
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      return d;
+    });
+  }, [rescheduleWeekOffset]);
+
+  useEffect(() => {
+    async function fetchAgendaForReschedule() {
+      if (!profile || !showRescheduleModal) return;
+      
+      const startRange = rescheduleWeekDays[0];
+      const endRange = new Date(rescheduleWeekDays[5]);
+      endRange.setHours(23, 59, 59, 999);
+
+      const { data, error } = await supabase
+        .from("sessions")
+        .select("id, scheduled_at, duration_minutes, patient:patients(full_name)")
+        .eq("user_id", profile.id)
+        .gte("scheduled_at", startRange.toISOString())
+        .lte("scheduled_at", endRange.toISOString())
+        .not("status", "eq", "cancelled");
+
+      if (!error && data) {
+        setTherapistSessions(data);
+      }
+    }
+    fetchAgendaForReschedule();
+  }, [rescheduleWeekOffset, showRescheduleModal, profile, rescheduleWeekDays]);
 
   async function loadData() {
     setLoading(true);
@@ -191,6 +259,165 @@ export default function PatientDetailPage() {
         prev.map((s) => (s.id === sessionId ? { ...s, status: newStatus } : s))
       );
     }
+  };
+
+  const handleStartEditingSession = () => {
+    if (!viewingSession) return;
+    
+    let evolution = { notes: "", mood_happy_sad: 5, mood_anxious_calm: 5 };
+    try {
+      if (viewingSession.session_notes_encrypted) {
+        const parsed = JSON.parse(viewingSession.session_notes_encrypted);
+        evolution = {
+          notes: parsed.notes || viewingSession.session_notes_encrypted || "",
+          mood_happy_sad: parsed.mood_happy_sad || 5,
+          mood_anxious_calm: parsed.mood_anxious_calm || 5
+        };
+      }
+    } catch (e) {
+      evolution.notes = viewingSession.session_notes_encrypted || "";
+    }
+    
+    setSessionEditForm(evolution);
+    setIsEditingSession(true);
+  };
+
+  const handleSaveSessionEdit = async () => {
+    if (!viewingSession || !patient) return;
+    setIsSaving(true);
+
+    try {
+      const evolutionData = {
+        notes: sessionEditForm.notes,
+        mood_happy_sad: sessionEditForm.mood_happy_sad,
+        mood_anxious_calm: sessionEditForm.mood_anxious_calm,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabase
+        .from("sessions")
+        .update({ 
+          status: "completed",
+          session_notes_encrypted: JSON.stringify(evolutionData)
+        })
+        .eq("id", viewingSession.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setSessions(prev => prev.map(s => 
+        s.id === viewingSession.id 
+          ? { ...s, status: "completed" as any, session_notes_encrypted: JSON.stringify(evolutionData) } 
+          : s
+      ));
+      
+      setViewingSession({ 
+        ...viewingSession, 
+        status: "completed" as any, 
+        session_notes_encrypted: JSON.stringify(evolutionData) 
+      });
+      
+      setIsEditingSession(false);
+      
+      // Emit event to refresh other components if needed
+      window.dispatchEvent(new CustomEvent("notifications:refresh"));
+    } catch (err: any) {
+      showError("Erro ao salvar", err.message || "Erro inesperado.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancelSession = async (allFollowing: boolean) => {
+    if (!cancellingSession) return;
+    setIsSaving(true);
+
+    try {
+      let query = supabase.from("sessions").update({ status: "cancelled" });
+      
+      if (allFollowing && cancellingSession.recurrence_rule) {
+        query = query
+          .eq("recurrence_rule", cancellingSession.recurrence_rule)
+          .gte("scheduled_at", cancellingSession.scheduled_at);
+      } else {
+        query = query.eq("id", cancellingSession.id);
+      }
+
+      const { error } = await query;
+      if (error) throw error;
+
+      setShowCancelSeriesModal(false);
+      setCancellingSession(null);
+      loadData();
+      window.dispatchEvent(new CustomEvent("notifications:refresh"));
+    } catch (err: any) {
+      showError("Erro ao cancelar", err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleReschedule = async () => {
+    if (!rescheduleSession || !rescheduleDate || !rescheduleTime || !profile) return;
+    setIsSaving(true);
+
+    try {
+      const [year, month, day] = rescheduleDate.split('-').map(Number);
+      const [hours, minutes] = rescheduleTime.split(':').map(Number);
+      const scheduledAt = new Date(year, month - 1, day, hours, minutes);
+
+      if (isNaN(scheduledAt.getTime())) {
+        throw new Error("Data ou hora inválida.");
+      }
+
+      // Check for conflicts
+      const { data: conflicts, error: conflictError } = await supabase
+        .from("sessions")
+        .select("id, scheduled_at, duration_minutes")
+        .eq("user_id", profile.id)
+        .neq("id", rescheduleSession.id)
+        .gte("scheduled_at", new Date(scheduledAt.getTime() - 4 * 60 * 60 * 1000).toISOString())
+        .lte("scheduled_at", new Date(scheduledAt.getTime() + 4 * 60 * 60 * 1000).toISOString())
+        .not("status", "eq", "cancelled");
+
+      if (conflictError) throw conflictError;
+
+      const hasConflict = conflicts?.some(s => {
+        const start = new Date(s.scheduled_at);
+        const end = new Date(start.getTime() + s.duration_minutes * 60000);
+        const newStart = scheduledAt;
+        const newEnd = new Date(newStart.getTime() + rescheduleSession.duration_minutes * 60000);
+        return (newStart < end && newEnd > start);
+      });
+
+      if (hasConflict) {
+        throw new Error("Este horário já está ocupado por outro paciente.");
+      }
+
+      const { error } = await supabase
+        .from("sessions")
+        .update({ 
+          scheduled_at: scheduledAt.toISOString(),
+          status: "scheduled" 
+        })
+        .eq("id", rescheduleSession.id);
+
+      if (error) throw error;
+
+      setShowRescheduleModal(false);
+      setRescheduleSession(null);
+      loadData();
+      window.dispatchEvent(new CustomEvent("notifications:refresh"));
+    } catch (err: any) {
+      showError("Erro ao reagendar", err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSlotClick = (day: Date, hour: number) => {
+    setRescheduleDate(day.toISOString().split('T')[0]);
+    setRescheduleTime(`${hour.toString().padStart(2, '0')}:00`);
   };
 
   const handleArchive = async () => {
@@ -896,18 +1123,29 @@ export default function PatientDetailPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-7 text-xs text-green-700 border-green-200 hover:bg-green-50"
-                          onClick={() => handleStatusChange(session.id, "completed")}
+                          className="h-7 text-xs text-primary border-primary/20 hover:bg-primary/5"
+                          onClick={() => {
+                            setRescheduleSession(session);
+                            const date = new Date(session.scheduled_at);
+                            setRescheduleDate(date.toISOString().split('T')[0]);
+                            setRescheduleTime(date.toTimeString().slice(0, 5));
+                            setShowRescheduleModal(true);
+                          }}
                         >
-                          ✓ Realizada
+                          <Calendar className="w-3.5 h-3.5 mr-1" />
+                          Remarcar
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
                           className="h-7 text-xs text-red-700 border-red-200 hover:bg-red-50"
-                          onClick={() => handleStatusChange(session.id, "missed")}
+                          onClick={() => {
+                            setCancellingSession(session);
+                            setShowCancelSeriesModal(true);
+                          }}
                         >
-                          ✗ Faltou
+                          <X className="w-3.5 h-3.5 mr-1" />
+                          Cancelar
                         </Button>
                       </div>
                     </div>
@@ -974,7 +1212,7 @@ export default function PatientDetailPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between ml-2">
                 <h3 className="text-xl font-bold text-primary flex items-center gap-2">
-                  <div className="w-2 h-8 bg-indigo-400 rounded-full" />
+                  <div className="w-2 h-8 bg-primary/20 rounded-full" />
                   Responsável Legal
                 </h3>
                 {isEditing && (
@@ -1297,7 +1535,7 @@ export default function PatientDetailPage() {
                 {/* Notas Manuais */}
                 {patient.notes_encrypted && (
                   <div className="space-y-2">
-                    <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-4">Observações Gerais</p>
+                    <p className="text-[10px] font-black text-teal- uppercase tracking-widest ml-4">Observações Gerais</p>
                     <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans text-slate-700 font-medium bg-white/20 p-8 rounded-[24px] border border-white/40">
                       {patient.notes_encrypted}
                     </pre>
@@ -1511,6 +1749,7 @@ export default function PatientDetailPage() {
                           className="rounded-full text-primary hover:bg-primary/10 transition-all active:scale-95"
                           onClick={() => {
                             setViewingSession(session);
+                            setIsEditingSession(false);
                             setShowSessionModal(true);
                           }}
                         >
@@ -1525,107 +1764,360 @@ export default function PatientDetailPage() {
           </div>
         </TabsContent>
 
+        {/* Reschedule Modal */}
+        <Dialog open={showRescheduleModal} onOpenChange={setShowRescheduleModal}>
+          <DialogContent className="sm:max-w-[850px] rounded-[32px] glass-panel border-none shadow-2xl p-0 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-white/20 bg-white/40 flex items-center justify-between shrink-0">
+              <div>
+                <DialogTitle className="text-xl font-black text-primary uppercase tracking-tight">Remarcar Sessão</DialogTitle>
+                <DialogDescription className="text-xs font-bold text-muted-foreground/60 mt-1 uppercase tracking-widest">
+                  Selecione um novo horário livre na sua agenda
+                </DialogDescription>
+              </div>
+              <div className="flex items-center bg-white/60 rounded-full border border-white/80 p-1 shadow-sm">
+                <Button variant="ghost" size="icon" className="w-8 h-8 rounded-full" onClick={() => setRescheduleWeekOffset(p => p - 1)}>
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <span className="text-[10px] font-black px-3 uppercase tracking-widest text-primary/60">
+                  {rescheduleWeekDays[0].toLocaleDateString('pt-BR', { month: 'short', day: 'numeric' })} - {rescheduleWeekDays[5].toLocaleDateString('pt-BR', { month: 'short', day: 'numeric' })}
+                </span>
+                <Button variant="ghost" size="icon" className="w-8 h-8 rounded-full" onClick={() => setRescheduleWeekOffset(p => p + 1)}>
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-auto p-4 bg-white/10">
+              <div className="grid grid-cols-[60px_repeat(6,1fr)] min-w-[800px] gap-px bg-white/40 border border-primary/20 rounded-2xl overflow-hidden shadow-sm relative">
+                {/* Header */}
+                <div className="bg-white/60 h-12 border-b border-primary/20 sticky left-0 z-30 shadow-[2px_0_5px_rgba(0,0,0,0.05)]"></div>
+                {rescheduleWeekDays.map((day, i) => (
+                  <div key={i} className={cn(
+                    "bg-white/60 h-12 border-b border-primary/20 flex flex-col items-center justify-center",
+                    day.toDateString() === new Date().toDateString() && "bg-primary/5"
+                  )}>
+                    <span className="text-[8px] font-black text-primary/40 uppercase tracking-widest">{["SEG", "TER", "QUA", "QUI", "SEX", "SÁB"][i]}</span>
+                    <span className="text-sm font-black text-primary">{day.getDate()}</span>
+                  </div>
+                ))}
+
+                {/* Rows */}
+                {Array.from({ length: 13 }, (_, i) => 8 + i).map((hour) => (
+                  <React.Fragment key={hour}>
+                    <div className="bg-white/60 h-16 flex items-center justify-center border-r border-primary/10 sticky left-0 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+                      <span className="text-[10px] font-black text-primary/30">{hour}:00</span>
+                    </div>
+                    {rescheduleWeekDays.map((day, dayIdx) => {
+                      const isOccupied = therapistSessions.some(s => {
+                        const sDate = new Date(s.scheduled_at);
+                        return sDate.toDateString() === day.toDateString() && sDate.getHours() === hour;
+                      });
+                      const isSelected = rescheduleDate === day.toISOString().split('T')[0] && parseInt(rescheduleTime.split(':')[0]) === hour;
+
+                      return (
+                        <div 
+                          key={dayIdx} 
+                          onClick={() => !isOccupied && handleSlotClick(day, hour)}
+                          className={cn(
+                            "h-16 relative border-r border-b border-primary/10 transition-all cursor-pointer",
+                            isOccupied ? "bg-red-50/30 cursor-not-allowed" : "hover:bg-primary/5",
+                            isSelected && "bg-primary/10 ring-2 ring-primary ring-inset z-10"
+                          )}
+                        >
+                          {isOccupied && (
+                            <div className="absolute inset-1 rounded-lg bg-red-100/60 border border-red-200/50 flex flex-col items-center justify-center p-1 overflow-hidden">
+                              <span className="text-[7px] font-black text-red-600 uppercase tracking-tighter text-center leading-none">Ocupado</span>
+                            </div>
+                          )}
+                          {isSelected && (
+                            <div className="absolute inset-1 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center">
+                              <Check className="w-4 h-4 text-primary animate-in zoom-in-50" />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-6 bg-white/50 border-t border-white/20 flex justify-between items-center px-8 shrink-0">
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black text-primary/40 uppercase tracking-widest">Horário Selecionado</span>
+                <span className="text-sm font-black text-primary">
+                  {rescheduleDate ? new Date(rescheduleDate + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }) : "Selecione na grade"}
+                  {rescheduleTime && ` às ${rescheduleTime}`}
+                </span>
+              </div>
+              <div className="flex gap-3">
+                <Button variant="ghost" className="rounded-full font-bold px-8" onClick={() => setShowRescheduleModal(false)}>
+                  CANCELAR
+                </Button>
+                <Button 
+                  className="gradient-primary text-white rounded-full font-black px-12 h-12 shadow-lg shadow-primary/20 active:scale-95 transition-all"
+                  onClick={handleReschedule}
+                  disabled={isSaving || !rescheduleDate || !rescheduleTime}
+                >
+                  {isSaving ? "SALVANDO..." : "CONFIRMAR"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Cancel Series / Session Modal */}
+        <Dialog open={showCancelSeriesModal} onOpenChange={setShowCancelSeriesModal}>
+          <DialogContent className="sm:max-w-[400px] rounded-[32px] glass-panel border-none shadow-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold text-red-600 flex items-center gap-2">
+                <AlertCircle className="w-5 h-5" />
+                Confirmar Cancelamento
+              </DialogTitle>
+              <DialogDescription className="text-sm font-medium pt-2">
+                Tem certeza que deseja cancelar esta sessão?
+              </DialogDescription>
+            </DialogHeader>
+            
+            {cancellingSession?.recurrence_rule && (
+              <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 mt-2">
+                <p className="text-xs text-amber-800 font-bold">Esta sessão faz parte de um pacote ou série recorrente.</p>
+                <p className="text-[10px] text-amber-700 mt-1">Deseja cancelar apenas esta sessão ou todas as futuras?</p>
+              </div>
+            )}
+
+            <DialogFooter className="flex flex-col sm:flex-row gap-2 mt-4 w-full">
+              <Button variant="ghost" className="rounded-full font-bold text-muted-foreground order-3 sm:order-1" onClick={() => setShowCancelSeriesModal(false)}>
+                Voltar
+              </Button>
+              
+              {cancellingSession?.recurrence_rule ? (
+                <div className="flex flex-col sm:flex-row gap-2 flex-1">
+                  <Button 
+                    variant="outline"
+                    className="rounded-full font-bold text-red-600 border-red-200 hover:bg-red-50 flex-1"
+                    onClick={() => handleCancelSession(false)}
+                    disabled={isSaving}
+                  >
+                    Apenas esta
+                  </Button>
+                  <Button 
+                    className="rounded-full font-black bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-200 flex-1"
+                    onClick={() => handleCancelSession(true)}
+                    disabled={isSaving}
+                  >
+                    Toda a série
+                  </Button>
+                </div>
+              ) : (
+                <Button 
+                  className="rounded-full font-black bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-200 flex-1"
+                  onClick={() => handleCancelSession(false)}
+                  disabled={isSaving}
+                >
+                  Confirmar Cancelamento
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* Session Detail Modal */}
         <Dialog open={showSessionModal} onOpenChange={setShowSessionModal}>
-          <DialogContent className="sm:max-w-xl rounded-[32px] border-white/40 backdrop-blur-2xl bg-white/90 shadow-2xl p-0 overflow-hidden">
+          <DialogContent className="sm:max-w-xl rounded-[32px] border-white/40 backdrop-blur-2xl bg-white/90 shadow-2xl p-0 overflow-hidden flex flex-col max-h-[90vh]">
             {viewingSession && (
-              <div className="animate-in fade-in zoom-in-95 duration-200">
-                <div className="p-8 border-b border-indigo-100 bg-white/50 flex items-center justify-between">
+              <div className="animate-in fade-in zoom-in-95 duration-200 flex flex-col h-full overflow-hidden">
+                <div className="p-8 border-b border-primary/10 bg-white/50 flex items-center justify-between shrink-0">
                   <div>
                     <h2 className="text-2xl font-black text-primary tracking-tight uppercase leading-none">
-                      Detalhes da Sessão
+                      {isEditingSession ? "Editar Sessão" : "Detalhes da Sessão"}
                     </h2>
                     <p className="text-xs font-bold text-muted-foreground/60 mt-1 uppercase tracking-widest">
                       {formatDate(viewingSession.scheduled_at)} às {formatTime(viewingSession.scheduled_at)}
                     </p>
                   </div>
-                  <Badge className={cn("rounded-full px-4 py-1 text-[10px] font-black uppercase tracking-widest border-0", SESSION_STATUS[viewingSession.status].color)}>
-                    {SESSION_STATUS[viewingSession.status].label}
-                  </Badge>
+                  {!isEditingSession && (
+                    <div className="flex items-center gap-3">
+                      <Badge className={cn("rounded-full px-4 py-1 text-[10px] font-black uppercase tracking-widest border-0", SESSION_STATUS[viewingSession.status].color)}>
+                        {SESSION_STATUS[viewingSession.status].label}
+                      </Badge>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="w-10 h-10 rounded-full bg-primary/5 text-primary hover:bg-primary/10 transition-all"
+                        onClick={handleStartEditingSession}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
-                <div className="p-8 space-y-8 max-h-[60vh] overflow-y-auto">
-                  {/* Evolução */}
-                  <div className="space-y-4">
-                    <Label className="text-[11px] font-black text-primary/60 uppercase ml-2 tracking-widest flex items-center gap-2">
-                      <FileText className="w-4 h-4" />
-                      Evolução Clínica
-                    </Label>
-                    <div className="bg-white/40 p-6 rounded-3xl border border-white/60 shadow-sm italic text-sm leading-relaxed text-slate-700">
+                <div className="p-8 space-y-8 overflow-y-auto flex-1">
+                  {isEditingSession ? (
+                    /* Edit Mode Form */
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+                      <div className="space-y-3">
+                        <Label className="text-[11px] font-black text-primary/60 uppercase ml-2 tracking-widest flex items-center gap-2">
+                          <Edit className="w-4 h-4" />
+                          Evolução Clínica
+                        </Label>
+                        <Textarea 
+                          className="min-h-[180px] rounded-[24px] border-primary/20 bg-white/50 p-6 text-sm leading-relaxed focus:bg-white transition-all shadow-inner resize-none"
+                          placeholder="Descreva a evolução do paciente..."
+                          value={sessionEditForm.notes}
+                          onChange={(e) => setSessionEditForm(p => ({ ...p, notes: e.target.value }))}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-8">
+                        {/* Sliders in Edit Mode */}
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between px-2">
+                            <Label className="text-[11px] font-black text-primary/60 uppercase tracking-widest">Humor do Paciente</Label>
+                            <span className="text-lg font-black text-primary">{sessionEditForm.mood_happy_sad}</span>
+                          </div>
+                          <div className="bg-white/40 p-6 rounded-3xl border border-primary/20 shadow-sm space-y-4">
+                            <div className="flex items-center justify-between px-2">
+                              <Frown className={cn("w-6 h-6 transition-all", sessionEditForm.mood_happy_sad <= 3 ? "text-rose-500 scale-110" : "text-muted-foreground/30")} />
+                              <Smile className={cn("w-6 h-6 transition-all", sessionEditForm.mood_happy_sad >= 8 ? "text-emerald-500 scale-110" : "text-muted-foreground/30")} />
+                            </div>
+                            <input 
+                              type="range" min="1" max="10" step="1"
+                              value={sessionEditForm.mood_happy_sad}
+                              onChange={(e) => setSessionEditForm(p => ({ ...p, mood_happy_sad: parseInt(e.target.value) }))}
+                              className="w-full h-2 bg-primary/10 rounded-full appearance-none cursor-pointer accent-primary"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between px-2">
+                            <Label className="text-[11px] font-black text-primary/60 uppercase tracking-widest">Nível de Agitação</Label>
+                            <span className="text-lg font-black text-primary">{sessionEditForm.mood_anxious_calm}</span>
+                          </div>
+                          <div className="bg-white/40 p-6 rounded-3xl border border-primary/20 shadow-sm space-y-4">
+                            <div className="flex items-center justify-between px-2">
+                              <Waves className={cn("w-6 h-6 transition-all", sessionEditForm.mood_anxious_calm <= 3 ? "text-sky-500 scale-110" : "text-muted-foreground/30")} />
+                              <Zap className={cn("w-6 h-6 transition-all", sessionEditForm.mood_anxious_calm >= 8 ? "text-amber-500 scale-110" : "text-muted-foreground/30")} />
+                            </div>
+                            <input 
+                              type="range" min="1" max="10" step="1"
+                              value={sessionEditForm.mood_anxious_calm}
+                              onChange={(e) => setSessionEditForm(p => ({ ...p, mood_anxious_calm: parseInt(e.target.value) }))}
+                              className="w-full h-2 bg-primary/10 rounded-full appearance-none cursor-pointer accent-primary"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* View Mode */
+                    <>
+                      <div className="space-y-4">
+                        <Label className="text-[11px] font-black text-primary/60 uppercase ml-2 tracking-widest flex items-center gap-2">
+                          <FileText className="w-4 h-4" />
+                          Evolução Clínica
+                        </Label>
+                        <div className="bg-white/40 p-6 rounded-3xl border border-white/60 shadow-sm italic text-sm leading-relaxed text-slate-700">
+                          {(() => {
+                            try {
+                              const evolution = JSON.parse(viewingSession.session_notes_encrypted || "{}");
+                              return evolution.notes || viewingSession.session_notes_encrypted || "Nenhuma nota registrada.";
+                            } catch (e) {
+                              return viewingSession.session_notes_encrypted || "Nenhuma nota registrada.";
+                            }
+                          })()}
+                        </div>
+                      </div>
+
+                      {/* Mood Indices */}
                       {(() => {
                         try {
                           const evolution = JSON.parse(viewingSession.session_notes_encrypted || "{}");
-                          return evolution.notes || viewingSession.session_notes_encrypted || "Nenhuma nota registrada.";
+                          if (!evolution.mood_happy_sad && !evolution.mood_anxious_calm) return null;
+                          
+                          return (
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10 space-y-3">
+                                <div className="flex items-center justify-between text-primary">
+                                  <Label className="text-[9px] font-black uppercase tracking-widest">Humor</Label>
+                                  {evolution.mood_happy_sad >= 7 ? <Smile className="w-4 h-4" /> : <Frown className="w-4 h-4" />}
+                                </div>
+                                <p className="text-2xl font-black text-primary">{evolution.mood_happy_sad}/10</p>
+                              </div>
+                              <div className="bg-amber-50/50 p-4 rounded-2xl border border-amber-100 space-y-3">
+                                <div className="flex items-center justify-between text-amber-600">
+                                  <Label className="text-[9px] font-black uppercase tracking-widest">Agitação</Label>
+                                  {evolution.mood_anxious_calm >= 7 ? <Zap className="w-4 h-4" /> : <Waves className="w-4 h-4" />}
+                                </div>
+                                <p className="text-2xl font-black text-amber-700">{evolution.mood_anxious_calm}/10</p>
+                              </div>
+                            </div>
+                          );
                         } catch (e) {
-                          return viewingSession.session_notes_encrypted || "Nenhuma nota registrada.";
+                          return null;
                         }
                       })()}
-                    </div>
-                  </div>
 
-                  {/* Mood Indices */}
-                  {(() => {
-                    try {
-                      const evolution = JSON.parse(viewingSession.session_notes_encrypted || "{}");
-                      if (!evolution.mood_happy_sad && !evolution.mood_anxious_calm) return null;
-                      
-                      return (
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100 space-y-3">
-                            <div className="flex items-center justify-between text-indigo-600">
-                              <Label className="text-[9px] font-black uppercase tracking-widest">Humor</Label>
-                              {evolution.mood_happy_sad >= 7 ? <Smile className="w-4 h-4" /> : <Frown className="w-4 h-4" />}
-                            </div>
-                            <p className="text-2xl font-black text-indigo-700">{evolution.mood_happy_sad}/10</p>
-                          </div>
-                          <div className="bg-amber-50/50 p-4 rounded-2xl border border-amber-100 space-y-3">
-                            <div className="flex items-center justify-between text-amber-600">
-                              <Label className="text-[9px] font-black uppercase tracking-widest">Agitação</Label>
-                              {evolution.mood_anxious_calm >= 7 ? <Waves className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
-                            </div>
-                            <p className="text-2xl font-black text-amber-700">{evolution.mood_anxious_calm}/10</p>
-                          </div>
+                      {/* Meta Data */}
+                      <div className="grid grid-cols-2 gap-8 bg-white/40 p-6 rounded-3xl border border-white/60">
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-black text-primary/40 uppercase tracking-widest">Duração</p>
+                          <p className="text-base font-black text-primary">{viewingSession.duration_minutes} min</p>
                         </div>
-                      );
-                    } catch (e) {
-                      return null;
-                    }
-                  })()}
-
-                  {/* Meta Data */}
-                  <div className="grid grid-cols-2 gap-8 bg-white/40 p-6 rounded-3xl border border-white/60">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-black text-primary/40 uppercase tracking-widest">Duração</p>
-                      <p className="text-base font-black text-primary">{viewingSession.duration_minutes} min</p>
-                    </div>
-                    <div className="text-right space-y-1">
-                      <p className="text-[10px] font-black text-primary/40 uppercase tracking-widest">Tipo</p>
-                      <p className="text-base font-black text-primary capitalize">{viewingSession.session_type}</p>
-                    </div>
-                  </div>
+                        <div className="text-right space-y-1">
+                          <p className="text-[10px] font-black text-primary/40 uppercase tracking-widest">Tipo</p>
+                          <p className="text-base font-black text-primary capitalize">{viewingSession.session_type}</p>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
                 
-                <div className="p-4 bg-white/50 border-t border-indigo-100 flex justify-between items-center px-8">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => handleExportSingleSession(viewingSession)}
-                    disabled={isExporting}
-                    className="rounded-full px-6 h-10 font-bold border-indigo-200 text-indigo-600 hover:bg-indigo-50"
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    EXPORTAR PDF
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    onClick={() => setShowSessionModal(false)}
-                    className="rounded-full px-8 font-black text-primary"
-                  >
-                    FECHAR
-                  </Button>
+                <div className="p-6 bg-white/50 border-t border-primary/10 flex justify-between items-center px-8 shrink-0">
+                  {isEditingSession ? (
+                    <>
+                      <Button 
+                        variant="ghost" 
+                        onClick={() => setIsEditingSession(false)}
+                        className="rounded-full px-8 font-black text-muted-foreground"
+                      >
+                        CANCELAR
+                      </Button>
+                      <Button 
+                        onClick={handleSaveSessionEdit}
+                        disabled={isSaving}
+                        className="rounded-full px-12 h-12 font-black gradient-primary text-white shadow-lg active:scale-95 transition-all"
+                      >
+                        {isSaving ? "SALVANDO..." : "SALVAR ALTERAÇÕES"}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => handleExportSingleSession(viewingSession)}
+                        disabled={isExporting}
+                        className="rounded-full px-6 h-10 font-bold border-primary/20 text-primary hover:bg-primary/5"
+                      >
+                        <Download className="w-4 h-4 mr-2" />
+                        EXPORTAR PDF
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        onClick={() => setShowSessionModal(false)}
+                        className="rounded-full px-8 font-black text-primary"
+                      >
+                        FECHAR
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
           </DialogContent>
+
         </Dialog>
 
         {/* Lembretes e Alertas */}

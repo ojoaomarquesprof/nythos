@@ -22,6 +22,11 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "Nythos",
   },
+  icons: {
+    icon: "/logo-icon.png",
+    shortcut: "/logo-icon.png",
+    apple: "/logo-icon.png",
+  },
   formatDetection: {
     telephone: false,
   },

@@ -67,14 +67,14 @@ export function CashFlowChart() {
 
   return (
     <Card className="border-0 shadow-xl shadow-slate-200/40 bg-white/80 backdrop-blur-md rounded-[32px] overflow-hidden animate-fade-in delay-500">
-      <CardHeader className="pb-4 px-8 pt-8 border-b border-indigo-50/50">
+      <CardHeader className="pb-4 px-8 pt-8 border-b border-teal-/50">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-[11px] font-black text-indigo-600/40 uppercase tracking-[0.2em]">
+          <CardTitle className="text-[11px] font-black text-teal-/40 uppercase tracking-[0.2em]">
             Fluxo de Caixa
           </CardTitle>
           <Link
             href="/dashboard/finances"
-            className="text-[10px] font-black text-indigo-600 hover:text-indigo-700 transition-colors uppercase tracking-widest bg-indigo-50 px-4 py-2 rounded-full border border-indigo-100/50 shadow-sm active:scale-95 transition-all"
+            className="text-[10px] font-black text-teal- hover:text-teal- transition-colors uppercase tracking-widest bg-teal- px-4 py-2 rounded-full border border-teal-/50 shadow-sm active:scale-95 transition-all"
           >
             Ver Detalhes
           </Link>
@@ -99,11 +99,11 @@ export function CashFlowChart() {
               {formatCurrency(currentMonth.expenses)}
             </p>
           </div>
-          <div className="text-center p-4 rounded-[24px] bg-indigo-50 border border-indigo-100/50 shadow-sm">
-            <p className="text-[9px] text-indigo-600 font-black uppercase tracking-widest">
+          <div className="text-center p-4 rounded-[24px] bg-teal- border border-teal-/50 shadow-sm">
+            <p className="text-[9px] text-teal- font-black uppercase tracking-widest">
               Lucro
             </p>
-            <p className="text-sm font-bold text-indigo-700 mt-1">
+            <p className="text-sm font-bold text-teal- mt-1">
               {formatCurrency(profit)}
             </p>
           </div>
@@ -147,7 +147,7 @@ export function CashFlowChart() {
                   className={cn(
                     "text-[10px] font-black uppercase tracking-widest",
                     isLast
-                      ? "text-indigo-600"
+                      ? "text-teal-"
                       : "text-slate-300"
                   )}
                 >

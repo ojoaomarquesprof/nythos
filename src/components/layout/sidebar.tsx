@@ -14,7 +14,7 @@ import {
   Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
@@ -83,18 +83,8 @@ export function Sidebar() {
   return (
     <aside className="hidden md:flex md:flex-col md:w-64 lg:w-72 border-r border-border bg-sidebar h-screen sticky top-0">
       {/* Logo */}
-      <div className="flex items-center gap-3 px-6 py-5">
-        <div className="w-9 h-9 rounded-xl gradient-primary flex items-center justify-center shadow-md">
-          <Brain className="w-5 h-5 text-white" />
-        </div>
-        <div>
-          <h1 className="text-lg font-bold tracking-tight text-foreground">
-            Nythos
-          </h1>
-          <p className="text-[11px] text-muted-foreground -mt-0.5">
-            Gestão Clínica
-          </p>
-        </div>
+      <div className="flex items-center px-5 py-8 w-full">
+        <img src="/logo-horizontal.png" alt="Nythos" className="w-full h-auto object-contain scale-110" />
       </div>
 
       <Separator className="mx-4" />
@@ -132,18 +122,24 @@ export function Sidebar() {
 
         {(!hasSubscription || isTrial) && (
           <div className={cn(
-            "mt-6 mx-2 p-4 rounded-2xl border flex flex-col items-center text-center",
-            isTrial ? "bg-indigo-50/50 border-indigo-100" : "bg-primary/5 border-primary/10"
+            "mt-6 mx-3 p-5 rounded-2xl border-2 flex flex-col items-center text-center shadow-md transition-all",
+            isTrial ? "bg-indigo-100/80 border-indigo-300 ring-4 ring-indigo-500/5" : "bg-primary/5 border-primary/10"
           )}>
             {isTrial ? (
-              <Clock className="w-8 h-8 text-indigo-600 mb-2 opacity-80" />
+              <Clock className="w-10 h-10 text-indigo-700 mb-2 animate-pulse-slow" />
             ) : (
               <ShieldCheck className="w-8 h-8 text-primary mb-2 opacity-80" />
             )}
-            <p className="text-xs font-bold mb-1">
+            <p className={cn(
+              "text-sm font-black mb-1",
+              isTrial ? "text-indigo-950 uppercase tracking-tight" : "text-foreground"
+            )}>
               {isTrial ? "Período de Teste" : "Acesso Limitado"}
             </p>
-            <p className="text-[10px] text-muted-foreground mb-3 leading-tight">
+            <p className={cn(
+              "text-[11px] mb-4 leading-tight",
+              isTrial ? "text-indigo-900 font-bold" : "text-muted-foreground"
+            )}>
               {isTrial 
                 ? `Você tem ${daysLeft} ${daysLeft === 1 ? 'dia' : 'dias'} de acesso total liberado!`
                 : "Assine um plano para liberar todas as funções."}
@@ -189,6 +185,9 @@ export function Sidebar() {
         {/* User card */}
         <div className="mt-3 flex items-center gap-3 px-3 py-3 rounded-xl bg-muted/30 border border-border/50">
           <Avatar className="w-9 h-9">
+            {profile?.avatar_url && (
+              <AvatarImage src={profile.avatar_url} alt={profile.full_name || ""} />
+            )}
             <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
               {initials}
             </AvatarFallback>

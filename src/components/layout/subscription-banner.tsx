@@ -20,21 +20,21 @@ export function SubscriptionBanner() {
       "border-b py-2 px-4 flex items-center justify-center gap-4 text-sm animate-fade-in sticky top-0 z-50 shadow-sm transition-colors",
       isExpired 
         ? "bg-amber-50 border-amber-200 text-amber-800" 
-        : "bg-indigo-50 border-indigo-200 text-indigo-800"
+        : "bg-teal-50 border-teal-200 text-teal-900"
     )}>
       <div className="flex items-center gap-2 text-center md:text-left">
         {isExpired ? (
           <ShieldAlert className="w-4 h-4 text-amber-600" />
         ) : (
-          <Clock className="w-4 h-4 text-indigo-600" />
+          <Clock className="w-4 h-4 text-teal-600" />
         )}
-        <span className="font-medium whitespace-nowrap">
+        <span className="font-bold whitespace-nowrap">
           {isSecretary 
-            ? (isExpired ? "Acesso Suspenso:" : "Status da Clínica:") 
-            : (isExpired ? "Modo de Visualização:" : "Período de Teste Grátis:")
+            ? (isExpired ? "ACESSO SUSPENSO:" : "STATUS DA CLÍNICA:") 
+            : (isExpired ? "MODO DE VISUALIZAÇÃO:" : "PERÍODO DE TESTE GRÁTIS:")
           }
         </span>
-        <span className="opacity-90">
+        <span className="opacity-100 font-medium">
           {isSecretary 
             ? (isExpired 
                 ? "O acesso da clínica está suspenso. Por favor, avise o administrador." 
@@ -49,8 +49,8 @@ export function SubscriptionBanner() {
         <Link 
           href="/dashboard/settings/billing"
           className={cn(
-            "flex items-center gap-1 font-bold hover:underline whitespace-nowrap",
-            isExpired ? "text-amber-900" : "text-indigo-900"
+            "flex items-center gap-1 font-black hover:scale-105 transition-transform whitespace-nowrap px-3 py-1 rounded-full",
+            isExpired ? "bg-amber-600 text-white" : "bg-teal-600 text-white"
           )}
         >
           {isExpired ? "Escolher um plano" : "Garantir minha assinatura"}

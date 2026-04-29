@@ -285,7 +285,7 @@ export default function NewPatientPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between ml-2">
             <h3 className="text-xl font-bold text-primary flex items-center gap-2">
-              <div className="w-2 h-8 bg-indigo-400 rounded-full" />
+              <div className="w-2 h-8 bg-teal- rounded-full" />
               Responsável Legal
             </h3>
             <div className="flex items-center gap-2 bg-white/40 px-4 py-2 rounded-full border border-white/60 shadow-sm">

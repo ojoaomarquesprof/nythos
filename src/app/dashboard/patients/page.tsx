@@ -41,7 +41,7 @@ const statusConfig = {
 };
 
 const avatarColors = [
-  "bg-violet-100 text-violet-700",
+  "bg-teal- text-teal-",
   "bg-emerald-100 text-emerald-700",
   "bg-rose-100 text-rose-700",
   "bg-amber-100 text-amber-700",
@@ -126,12 +126,12 @@ export default function PatientsPage() {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
           <Input
             placeholder="Buscar por nome, e-mail ou telefone..."
-            className="pl-12 h-12 bg-white/80 backdrop-blur-sm border-indigo-100 rounded-2xl shadow-sm focus-visible:ring-primary focus-visible:border-primary transition-all text-sm font-medium"
+            className="pl-12 h-12 bg-white/80 backdrop-blur-sm border-teal- rounded-2xl shadow-sm focus-visible:ring-primary focus-visible:border-primary transition-all text-sm font-medium"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="flex gap-1 bg-indigo-50/50 rounded-2xl p-1 border border-indigo-100/50 self-start sm:self-center">
+        <div className="flex gap-1 bg-teal-/50 rounded-2xl p-1 border border-teal-/50 self-start sm:self-center">
           {(["all", "active", "inactive", "archived"] as const).map((f) => (
             <button
               key={f}
@@ -195,24 +195,24 @@ export default function PatientsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="bg-white/80 backdrop-blur-md rounded-[32px] border border-indigo-100 shadow-xl overflow-hidden">
+        <div className="bg-white/80 backdrop-blur-md rounded-[32px] border border-teal- shadow-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
-                <tr className="border-b border-indigo-50 bg-indigo-50/30">
+                <tr className="border-b border-teal- bg-teal-/30">
                   <th className="px-6 py-4 text-left text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">Paciente</th>
                   <th className="px-6 py-4 text-left text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">Status</th>
                   <th className="px-6 py-4 text-left text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">Contato</th>
                   <th className="px-6 py-4 text-right text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-indigo-50">
+              <tbody className="divide-y divide-teal-">
                 {filtered.map((patient, index) => {
                   const status = statusConfig[patient.status];
                   return (
                     <tr 
                       key={patient.id} 
-                      className="group hover:bg-indigo-50/50 transition-colors cursor-pointer"
+                      className="group hover:bg-teal-/50 transition-colors cursor-pointer"
                       onClick={() => router.push(`/dashboard/patients/${patient.id}`)}
                     >
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -252,14 +252,14 @@ export default function PatientsPage() {
                         <div className="flex justify-end">
                           <DropdownMenu>
                             <DropdownMenuTrigger 
-                              className="w-9 h-9 rounded-xl hover:bg-indigo-50 flex items-center justify-center text-slate-400 hover:text-primary transition-all active:scale-90 outline-none border-none bg-transparent cursor-pointer"
+                              className="w-9 h-9 rounded-xl hover:bg-teal- flex items-center justify-center text-slate-400 hover:text-primary transition-all active:scale-90 outline-none border-none bg-transparent cursor-pointer"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <MoreVertical className="w-5 h-5" />
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48 rounded-2xl border-indigo-100 shadow-xl p-1.5 animate-slide-up">
+                            <DropdownMenuContent align="end" className="w-48 rounded-2xl border-teal- shadow-xl p-1.5 animate-slide-up">
                               <DropdownMenuItem 
-                                className="rounded-xl flex items-center gap-2 font-bold text-xs py-2.5 cursor-pointer text-slate-700 hover:text-primary focus:bg-indigo-50 transition-colors"
+                                className="rounded-xl flex items-center gap-2 font-bold text-xs py-2.5 cursor-pointer text-slate-700 hover:text-primary focus:bg-teal- transition-colors"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   router.push(`/dashboard/patients/${patient.id}`);
@@ -269,7 +269,7 @@ export default function PatientsPage() {
                                 Ver Prontuário
                               </DropdownMenuItem>
                               <DropdownMenuItem 
-                                className="rounded-xl flex items-center gap-2 font-bold text-xs py-2.5 cursor-pointer text-slate-700 hover:text-primary focus:bg-indigo-50 transition-colors"
+                                className="rounded-xl flex items-center gap-2 font-bold text-xs py-2.5 cursor-pointer text-slate-700 hover:text-primary focus:bg-teal- transition-colors"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   router.push(`/dashboard/schedule?patient=${patient.id}`);
@@ -278,7 +278,7 @@ export default function PatientsPage() {
                                 <CalendarPlus className="w-4 h-4 text-primary/40" />
                                 Agendar Sessão
                               </DropdownMenuItem>
-                              <DropdownMenuSeparator className="bg-indigo-50 my-1" />
+                              <DropdownMenuSeparator className="bg-teal- my-1" />
                               <DropdownMenuItem 
                                 className="rounded-xl flex items-center gap-2 font-bold text-xs py-2.5 cursor-pointer text-rose-600 focus:text-rose-700 focus:bg-rose-50 transition-colors"
                                 onClick={(e) => {
