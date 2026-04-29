@@ -21,6 +21,9 @@ export interface Database {
           push_subscription: Json | null;
           biometric_credential_id: string | null;
           timezone: string;
+          role: 'therapist' | 'secretary' | 'admin';
+          employer_id: string | null;
+          email: string | null;
           created_at: string;
           updated_at: string;
           signature_url: string | null;
@@ -41,6 +44,9 @@ export interface Database {
           push_subscription?: Json | null;
           biometric_credential_id?: string | null;
           timezone?: string;
+          role?: 'therapist' | 'secretary' | 'admin';
+          employer_id?: string | null;
+          email?: string | null;
           signature_url?: string | null;
           cpf?: string | null;
           rg?: string | null;
@@ -58,6 +64,9 @@ export interface Database {
           push_subscription?: Json | null;
           biometric_credential_id?: string | null;
           timezone?: string;
+          role?: 'therapist' | 'secretary' | 'admin';
+          employer_id?: string | null;
+          email?: string | null;
           signature_url?: string | null;
           cpf?: string | null;
           rg?: string | null;
@@ -84,6 +93,7 @@ export interface Database {
           insurance_provider: string | null;
           insurance_number: string | null;
           access_token: string;
+          auth_user_id: string | null;  // auth.users.id do paciente (Magic Link)
           created_at: string;
           updated_at: string;
         };
@@ -105,6 +115,7 @@ export interface Database {
           session_price?: number | null;
           insurance_provider?: string | null;
           insurance_number?: string | null;
+          // auth_user_id é preenchido pela RPC link_patient_auth_user — não expor no Insert
         };
         Update: {
           full_name?: string;
@@ -122,6 +133,7 @@ export interface Database {
           session_price?: number | null;
           insurance_provider?: string | null;
           insurance_number?: string | null;
+          auth_user_id?: string | null;  // vinculado via RPC link_patient_auth_user
         };
       };
       sessions: {
@@ -329,6 +341,18 @@ export interface Database {
           status?: 'pending' | 'completed';
         };
       };
+      system_settings: {
+        Row: {
+          key: string;
+          value: string;
+          description: string | null;
+          updated_at: string;
+        };
+        // INSERT e UPDATE intencionalmente omitidos:
+        // escrita permitida apenas via service_role (migrations/admin).
+        Insert: never;
+        Update: never;
+      };
     };
     Views: {
       monthly_financial_summary: {
@@ -339,6 +363,16 @@ export interface Database {
           total_expenses: number;
           net_profit: number;
           pending_payments: number;
+        };
+      };
+    };
+    Functions: {
+      link_patient_auth_user: {
+        Args: Record<string, never>;
+        Returns: {
+          success: boolean;
+          patient_id?: string;
+          error?: string;
         };
       };
     };
@@ -354,6 +388,7 @@ export type PatientTask = Database['public']['Tables']['patient_tasks']['Row'];
 export type EmotionDiary = Database['public']['Tables']['emotion_diary']['Row'];
 export type AnamnesisTemplate = Database['public']['Tables']['anamnesis_templates']['Row'];
 export type AnamnesisResponse = Database['public']['Tables']['anamnesis_responses']['Row'];
+export type SystemSetting = Database['public']['Tables']['system_settings']['Row'];
 
 export type SessionStatus = 'scheduled' | 'completed' | 'missed' | 'cancelled';
 export type SessionType = 'individual' | 'couple' | 'group' | 'online' | 'initial_assessment';

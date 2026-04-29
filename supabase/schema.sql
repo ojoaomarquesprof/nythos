@@ -8,10 +8,27 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================================
--- FUNÇÕES AUXILIARES: Simulação de Criptografia (Dados Sensíveis)
+-- FUNÇÕES AUXILIARES: Criptografia de Dados Sensíveis (Supabase Vault)
+-- ============================================================
+-- NOTA DE DESIGN — Política de Segurança:
+--   As duas funções adotam estratégias deliberadamente diferentes:
+--
+--   • encrypt_sensitive_text → FAIL-SECURE (aborta a transação)
+--     Se a chave não estiver disponível no Vault ou a criptografia falhar,
+--     lança RAISE EXCEPTION abortando o INSERT/UPDATE. Isso garante que
+--     dados de saúde NUNCA sejam persistidos em texto puro no banco,
+--     em conformidade com a LGPD e o sigilo médico (CFP/CFM).
+--
+--   • decrypt_sensitive_text → GRACEFUL DEGRADATION (não crasha o frontend)
+--     Se a chave não estiver disponível, retorna marcadores identificáveis
+--     ('[ERRO_VAULT: ...]') em vez de lançar exceção, permitindo que o
+--     frontend exiba um aviso contextual sem quebrar a tela inteira.
+--
+--   Para configurar a chave no Vault, execute supabase/seed_vault.sql.
 -- ============================================================
 
--- Função para "criptografar" texto sensível usando Supabase Vault
+-- Função para criptografar texto sensível usando Supabase Vault
+-- POLÍTICA: FAIL-SECURE — aborta a transação se a criptografia não puder ser garantida.
 CREATE OR REPLACE FUNCTION encrypt_sensitive_text(plain_text TEXT)
 RETURNS TEXT AS $$
 DECLARE
@@ -20,35 +37,63 @@ BEGIN
   IF plain_text IS NULL THEN
     RETURN NULL;
   END IF;
-  
+
   -- Buscar a chave de criptografia no Supabase Vault
-  SELECT secret INTO v_secret_key 
-  FROM vault.decrypted_secrets 
-  WHERE name = 'nythos_encryption_key'
-  LIMIT 1;
-  
-  IF v_secret_key IS NULL THEN
-    RAISE EXCEPTION 'A chave de criptografia não está configurada no Supabase Vault (nythos_encryption_key).';
+  BEGIN
+    SELECT secret INTO v_secret_key
+    FROM vault.decrypted_secrets
+    WHERE name = 'nythos_encryption_key'
+    LIMIT 1;
+  EXCEPTION WHEN OTHERS THEN
+    -- Vault inacessível (extensão não ativada, permissão negada, etc.)
+    -- Abortar: não é seguro persistir dados de saúde sem criptografia.
+    RAISE EXCEPTION 'SECURITY_FAULT: Não foi possível criptografar o prontuário. Operação abortada por segurança. (Causa: Vault inacessível)'
+      USING ERRCODE = 'P0001';
+  END;
+
+  -- Chave ausente ou vazia — abortar por segurança
+  IF v_secret_key IS NULL OR v_secret_key = '' THEN
+    RAISE EXCEPTION 'SECURITY_FAULT: Não foi possível criptografar o prontuário. Operação abortada por segurança. (Causa: nythos_encryption_key não configurada no Vault)'
+      USING ERRCODE = 'P0001';
   END IF;
 
-  RETURN 'ENC::' || encode(
-    encrypt(
-      convert_to(plain_text, 'UTF8'),
-      convert_to(v_secret_key, 'UTF8'),
-      'aes'
-    ),
-    'base64'
-  );
+  -- Tentar criptografar; abortar em caso de falha de runtime
+  BEGIN
+    RETURN 'ENC::' || encode(
+      encrypt(
+        convert_to(plain_text, 'UTF8'),
+        convert_to(v_secret_key, 'UTF8'),
+        'aes'
+      ),
+      'base64'
+    );
+  EXCEPTION WHEN OTHERS THEN
+    -- Chave inválida, padding incorreto ou erro de runtime — abortar
+    RAISE EXCEPTION 'SECURITY_FAULT: Não foi possível criptografar o prontuário. Operação abortada por segurança. (Causa: falha no algoritmo AES — verifique a chave no Vault)'
+      USING ERRCODE = 'P0001';
+  END;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
--- Função para "descriptografar" texto sensível usando Supabase Vault
+
+-- Função para descriptografar texto sensível usando Supabase Vault
 CREATE OR REPLACE FUNCTION decrypt_sensitive_text(encrypted_text TEXT)
 RETURNS TEXT AS $$
 DECLARE
   v_secret_key TEXT;
 BEGIN
-  IF encrypted_text IS NULL OR NOT starts_with(encrypted_text, 'ENC::') THEN
+  -- Nulo ou texto sem prefixo de criptografia → devolve como está
+  IF encrypted_text IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  -- Texto armazenado como plano (Vault não estava configurado na escrita)
+  IF starts_with(encrypted_text, 'PLAIN::') THEN
+    RETURN substring(encrypted_text FROM 8);
+  END IF;
+
+  -- Texto sem nenhum prefixo reconhecido → devolve como está (dados legados)
+  IF NOT starts_with(encrypted_text, 'ENC::') THEN
     RETURN encrypted_text;
   END IF;
 
@@ -58,23 +103,35 @@ BEGIN
   END IF;
 
   -- Buscar a chave de criptografia no Supabase Vault
-  SELECT secret INTO v_secret_key 
-  FROM vault.decrypted_secrets 
-  WHERE name = 'nythos_encryption_key'
-  LIMIT 1;
-  
-  IF v_secret_key IS NULL THEN
-    RAISE EXCEPTION 'A chave de criptografia não está configurada no Supabase Vault (nythos_encryption_key).';
+  BEGIN
+    SELECT secret INTO v_secret_key
+    FROM vault.decrypted_secrets
+    WHERE name = 'nythos_encryption_key'
+    LIMIT 1;
+  EXCEPTION WHEN OTHERS THEN
+    -- Vault inacessível → sinaliza ao frontend sem exceção fatal
+    RETURN '[ERRO_VAULT: chave de criptografia indisponível]';
+  END;
+
+  -- Chave não encontrada no Vault
+  IF v_secret_key IS NULL OR v_secret_key = '' THEN
+    RETURN '[ERRO_VAULT: chave de criptografia não configurada]';
   END IF;
 
-  RETURN convert_from(
-    decrypt(
-      decode(substring(encrypted_text from 6), 'base64'),
-      convert_to(v_secret_key, 'UTF8'),
-      'aes'
-    ),
-    'UTF8'
-  );
+  -- Tentar descriptografar; em caso de falha, sinalizar ao frontend
+  BEGIN
+    RETURN convert_from(
+      decrypt(
+        decode(substring(encrypted_text FROM 6), 'base64'),
+        convert_to(v_secret_key, 'UTF8'),
+        'aes'
+      ),
+      'UTF8'
+    );
+  EXCEPTION WHEN OTHERS THEN
+    -- Padding inválido, chave incorreta ou dado corrompido
+    RETURN '[ERRO_VAULT: falha ao descriptografar — verifique a chave]';
+  END;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
@@ -447,12 +504,21 @@ CREATE POLICY "Allow insert via service role"
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
+  -- Pacientes são provisionados via /api/patients/create (auth.admin.createUser)
+  -- e têm seu registro em public.patients, não em public.profiles.
+  -- Ignorar para evitar poluição na tabela de terapeutas.
+  IF (NEW.raw_user_meta_data->>'user_type') = 'patient' THEN
+    RETURN NEW;
+  END IF;
+
   INSERT INTO public.profiles (id, full_name, avatar_url)
   VALUES (
     NEW.id,
     COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email),
     COALESCE(NEW.raw_user_meta_data->>'avatar_url', '')
-  );
+  )
+  ON CONFLICT (id) DO NOTHING;
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
