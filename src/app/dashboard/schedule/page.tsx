@@ -764,7 +764,7 @@ export default function SchedulePage() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden bg-white/60 backdrop-blur-md">
+      <main className="flex-1 flex flex-col h-full overflow-hidden bg-white/60 backdrop-blur-md relative">
         <header className="flex flex-col md:flex-row items-start md:items-center justify-between px-4 md:px-8 py-3 md:py-0 md:h-20 border-b border-white/40 bg-white/40 shrink-0 gap-3 md:gap-0">
           <div className="flex flex-wrap items-center gap-3 md:gap-8 w-full md:w-auto justify-between md:justify-start">
             <div className="flex items-center gap-2">
@@ -1020,7 +1020,7 @@ export default function SchedulePage() {
         {/* Floating Action Button for Mobile */}
         <SubscriptionGate>
           <Button
-            className="lg:hidden fixed bottom-20 right-4 z-50 w-14 h-14 rounded-full gradient-primary shadow-xl shadow-primary/30 text-white flex items-center justify-center hover:scale-105 active:scale-95 transition-all border-2 border-white/20"
+            className="lg:hidden absolute bottom-6 right-4 z-50 w-14 h-14 rounded-full gradient-primary shadow-xl shadow-primary/30 text-white flex items-center justify-center hover:scale-105 active:scale-95 transition-all border-2 border-white/20"
             onClick={() => setShowNewSession(true)}
           >
             <Plus className="w-6 h-6" />
