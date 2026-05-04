@@ -55,15 +55,15 @@ function StatCard({
     >
       <CardContent className="p-6">
         <div className="flex flex-col gap-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between gap-3">
             <div className={cn(
-              "w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-all group-hover:scale-110 group-hover:rotate-3",
+              "w-12 h-12 shrink-0 rounded-2xl flex items-center justify-center shadow-lg transition-all group-hover:scale-110 group-hover:rotate-3",
               colors.bg,
               colors.shadow
             )}>
               <Icon className="w-6 h-6 text-white" />
             </div>
-            <p className={cn("text-[10px] font-black uppercase tracking-[0.2em] opacity-40", colors.text)}>
+            <p className={cn("text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] text-right opacity-40 leading-tight", colors.text)}>
               {title}
             </p>
           </div>
