@@ -21,3 +21,6 @@ export function createAdminClient() {
     }
   );
 }
+
+// Export for backward compatibility with existing codebase
+export const supabaseAdmin = createAdminClient();
