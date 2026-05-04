@@ -765,17 +765,17 @@ export default function SchedulePage() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-full overflow-hidden bg-white/60 backdrop-blur-md">
-        <header className="h-20 border-b border-white/40 flex items-center justify-between px-8 bg-white/40 shrink-0">
-          <div className="flex items-center gap-8">
+        <header className="flex flex-col md:flex-row items-start md:items-center justify-between px-4 md:px-8 py-3 md:py-0 md:h-20 border-b border-white/40 bg-white/40 shrink-0 gap-3 md:gap-0">
+          <div className="flex flex-wrap items-center gap-3 md:gap-8 w-full md:w-auto justify-between md:justify-start">
             <div className="flex items-center gap-2">
-              <CalendarDays className="w-8 h-8 text-primary" />
-              <h1 className="text-2xl font-black text-primary tracking-tight hidden sm:block">Agenda</h1>
+              <CalendarDays className="w-7 h-7 md:w-8 md:h-8 text-primary" />
+              <h1 className="text-xl md:text-2xl font-black text-primary tracking-tight hidden sm:block">Agenda</h1>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 md:gap-4">
               <Button 
                 variant="outline" 
-                className="rounded-full border-primary/20 font-bold hover:bg-primary/5 active:scale-95 transition-all h-10 px-6"
+                className="rounded-full border-primary/20 font-bold hover:bg-primary/5 active:scale-95 transition-all h-8 md:h-10 px-4 md:px-6 text-xs md:text-sm"
                 onClick={() => {
                   const now = new Date();
                   setCurrentDate(now);
@@ -784,25 +784,26 @@ export default function SchedulePage() {
               >
                 Hoje
               </Button>
-              <div className="flex items-center bg-white/60 rounded-full border border-white/80 p-1 shadow-sm">
-                <Button variant="ghost" size="icon" className="w-8 h-8 rounded-full" onClick={() => navigate(-1)}>
+              <div className="flex items-center bg-white/60 rounded-full border border-white/80 p-0.5 md:p-1 shadow-sm">
+                <Button variant="ghost" size="icon" className="w-7 h-7 md:w-8 md:h-8 rounded-full" onClick={() => navigate(-1)}>
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
-                <Button variant="ghost" size="icon" className="w-8 h-8 rounded-full" onClick={() => navigate(1)}>
+                <Button variant="ghost" size="icon" className="w-7 h-7 md:w-8 md:h-8 rounded-full" onClick={() => navigate(1)}>
                   <ChevronRight className="w-4 h-4" />
                 </Button>
               </div>
-              <h2 className="text-xl font-black text-primary/80 capitalize">{monthYear}</h2>
             </div>
+            
+            <h2 className="text-sm md:text-xl font-black text-primary/80 capitalize w-full sm:w-auto text-center sm:text-left order-last sm:order-none">{monthYear}</h2>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="bg-white/60 rounded-full border border-white/80 p-1 flex shadow-sm">
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <div className="bg-white/60 rounded-full border border-white/80 p-1 flex shadow-sm w-full md:w-auto">
               <Button 
                 variant="ghost" 
                 size="sm" 
                 className={cn(
-                  "rounded-full h-8 px-4 text-xs font-black transition-all",
+                  "flex-1 md:flex-none rounded-full h-8 px-3 md:px-4 text-[11px] md:text-xs font-black transition-all",
                   view === 'week' ? "bg-white text-primary shadow-sm" : "text-primary/40 hover:text-primary"
                 )}
                 onClick={() => setView('week')}
@@ -813,7 +814,7 @@ export default function SchedulePage() {
                 variant="ghost" 
                 size="sm" 
                 className={cn(
-                  "rounded-full h-8 px-4 text-xs font-black transition-all",
+                  "flex-1 md:flex-none rounded-full h-8 px-3 md:px-4 text-[11px] md:text-xs font-black transition-all",
                   view === 'month' ? "bg-white text-primary shadow-sm" : "text-primary/40 hover:text-primary"
                 )}
                 onClick={() => setView('month')}
@@ -824,7 +825,7 @@ export default function SchedulePage() {
                 variant="ghost" 
                 size="sm" 
                 className={cn(
-                  "rounded-full h-8 px-4 text-xs font-black transition-all",
+                  "flex-1 md:flex-none rounded-full h-8 px-3 md:px-4 text-[11px] md:text-xs font-black transition-all",
                   view === 'day' ? "bg-white text-primary shadow-sm" : "text-primary/40 hover:text-primary"
                 )}
                 onClick={() => setView('day')}
@@ -844,26 +845,26 @@ export default function SchedulePage() {
               {/* Header de Dias */}
               <div className={cn(
                 "sticky top-0 z-30 grid bg-white/80 backdrop-blur-md border-b border-white/40 shadow-sm",
-                view === 'week' ? "grid-cols-[80px_repeat(7,1fr)]" : "grid-cols-[80px_1fr]"
+                view === 'week' ? "grid-cols-[60px_repeat(7,1fr)] md:grid-cols-[80px_repeat(7,1fr)]" : "grid-cols-[60px_1fr] md:grid-cols-[80px_1fr]"
               )}>
-                <div className="h-24 flex items-end justify-end p-4 border-r border-white/20 sticky left-0 z-40 bg-white/80">
-                  <span className="text-[10px] font-black text-primary/30 uppercase tracking-tighter">GMT-03</span>
+                <div className="h-16 md:h-24 flex items-end justify-end p-2 md:p-4 border-r border-white/20 sticky left-0 z-40 bg-white/80">
+                  <span className="text-[8px] md:text-[10px] font-black text-primary/30 uppercase tracking-tighter">GMT-03</span>
                 </div>
                 {weekDays.map((day, i) => {
                   const isToday = day.toDateString() === today.toDateString();
                   return (
                     <div key={i} className={cn(
-                      "h-24 flex flex-col items-center justify-center border-l border-teal-/50",
+                      "h-16 md:h-24 flex flex-col items-center justify-center border-l border-teal-/50",
                       isToday && "bg-primary/5"
                     )}>
                       <span className={cn(
-                        "text-[11px] font-black uppercase tracking-widest mb-2",
+                        "text-[9px] md:text-[11px] font-black uppercase tracking-widest mb-1 md:mb-2",
                         isToday ? "text-primary" : "text-primary/40"
                       )}>
                         {view === 'day' ? day.toLocaleDateString("pt-BR", { weekday: 'long' }) : dayNamesShort[i]}
                       </span>
                       <div className={cn(
-                        "w-12 h-12 rounded-full flex items-center justify-center text-xl font-black transition-all",
+                        "w-8 h-8 md:w-12 md:h-12 rounded-full flex items-center justify-center text-sm md:text-xl font-black transition-all",
                         isToday ? "gradient-primary text-white shadow-lg shadow-primary/20 scale-110" : "text-primary/70"
                       )}>
                         {day.getDate()}
@@ -876,12 +877,12 @@ export default function SchedulePage() {
               {/* Grid de Horários */}
               <div className={cn(
                 "grid relative",
-                view === 'week' ? "grid-cols-[80px_repeat(7,1fr)]" : "grid-cols-[80px_1fr]"
+                view === 'week' ? "grid-cols-[60px_repeat(7,1fr)] md:grid-cols-[80px_repeat(7,1fr)]" : "grid-cols-[60px_1fr] md:grid-cols-[80px_1fr]"
               )} style={{ height: (timelineEndHour - timelineStartHour + 1) * slotHeight }}>
                 <div className="border-r border-white/20 relative sticky left-0 z-20 bg-white/80 shadow-[10px_0_15px_-5px_rgba(0,0,0,0.02)]">
                   {hourLabels.map((hour, idx) => (
-                    <div key={hour} className="absolute right-3 -translate-y-1/2" style={{ top: idx * slotHeight }}>
-                      <span className="text-[11px] font-black text-primary/30 tracking-tighter">
+                    <div key={hour} className="absolute right-1 md:right-3 -translate-y-1/2" style={{ top: idx * slotHeight }}>
+                      <span className="text-[9px] md:text-[11px] font-black text-primary/30 tracking-tighter">
                         {hour === timelineStartHour ? "" : `${hour.toString().padStart(2, "0")}:00`}
                       </span>
                     </div>
@@ -932,7 +933,7 @@ export default function SchedulePage() {
                               <div className="flex flex-col h-full">
                                 <div className="flex items-start justify-between gap-1">
                                   <h4 className={cn(
-                                    "text-sm font-black truncate leading-tight uppercase tracking-tight",
+                                    "text-xs md:text-sm font-black truncate leading-tight uppercase tracking-tight",
                                     session.status === "completed" ? "text-emerald-700" :
                                     session.status === "missed" ? "text-rose-700" :
                                     "text-teal-"
@@ -1015,6 +1016,16 @@ export default function SchedulePage() {
             </div>
           )}
         </div>
+
+        {/* Floating Action Button for Mobile */}
+        <SubscriptionGate>
+          <Button
+            className="lg:hidden fixed bottom-20 right-4 z-50 w-14 h-14 rounded-full gradient-primary shadow-xl shadow-primary/30 text-white flex items-center justify-center hover:scale-105 active:scale-95 transition-all border-2 border-white/20"
+            onClick={() => setShowNewSession(true)}
+          >
+            <Plus className="w-6 h-6" />
+          </Button>
+        </SubscriptionGate>
       </main>
 
       {/* New Session Dialog */}
