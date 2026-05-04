@@ -77,6 +77,8 @@ export default function SchedulePage() {
   const [showSessionDetails, setShowSessionDetails] = useState(false);
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState<any>(null);
+  
+  const scrollRef = React.useRef<HTMLDivElement>(null);
 
   // New session form
   const [newSession, setNewSession] = useState({
@@ -247,6 +249,31 @@ export default function SchedulePage() {
       }));
     }
   }, [showNewSession, currentDate]);
+
+  useEffect(() => {
+    // Rola automaticamente para o horário atual ao carregar a página
+    if (scrollRef.current && view !== 'month') {
+      const now = new Date();
+      const currentHour = now.getHours();
+      const timelineStartHour = 7;
+      const timelineEndHour = 21;
+      const slotHeight = 80;
+
+      if (currentHour >= timelineStartHour && currentHour <= timelineEndHour) {
+        const offset = (currentHour - timelineStartHour) * slotHeight;
+        const containerHeight = scrollRef.current.clientHeight;
+        // Centraliza o horário atual na tela
+        setTimeout(() => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollTo({
+              top: Math.max(0, offset - containerHeight / 2 + (slotHeight / 2)),
+              behavior: 'smooth'
+            });
+          }
+        }, 300); // pequeno delay para garantir que o layout renderizou
+      }
+    }
+  }, [view, currentDate]);
 
   const handleCreateSession = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -687,7 +714,7 @@ export default function SchedulePage() {
   }, [currentDate]);
 
   return (
-    <div className="flex h-[calc(100vh-80px)] w-full overflow-hidden animate-fade-in bg-white/30">
+    <div className="flex h-[calc(100dvh-200px)] md:h-[calc(100vh-80px)] w-full overflow-hidden animate-fade-in bg-white/30">
       {/* Sidebar */}
       <aside className="w-72 border-r border-white/40 bg-white/40 backdrop-blur-xl p-6 hidden lg:flex flex-col gap-8 shrink-0">
         <SubscriptionGate>
@@ -836,7 +863,7 @@ export default function SchedulePage() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto scrollbar-hide relative bg-white/20">
+        <div ref={scrollRef} className="flex-1 overflow-auto scrollbar-hide relative bg-white/20">
           {view !== 'month' ? (
             <div className={cn(
               "relative",
@@ -1020,7 +1047,7 @@ export default function SchedulePage() {
         {/* Floating Action Button for Mobile */}
         <SubscriptionGate>
           <Button
-            className="lg:hidden absolute bottom-6 right-4 z-50 w-14 h-14 rounded-full gradient-primary shadow-xl shadow-primary/30 text-white flex items-center justify-center hover:scale-105 active:scale-95 transition-all border-2 border-white/20"
+            className="md:hidden fixed bottom-[90px] right-4 z-50 w-14 h-14 rounded-full gradient-primary shadow-xl shadow-primary/30 text-white flex items-center justify-center hover:scale-105 active:scale-95 transition-all border-2 border-white/20"
             onClick={() => setShowNewSession(true)}
           >
             <Plus className="w-6 h-6" />
