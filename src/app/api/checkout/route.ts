@@ -96,8 +96,10 @@ export async function POST(request: Request) {
     const plan = PLAN_CONFIG[planType];
 
     // 3. Buscar perfil
-    const { data: profile } = await supabaseAdmin
+    const { data: profileData } = await supabaseAdmin
       .from("profiles").select("full_name, cpf, phone").eq("id", user.id).maybeSingle();
+      
+    const profile = profileData as { full_name: string | null; cpf: string | null; phone: string | null } | null;
 
     const customerEmail = user.email!;
     const customerCpf   = (profile?.cpf || holderCpf).replace(/\D/g, "");
@@ -167,7 +169,7 @@ export async function POST(request: Request) {
     }
 
     // 6. Persistir apenas metadados (sem dados do cartão) no Supabase
-    await supabaseAdmin.from("subscriptions").upsert(
+    await (supabaseAdmin as any).from("subscriptions").upsert(
       {
         user_id: user.id,
         status: "active",

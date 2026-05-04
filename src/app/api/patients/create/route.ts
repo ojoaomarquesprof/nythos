@@ -81,8 +81,7 @@ export async function POST(request: Request) {
   }
 
   // Garantir que quem chama é terapeuta ou admin
-  // Usa supabaseAdmin para evitar inferência 'never' em partial selects com union types
-  const { data: profileData } = await supabaseAdmin
+  const { data: profileData } = await (supabaseAdmin as any)
     .from("profiles")
     .select("role, employer_id")
     .eq("id", therapist.id)
@@ -127,15 +126,10 @@ export async function POST(request: Request) {
   const normalizedEmail = email.trim().toLowerCase();
 
   // ── 3. Resolver auth_user_id (reutilizar ou criar) ──
-  //
-  // Verificar se ESTE EMAIL já tem um auth_user_id em qualquer patient
-  // deste terapeuta. Isso resolve o caso da mãe com múltiplos filhos:
-  // auth_user_id já existe → reutilizamos, não criamos um novo usuário.
-  //
   let authUserId: string;
   let authUserAlreadyExisted = false;
 
-  const { data: existingPatientWithAuth } = await supabaseAdmin
+  const { data: existingPatientWithAuth } = await (supabaseAdmin as any)
     .from("patients")
     .select("auth_user_id")
     .ilike("email", normalizedEmail)
@@ -151,16 +145,14 @@ export async function POST(request: Request) {
     // Criar novo usuário no Supabase Auth via service_role
     const { data: newAuthUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email: normalizedEmail,
-      email_confirm: true,        // confirmar email automaticamente (sem fluxo de verificação extra)
+      email_confirm: true,
       user_metadata: {
-        user_type: "patient",     // impede trigger handle_new_user de criar profile de terapeuta
+        user_type: "patient",
         full_name: full_name.trim(),
       },
     });
 
     if (createError) {
-      // Caso edge: usuário criado fora do fluxo (ex: paciente adulto que se cadastrou
-      // como terapeuta antes). Retornar erro claro para o terapeuta tratar.
       console.error("[api/patients/create] Erro ao criar auth user:", createError);
       return NextResponse.json(
         {
@@ -175,7 +167,7 @@ export async function POST(request: Request) {
   }
 
   // ── 4. Inserir paciente em public.patients com auth_user_id já definido ──
-  const { data: newPatient, error: insertError } = await supabaseAdmin
+  const { data: newPatient, error: insertError } = await (supabaseAdmin as any)
     .from("patients")
     .insert({
       user_id: effectiveTherapistId,

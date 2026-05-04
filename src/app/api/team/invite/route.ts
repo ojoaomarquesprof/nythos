@@ -66,7 +66,7 @@ export async function POST(req: Request) {
     // 3. Atualizar o perfil da nova secretária
     // Como a tabela profiles é populada automaticamente via trigger (provavelmente),
     // vamos usar o admin para forçar o papel e o vínculo.
-    const { error: profileError } = await supabaseAdmin
+    const { error: profileError } = await (supabaseAdmin as any)
       .from('profiles')
       .update({
         full_name: full_name,
