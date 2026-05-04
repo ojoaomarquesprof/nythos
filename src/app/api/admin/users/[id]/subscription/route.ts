@@ -18,11 +18,13 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { data: profile } = await supabase
+    const { data } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', user.id)
       .single();
+      
+    const profile = data as { role: string } | null;
 
     if (profile?.role !== 'admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
