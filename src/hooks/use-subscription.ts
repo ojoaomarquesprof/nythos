@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 
 // Fallback local de segurança: usado APENAS se a query ao banco falhar.
 // O valor canônico vive em system_settings.trial_duration_hours no Supabase.
-const TRIAL_HOURS_FALLBACK = 168; // 7 dias
+const TRIAL_HOURS_FALLBACK = 336; // 14 dias
 
 /**
  * Busca o valor de trial_duration_hours da tabela system_settings.
