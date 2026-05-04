@@ -43,11 +43,13 @@ export async function POST(
       else if (status === 'trialing') current_period_end.setDate(current_period_end.getDate() + 7);
     }
 
-    const { data: existingSub } = await adminClient
+    const { data: subData } = await adminClient
       .from('subscriptions')
       .select('id')
       .eq('user_id', id)
       .single();
+
+    const existingSub = subData as { id: string } | null;
 
     let result;
     if (existingSub) {
