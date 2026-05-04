@@ -44,9 +44,12 @@ export async function GET() {
       throw subsError;
     }
 
+    const profilesData = profiles as any[];
+    const subsData = subscriptions as any[];
+
     // Merge profiles with their subscriptions
-    const usersWithSubs = profiles.map(p => {
-      const sub = subscriptions.find(s => s.user_id === p.id);
+    const usersWithSubs = profilesData.map(p => {
+      const sub = subsData.find(s => s.user_id === p.id);
       return {
         ...p,
         subscription: sub || null
