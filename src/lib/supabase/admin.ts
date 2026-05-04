@@ -1,13 +1,23 @@
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-// Cliente com privilégios de administrador (ignora RLS)
-// USE APENAS NO BACKEND (API ROUTES / SERVER ACTIONS)
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
+// Create a Supabase client with the service role key.
+// This client bypasses RLS policies. It should ONLY be used in secure 
+// server-side contexts like API routes or Server Actions where authorization 
+// has already been manually verified.
+export function createAdminClient() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Missing Supabase URL or Service Role Key in environment variables.');
   }
-}) as any;
+
+  return createClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  );
+}
