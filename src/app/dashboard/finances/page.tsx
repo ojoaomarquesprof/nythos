@@ -330,11 +330,11 @@ export default function FinancesPage() {
         <Card className="border-0 shadow-lg shadow-emerald-500/5 bg-white overflow-hidden relative group hover:-translate-y-2 transition-all duration-300 rounded-[32px] border-b-4 border-emerald-500/20">
           <CardContent className="p-7">
             <div className="flex flex-col gap-6">
-              <div className="flex items-center justify-between">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20 group-hover:scale-110 transition-transform">
+              <div className="flex items-start justify-between gap-3">
+                <div className="w-12 h-12 shrink-0 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20 group-hover:scale-110 transition-transform">
                   <ArrowUpRight className="w-6 h-6" />
                 </div>
-                <p className="text-[10px] font-black text-emerald-600/40 uppercase tracking-[0.2em]">Receita Bruta</p>
+                <p className="text-[9px] md:text-[10px] font-black text-emerald-600/40 uppercase tracking-[0.2em] text-right leading-tight">Receita Bruta</p>
               </div>
               <div>
                 <p className="text-2xl font-bold text-emerald-600 tracking-tight leading-none mb-2">
@@ -352,11 +352,11 @@ export default function FinancesPage() {
         <Card className="border-0 shadow-lg shadow-rose-500/5 bg-white overflow-hidden relative group hover:-translate-y-2 transition-all duration-300 rounded-[32px] border-b-4 border-rose-500/20">
           <CardContent className="p-7">
             <div className="flex flex-col gap-6">
-              <div className="flex items-center justify-between">
-                <div className="w-12 h-12 rounded-2xl bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-500/20 group-hover:scale-110 transition-transform">
+              <div className="flex items-start justify-between gap-3">
+                <div className="w-12 h-12 shrink-0 rounded-2xl bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-500/20 group-hover:scale-110 transition-transform">
                   <ArrowDownRight className="w-6 h-6" />
                 </div>
-                <p className="text-[10px] font-black text-rose-600/40 uppercase tracking-[0.2em]">Total Despesas</p>
+                <p className="text-[9px] md:text-[10px] font-black text-rose-600/40 uppercase tracking-[0.2em] text-right leading-tight">Total Despesas</p>
               </div>
               <div>
                 <p className="text-2xl font-bold text-rose-600 tracking-tight leading-none mb-2">
@@ -371,24 +371,24 @@ export default function FinancesPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-0 shadow-lg shadow-teal-/5 bg-white overflow-hidden relative group hover:-translate-y-2 transition-all duration-300 rounded-[32px] border-b-4 border-teal-/20">
+        <Card className="border-0 shadow-lg shadow-teal-500/5 bg-white overflow-hidden relative group hover:-translate-y-2 transition-all duration-300 rounded-[32px] border-b-4 border-teal-500/20">
           <CardContent className="p-7">
             <div className="flex flex-col gap-6">
-              <div className="flex items-center justify-between">
-                <div className="w-12 h-12 rounded-2xl bg-teal- text-white flex items-center justify-center shadow-lg shadow-teal-/20 group-hover:scale-110 transition-transform">
+              <div className="flex items-start justify-between gap-3">
+                <div className="w-12 h-12 shrink-0 rounded-2xl bg-teal-500 text-white flex items-center justify-center shadow-lg shadow-teal-500/20 group-hover:scale-110 transition-transform">
                   {netProfit >= 0 ? <TrendingUp className="w-6 h-6" /> : <TrendingDown className="w-6 h-6" />}
                 </div>
-                <p className="text-[10px] font-black text-teal-/40 uppercase tracking-[0.2em]">Lucro Líquido</p>
+                <p className="text-[9px] md:text-[10px] font-black text-teal-600/40 uppercase tracking-[0.2em] text-right leading-tight">Lucro Líquido</p>
               </div>
               <div>
                 <p className={cn(
                   "text-2xl font-bold tracking-tight leading-none mb-2",
-                  netProfit >= 0 ? "text-teal-" : "text-rose-600"
+                  netProfit >= 0 ? "text-teal-600" : "text-rose-600"
                 )}>
                   {formatCurrency(netProfit)}
                 </p>
                 <div className="flex items-center gap-2">
-                  <span className="text-[9px] font-black text-teal-/60 uppercase tracking-widest">Resultado Real</span>
+                  <span className="text-[9px] font-black text-teal-600/60 uppercase tracking-widest">Resultado Real</span>
                 </div>
               </div>
             </div>
@@ -398,11 +398,11 @@ export default function FinancesPage() {
         <Card className="border-0 shadow-lg shadow-amber-500/5 bg-white overflow-hidden relative group hover:-translate-y-2 transition-all duration-300 rounded-[32px] border-b-4 border-amber-500/20">
           <CardContent className="p-7">
             <div className="flex flex-col gap-6">
-              <div className="flex items-center justify-between">
-                <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:scale-110 transition-transform">
+              <div className="flex items-start justify-between gap-3">
+                <div className="w-12 h-12 shrink-0 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:scale-110 transition-transform">
                   <Clock className="w-6 h-6" />
                 </div>
-                <p className="text-[10px] font-black text-amber-600/40 uppercase tracking-[0.2em]">A Receber</p>
+                <p className="text-[9px] md:text-[10px] font-black text-amber-600/40 uppercase tracking-[0.2em] text-right leading-tight">A Receber</p>
               </div>
               <div>
                 <p className="text-2xl font-bold text-amber-600 tracking-tight leading-none mb-2">
@@ -421,7 +421,7 @@ export default function FinancesPage() {
 
       {/* Transactions */}
       <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-md rounded-3xl overflow-hidden">
-        <CardHeader className="pb-4 px-6 pt-6 border-b border-teal-">
+        <CardHeader className="pb-4 px-6 pt-6 border-b border-teal-500">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <CardTitle className="text-xl font-black text-slate-800">Histórico de Fluxo</CardTitle>
@@ -434,13 +434,13 @@ export default function FinancesPage() {
                   size="sm" 
                   onClick={handleExportPdf}
                   disabled={isExporting || filtered.length === 0}
-                  className="h-10 rounded-xl font-bold border-teal- hover:bg-teal- text-teal- transition-all"
+                  className="h-10 rounded-xl font-bold border-teal- hover:bg-teal-500 text-teal- transition-all"
                 >
                   <Download className="w-4 h-4 mr-2" />
                   PDF
                 </Button>
               </SubscriptionGate>
-              <div className="flex gap-1 bg-teal-/50 rounded-xl p-1 border border-teal-/50">
+              <div className="flex gap-1 bg-teal-500/50 rounded-xl p-1 border border-teal-500/50">
                 {(["all", "income", "expense"] as const).map((f) => (
                   <button
                     key={f}
@@ -463,27 +463,27 @@ export default function FinancesPage() {
           {loading ? (
             <div className="space-y-4 py-4">
               {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="animate-pulse flex items-center gap-4 py-4 border-b border-teal-/50 last:border-0">
-                  <div className="w-12 h-12 rounded-2xl bg-teal-" />
+                <div key={i} className="animate-pulse flex items-center gap-4 py-4 border-b border-teal-500/50 last:border-0">
+                  <div className="w-12 h-12 rounded-2xl bg-teal-500" />
                   <div className="flex-1 space-y-2">
-                    <div className="w-48 h-5 bg-teal- rounded" />
-                    <div className="w-32 h-3 bg-teal- rounded" />
+                    <div className="w-48 h-5 bg-teal-500 rounded" />
+                    <div className="w-32 h-3 bg-teal-500 rounded" />
                   </div>
-                  <div className="w-24 h-6 bg-teal- rounded" />
+                  <div className="w-24 h-6 bg-teal-500 rounded" />
                 </div>
               ))}
             </div>
           ) : filtered.length === 0 ? (
             <div className="py-20 text-center">
-              <div className="w-20 h-20 bg-teal- rounded-full flex items-center justify-center mx-auto mb-4">
-                <Wallet className="w-10 h-10 text-teal-" />
+              <div className="w-20 h-20 bg-teal-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Wallet className="w-10 h-10 text-teal-600" />
               </div>
               <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">
                 Sem transações registradas
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-teal-">
+            <div className="divide-y divide-teal-500">
               {filtered.map((tx) => {
                 const category = CASH_FLOW_CATEGORIES[tx.category as keyof typeof CASH_FLOW_CATEGORIES];
                 const isIncome = tx.type === "income";
@@ -492,7 +492,7 @@ export default function FinancesPage() {
                 return (
                   <div
                     key={tx.id}
-                    className="flex items-center gap-4 py-6 group hover:bg-teal-/40 transition-all px-4 -mx-4 rounded-[24px] relative overflow-hidden border border-transparent hover:border-teal-/50"
+                    className="flex items-center gap-4 py-6 group hover:bg-teal-500/40 transition-all px-4 -mx-4 rounded-[24px] relative overflow-hidden border border-transparent hover:border-teal-500/50"
                   >
                     {/* Icon Container */}
                     <div
@@ -519,8 +519,8 @@ export default function FinancesPage() {
                       <div className="flex items-center gap-3">
                         <p className="text-[10px] font-black text-teal- uppercase tracking-[0.15em] flex items-center gap-2">
                           <span>{formatDate(tx.due_date || tx.paid_at || tx.created_at)}</span>
-                          <span className="w-1 h-1 rounded-full bg-teal-" />
-                          <span className="text-teal-/60">{category?.label || tx.category}</span>
+                          <span className="w-1 h-1 rounded-full bg-teal-500" />
+                          <span className="text-teal-600/60">{category?.label || tx.category}</span>
                         </p>
                       </div>
                     </div>
@@ -716,3 +716,4 @@ export default function FinancesPage() {
     </div>
   );
 }
+
