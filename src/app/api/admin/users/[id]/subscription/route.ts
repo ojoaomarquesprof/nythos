@@ -9,7 +9,8 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { status, days } = body; // status can be 'active', 'trialing', 'canceled'
+    const { days } = body; 
+    const status = body.status as "active" | "trialing" | "past_due" | "canceled" | "unpaid";
 
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
