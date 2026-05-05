@@ -58,6 +58,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
+import { PatientService } from "@/services/patient-service";
+import { AnamnesisService } from "@/services/anamnesis-service";
+import { BillingService } from "@/services/billing-service";
 import { cn } from "@/lib/utils";
 import { SESSION_STATUS, formatCurrency, formatDate, formatTime, SPECIALTIES } from "@/lib/constants";
 import type { Patient, Session, Profile, CashFlow, PatientTask } from "@/types/database";
@@ -154,13 +157,11 @@ export default function PatientDetailPage() {
       const endRange = new Date(rescheduleWeekDays[5]);
       endRange.setHours(23, 59, 59, 999);
 
-      const { data, error } = await supabase
-        .from("sessions")
-        .select("id, scheduled_at, duration_minutes, patient:patients(full_name)")
-        .eq("user_id", profile.id)
-        .gte("scheduled_at", startRange.toISOString())
-        .lte("scheduled_at", endRange.toISOString())
-        .not("status", "eq", "cancelled");
+      const { data, error } = await BillingService.getTherapistSessionsInRange(
+        profile.id,
+        startRange,
+        endRange
+      );
 
       if (!error && data) {
         setTherapistSessions(data);
@@ -175,19 +176,11 @@ export default function PatientDetailPage() {
     const idStr = Array.isArray(id) ? id[0] : id;
 
     const [patientRes, sessionsRes, authRes, guardianRes, tasksRes] = await Promise.all([
-      supabase.from("patients").select("*").eq("id", idStr).single(),
-      supabase
-        .from("sessions")
-        .select("*")
-        .eq("patient_id", idStr)
-        .order("scheduled_at", { ascending: false }),
+      PatientService.getById(idStr),
+      BillingService.getSessionsByPatient(idStr),
       supabase.auth.getUser(),
-      supabase.from("patient_guardians").select("*").eq("patient_id", idStr).maybeSingle(),
-      supabase
-        .from("patient_tasks")
-        .select("*")
-        .eq("patient_id", idStr)
-        .order("created_at", { ascending: false }),
+      PatientService.getGuardian(idStr),
+      PatientService.getTasks(idStr),
     ]);
 
     if (patientRes.data) {
@@ -210,11 +203,7 @@ export default function PatientDetailPage() {
 
     const sessionIds = sessionsRes.data?.map((s: Session) => s.id) || [];
     if (sessionIds.length > 0) {
-      const { data: cashFlowData } = await supabase
-        .from("cash_flow")
-        .select("*")
-        .in("session_id", sessionIds)
-        .order("created_at", { ascending: false });
+      const { data: cashFlowData } = await BillingService.getCashFlowBySessions(sessionIds);
       setPatientCashFlow(cashFlowData || []);
     } else {
       setPatientCashFlow([]);
@@ -236,10 +225,7 @@ export default function PatientDetailPage() {
     const timestamp = new Date().toLocaleString("pt-BR");
     const updatedNotes = `[${timestamp}]\n${newNote}\n\n---\n\n${existingNotes}`;
 
-    const { error } = await supabase
-      .from("patients")
-      .update({ notes_encrypted: updatedNotes })
-      .eq("id", patient.id);
+    const { error } = await PatientService.updatePatientNotes(patient.id, updatedNotes);
 
     if (!error) {
       setPatient({ ...patient, notes_encrypted: updatedNotes });
@@ -249,10 +235,7 @@ export default function PatientDetailPage() {
   };
 
   const handleStatusChange = async (sessionId: string, newStatus: Session["status"]) => {
-    const { error } = await supabase
-      .from("sessions")
-      .update({ status: newStatus })
-      .eq("id", sessionId);
+    const { error } = await BillingService.updateSessionStatus(sessionId, newStatus);
 
     if (!error) {
       setSessions((prev) =>
@@ -294,15 +277,14 @@ export default function PatientDetailPage() {
         updated_at: new Date().toISOString()
       };
 
-      const { error } = await supabase
-        .from("sessions")
-        .update({ 
-          status: "completed",
-          session_notes_encrypted: JSON.stringify(evolutionData)
-        })
-        .eq("id", viewingSession.id);
+      const { error } = await BillingService.updateSessionEvolution(
+        viewingSession.id,
+        sessionEditForm.notes,
+        sessionEditForm.mood_happy_sad,
+        sessionEditForm.mood_anxious_calm
+      );
 
-      if (error) throw error;
+      if (error) throw new Error(error);
 
       // Update local state
       setSessions(prev => prev.map(s => 
@@ -333,18 +315,13 @@ export default function PatientDetailPage() {
     setIsSaving(true);
 
     try {
-      let query = supabase.from("sessions").update({ status: "cancelled" });
-      
-      if (allFollowing && cancellingSession.recurrence_rule) {
-        query = query
-          .eq("recurrence_rule", cancellingSession.recurrence_rule)
-          .gte("scheduled_at", cancellingSession.scheduled_at);
-      } else {
-        query = query.eq("id", cancellingSession.id);
-      }
-
-      const { error } = await query;
-      if (error) throw error;
+      const { error } = await BillingService.cancelSession(
+        cancellingSession.id,
+        cancellingSession.recurrence_rule,
+        cancellingSession.scheduled_at,
+        allFollowing
+      );
+      if (error) throw new Error(error);
 
       setShowCancelSeriesModal(false);
       setCancellingSession(null);
@@ -371,38 +348,22 @@ export default function PatientDetailPage() {
       }
 
       // Check for conflicts
-      const { data: conflicts, error: conflictError } = await supabase
-        .from("sessions")
-        .select("id, scheduled_at, duration_minutes")
-        .eq("user_id", profile.id)
-        .neq("id", rescheduleSession.id)
-        .gte("scheduled_at", new Date(scheduledAt.getTime() - 4 * 60 * 60 * 1000).toISOString())
-        .lte("scheduled_at", new Date(scheduledAt.getTime() + 4 * 60 * 60 * 1000).toISOString())
-        .not("status", "eq", "cancelled");
+      const { data: hasConflict, error: conflictError } = await BillingService.checkRescheduleConflicts(
+        profile.id,
+        rescheduleSession.id,
+        scheduledAt,
+        rescheduleSession.duration_minutes
+      );
 
-      if (conflictError) throw conflictError;
-
-      const hasConflict = conflicts?.some((s: { scheduled_at: string; duration_minutes: number }) => {
-        const start = new Date(s.scheduled_at);
-        const end = new Date(start.getTime() + s.duration_minutes * 60000);
-        const newStart = scheduledAt;
-        const newEnd = new Date(newStart.getTime() + rescheduleSession.duration_minutes * 60000);
-        return (newStart < end && newEnd > start);
-      });
+      if (conflictError) throw new Error(conflictError);
 
       if (hasConflict) {
         throw new Error("Este horário já está ocupado por outro paciente.");
       }
 
-      const { error } = await supabase
-        .from("sessions")
-        .update({ 
-          scheduled_at: scheduledAt.toISOString(),
-          status: "scheduled" 
-        })
-        .eq("id", rescheduleSession.id);
+      const { error } = await BillingService.rescheduleSession(rescheduleSession.id, scheduledAt);
 
-      if (error) throw error;
+      if (error) throw new Error(error);
 
       setShowRescheduleModal(false);
       setRescheduleSession(null);
@@ -425,16 +386,13 @@ export default function PatientDetailPage() {
     if (!confirm("Tem certeza que deseja arquivar este paciente?")) return;
     
     setIsArchiving(true);
-    const { error } = await supabase
-      .from("patients")
-      .update({ status: "archived" })
-      .eq("id", patient.id);
+    const { error } = await PatientService.archivePatient(patient.id);
       
     if (!error) {
       router.push("/dashboard/patients");
     } else {
       setIsArchiving(false);
-      showError("Erro", "Erro ao arquivar paciente: " + error.message);
+      showError("Erro", "Erro ao arquivar paciente: " + error);
     }
   };
 
@@ -444,25 +402,22 @@ export default function PatientDetailPage() {
 
     try {
       // 1. Atualizar Paciente
-      const { error: pError } = await supabase
-        .from("patients")
-        .update({
-          full_name: editForm.full_name,
-          email: editForm.email || null,
-          phone: editForm.phone || null,
-          cpf: editForm.cpf || null,
-          date_of_birth: editForm.date_of_birth || null,
-          gender: editForm.gender,
-          address: editForm.address || null,
-          emergency_contact_name: editForm.emergency_contact_name || null,
-          emergency_contact_phone: editForm.emergency_contact_phone || null,
-          session_price: editForm.session_price ? parseFloat(editForm.session_price) : null,
-          insurance_provider: editForm.insurance_provider || null,
-          insurance_number: editForm.insurance_number || null,
-        })
-        .eq("id", patient.id);
+      const { error: pError } = await PatientService.updatePatient(patient.id, {
+        full_name: editForm.full_name,
+        email: editForm.email || null,
+        phone: editForm.phone || null,
+        cpf: editForm.cpf || null,
+        date_of_birth: editForm.date_of_birth || null,
+        gender: editForm.gender,
+        address: editForm.address || null,
+        emergency_contact_name: editForm.emergency_contact_name || null,
+        emergency_contact_phone: editForm.emergency_contact_phone || null,
+        session_price: editForm.session_price ? parseFloat(editForm.session_price) : null,
+        insurance_provider: editForm.insurance_provider || null,
+        insurance_number: editForm.insurance_number || null,
+      });
 
-      if (pError) throw pError;
+      if (pError) throw new Error(pError);
 
       // 2. Atualizar ou Criar Responsável
       if (editForm.has_guardian) {
@@ -475,24 +430,12 @@ export default function PatientDetailPage() {
           is_financial_responsible: editForm.guardian_is_financial,
         };
 
-        if (guardian) {
-          // Update existente
-          const { error: gError } = await supabase
-            .from("patient_guardians")
-            .update(guardianData)
-            .eq("id", guardian.id);
-          if (gError) throw gError;
-        } else {
-          // Criar novo
-          const { error: gError } = await supabase
-            .from("patient_guardians")
-            .insert({ ...guardianData, patient_id: patient.id });
-          if (gError) throw gError;
-        }
-      } else if (guardian) {
-        // Se tinha e agora desmarcou, talvez queira deletar ou apenas ignorar? 
-        // Por segurança, vamos apenas ignorar ou arquivar. 
-        // Mas para manter simples, se desmarcou o checkbox não atualizamos o responsável.
+        const { error: gError } = await PatientService.createOrUpdateGuardian(
+          patient.id,
+          guardian?.id,
+          guardianData
+        );
+        if (gError) throw new Error(gError);
       }
 
       await loadData();
@@ -605,21 +548,26 @@ export default function PatientDetailPage() {
     
     try {
       // 1. Fetch all data in parallel
-      const [networkRes, protocolsRes, behaviorRes, anamnesisRes] = await Promise.all([
-        supabase.from("care_network").select("*").eq("patient_id", patient.id).order("created_at", { ascending: false }),
-        supabase.from("patient_evaluations").select("*").eq("patient_id", patient.id).order("evaluation_date", { ascending: false }),
-        supabase.from("abc_records").select("*").eq("patient_id", patient.id).order("occurrence_date", { ascending: false }),
-        supabase.from("anamnesis_responses").select("*, anamnesis_templates(*)").eq("patient_id", patient.id).eq("status", "completed").order("created_at", { ascending: false })
+      const [fullRecordRes, anamnesisRes] = await Promise.all([
+        PatientService.getFullRecordData(patient.id),
+        AnamnesisService.getResponsesByPatient(patient.id)
       ]);
 
-      const anamneses = (anamnesisRes.data as any[]) || [];
+      if (fullRecordRes.error) throw new Error(fullRecordRes.error);
+      if (anamnesisRes.error) throw new Error(anamnesisRes.error);
+
+      const networkData = fullRecordRes.data?.network || [];
+      const protocolsData = fullRecordRes.data?.protocols || [];
+      const behaviorData = fullRecordRes.data?.behavior || [];
+      const anamneses = anamnesisRes.data || [];
+      
       const contentElements: any[] = [];
 
       // Section 1: Care Network
-      if (networkRes.data && networkRes.data.length > 0) {
+      if (networkData.length > 0) {
         contentElements.push({ text: "1. Rede de Apoio Multidisciplinar", style: "header", color: '#4f46e5', margin: [0, 10, 0, 10] });
         
-        const netBody = networkRes.data.map((p: any) => {
+        const netBody = networkData.map((p: any) => {
           const specLabel = SPECIALTIES.find(s => s.value === p.specialty)?.label || p.specialty;
           return [p.name, specLabel, p.phone || "—"];
         });
@@ -646,10 +594,10 @@ export default function PatientDetailPage() {
       }
 
       // Section 2: Protocol Tracker
-      if (protocolsRes.data && protocolsRes.data.length > 0) {
+      if (protocolsData.length > 0) {
         contentElements.push({ text: "2. Protocolos e Avaliações", style: "header", color: '#4f46e5', margin: [0, 10, 0, 10] });
         
-        const protBody = protocolsRes.data.map((e: any) => [
+        const protBody = protocolsData.map((e: any) => [
           e.protocol_name,
           formatDate(e.evaluation_date),
           e.score || "—",
@@ -679,10 +627,10 @@ export default function PatientDetailPage() {
       }
 
       // Section 3: ABC Behavior Log
-      if (behaviorRes.data && behaviorRes.data.length > 0) {
+      if (behaviorData.length > 0) {
         contentElements.push({ text: "3. Registro Comportamental (ABC)", style: "header", color: '#4f46e5', margin: [0, 10, 0, 10] });
         
-        const abcBody = behaviorRes.data.map((r: any) => [
+        const abcBody = behaviorData.map((r: any) => [
           formatDate(r.occurrence_date),
           r.behavior,
           r.antecedent,
