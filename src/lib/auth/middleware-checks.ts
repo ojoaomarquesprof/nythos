@@ -39,14 +39,10 @@ export async function verifyAdminAccess(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  // Verifica na tabela de profiles a role real
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
+  // Verifica a role diretamente no JWT da sessão para evitar queries no banco de dados na Edge
+  const userRole = user.user_metadata?.role || user.app_metadata?.role
 
-  if (profile?.role !== 'admin') {
+  if (userRole !== 'admin') {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
