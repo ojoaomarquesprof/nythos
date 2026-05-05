@@ -217,10 +217,10 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0 w-full sm:w-auto">
               <Button 
                 variant="outline"
-                className="h-12 px-6 rounded-full border-primary/20 text-primary hover:bg-primary/5 transition-all"
+                className="h-12 px-6 rounded-full border-primary/20 text-primary hover:bg-primary/5 transition-all w-full sm:w-auto justify-center"
                 disabled={!selectedTemplate || creating}
                 onClick={() => {
                   const template = templates.find(t => t.id === selectedTemplate);
@@ -231,7 +231,7 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
                 Preencher Agora
               </Button>
               <Button 
-                className="gradient-primary text-white h-12 px-8 rounded-full shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all active:scale-95" 
+                className="gradient-primary text-white h-12 px-8 rounded-full shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all active:scale-95 w-full sm:w-auto justify-center" 
                 disabled={!selectedTemplate || creating}
                 onClick={handleCreateRequest}
               >

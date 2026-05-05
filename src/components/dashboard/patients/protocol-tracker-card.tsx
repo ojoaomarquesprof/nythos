@@ -205,24 +205,24 @@ export function ProtocolTrackerCard({
   return (
     <Card className="glass-panel border-0 shadow-lg overflow-hidden rounded-[32px] animate-fade-in">
       <CardHeader className="pb-4 bg-white/30 backdrop-blur-sm border-b border-white/40">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-teal- flex items-center justify-center">
-              <ClipboardCheck className="w-5 h-5 text-teal-" />
+            <div className="w-10 h-10 rounded-2xl bg-teal-100 flex items-center justify-center shrink-0">
+              <ClipboardCheck className="w-5 h-5 text-teal-600" />
             </div>
             <div>
-              <CardTitle className="text-lg font-bold text-teal-">Protocolos e Avaliações</CardTitle>
-              <CardDescription className="text-xs">
+              <CardTitle className="text-lg font-bold text-teal-800 leading-tight">Protocolos e Avaliações</CardTitle>
+              <CardDescription className="text-xs mt-0.5">
                 Rastreamento de testes e avaliações aplicadas.
               </CardDescription>
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 self-end sm:self-auto">
             <Button 
               size="sm" 
               variant="outline" 
-              className="h-9 px-4 rounded-full border-teal- text-teal- hover:bg-teal- transition-all"
+              className="h-9 px-4 rounded-full border-teal-200 text-teal-600 hover:bg-teal-50 transition-all"
               onClick={handleExportPdf}
               disabled={evaluations.length === 0 || !profile || !patient || isExportingPdf}
             >
@@ -233,7 +233,7 @@ export function ProtocolTrackerCard({
             <Dialog open={open} onOpenChange={setOpen}>
               <Button 
                 size="sm" 
-                className="bg-teal- hover:bg-teal- text-white h-9 px-5 rounded-full shadow-lg shadow-teal- transition-all active:scale-95" 
+                className="bg-teal-600 hover:bg-teal-700 text-white h-9 px-5 rounded-full shadow-lg shadow-teal-200 transition-all active:scale-95" 
                 onClick={() => {
                   if (!hasSubscription && !subLoading) {
                     router.push("/dashboard/settings/billing");
@@ -247,7 +247,7 @@ export function ProtocolTrackerCard({
               </Button>
               <DialogContent className="sm:max-w-md rounded-[32px] border-0 shadow-2xl">
                 <DialogHeader className="p-4">
-                  <DialogTitle className="text-xl font-bold text-teal-">Registrar Avaliação</DialogTitle>
+                  <DialogTitle className="text-xl font-bold text-teal-800">Registrar Avaliação</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleAddEvaluation} className="space-y-5 p-4 pt-0">
                   <div className="space-y-1.5">
@@ -302,7 +302,7 @@ export function ProtocolTrackerCard({
                           className={cn(
                             "flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all",
                             formData.status === s
-                              ? "bg-white text-teal- shadow-sm"
+                              ? "bg-white text-teal-600 shadow-sm"
                               : "text-slate-500 hover:bg-white/50"
                           )}
                         >
@@ -323,7 +323,7 @@ export function ProtocolTrackerCard({
                     </Button>
                     <Button
                       type="submit"
-                      className="flex-1 bg-teal- hover:bg-teal- text-white rounded-full h-12 font-bold shadow-lg shadow-teal-"
+                      className="flex-1 bg-teal-600 hover:bg-teal-700 text-white rounded-full h-12 font-bold shadow-lg shadow-teal-200"
                       disabled={saving}
                     >
                       {saving ? "Salvando..." : "Registrar"}
@@ -337,30 +337,31 @@ export function ProtocolTrackerCard({
       </CardHeader>
       
       <CardContent className="p-0">
-        <Table>
-          <TableHeader className="bg-teal-/30">
-            <TableRow className="border-b border-teal-/50 hover:bg-transparent">
-              <TableHead className="text-[10px] font-bold text-teal-/60 uppercase tracking-widest py-4 pl-8">Protocolo</TableHead>
-              <TableHead className="text-[10px] font-bold text-teal-/60 uppercase tracking-widest py-4">Data</TableHead>
-              <TableHead className="text-[10px] font-bold text-teal-/60 uppercase tracking-widest py-4">Score</TableHead>
-              <TableHead className="text-[10px] font-bold text-teal-/60 uppercase tracking-widest py-4">Status</TableHead>
-              <TableHead className="text-[10px] font-bold text-teal-/60 uppercase tracking-widest py-4 text-right pr-8">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+        <div className="overflow-x-auto w-full">
+          <Table>
+            <TableHeader className="bg-teal-50/30">
+              <TableRow className="border-b border-teal-100/50 hover:bg-transparent">
+                <TableHead className="text-[10px] font-bold text-teal-600/60 uppercase tracking-widest py-4 pl-8">Protocolo</TableHead>
+                <TableHead className="text-[10px] font-bold text-teal-600/60 uppercase tracking-widest py-4">Data</TableHead>
+                <TableHead className="text-[10px] font-bold text-teal-600/60 uppercase tracking-widest py-4">Score</TableHead>
+                <TableHead className="text-[10px] font-bold text-teal-600/60 uppercase tracking-widest py-4">Status</TableHead>
+                <TableHead className="text-[10px] font-bold text-teal-600/60 uppercase tracking-widest py-4 text-right pr-8">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
             {loading ? (
               [1, 2].map((i) => (
                 <TableRow key={i}>
                   <TableCell colSpan={5} className="py-8 text-center">
-                    <div className="animate-pulse h-4 bg-teal-/20 rounded-full w-3/4 mx-auto" />
+                    <div className="animate-pulse h-4 bg-teal-100/20 rounded-full w-3/4 mx-auto" />
                   </TableCell>
                 </TableRow>
               ))
             ) : evaluations.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="py-16 text-center">
-                  <div className="w-12 h-12 rounded-full bg-teal- flex items-center justify-center mx-auto mb-3">
-                    <ClipboardCheck className="w-6 h-6 text-teal-" />
+                  <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center mx-auto mb-3">
+                    <ClipboardCheck className="w-6 h-6 text-teal-600" />
                   </div>
                   <p className="text-sm text-slate-400 font-medium">Nenhum protocolo registrado.</p>
                 </TableCell>
@@ -368,7 +369,7 @@ export function ProtocolTrackerCard({
             ) : (
               evaluations.map((e: any) => (
                 <TableRow key={e.id} className="group hover:bg-white/40 transition-colors border-b border-white/20 last:border-0">
-                  <TableCell className="text-sm font-bold text-teal-/80 py-5 pl-8">
+                  <TableCell className="text-sm font-bold text-teal-700/80 py-5 pl-8">
                     {e.protocol_name}
                   </TableCell>
                   <TableCell className="text-[11px] text-slate-500 font-medium">
@@ -407,6 +408,7 @@ export function ProtocolTrackerCard({
             )}
           </TableBody>
         </Table>
+        </div>
       </CardContent>
     </Card>
   );

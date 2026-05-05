@@ -192,20 +192,20 @@ export function AbcRecordCard({
   return (
     <Card className="glass-panel border-0 shadow-lg overflow-hidden rounded-[32px] animate-fade-in">
       <CardHeader className="pb-4 bg-white/30 backdrop-blur-sm border-b border-white/40">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-rose-100 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-2xl bg-rose-100 flex items-center justify-center shrink-0">
               <Activity className="w-5 h-5 text-rose-600" />
             </div>
             <div>
-              <CardTitle className="text-lg font-bold text-rose-900">Registro Comportamental (ABC)</CardTitle>
-              <CardDescription className="text-xs">
+              <CardTitle className="text-lg font-bold text-rose-900 leading-tight">Registro Comportamental (ABC)</CardTitle>
+              <CardDescription className="text-xs mt-0.5">
                 Análise de Antecedentes, Comportamentos e Consequências.
               </CardDescription>
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 self-end sm:self-auto">
             <Button 
               size="sm" 
               variant="outline" 

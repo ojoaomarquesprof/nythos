@@ -1033,9 +1033,9 @@ export default function PatientDetailPage() {
               return (
                 <Card key={session.id} className="border shadow-none">
                   <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <p className="text-sm font-medium">
                             {formatDate(session.scheduled_at, {
                               weekday: "short",
@@ -1056,7 +1056,7 @@ export default function PatientDetailPage() {
                           {session.session_price && ` · ${formatCurrency(session.session_price)}`}
                         </p>
                       </div>
-                      <div className="flex gap-1.5">
+                      <div className="flex flex-wrap sm:flex-nowrap gap-1.5">
                         <Button
                           size="sm"
                           variant="outline"
@@ -1409,23 +1409,23 @@ export default function PatientDetailPage() {
               <h2 className="text-2xl font-bold tracking-tight text-primary">Prontuário e Evolução</h2>
               <p className="text-sm text-muted-foreground">Registro de notas de evolução e histórico clínico do paciente.</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
               <Button
                 variant="outline"
-                className="rounded-full border-primary/20 text-primary hover:bg-primary/5 h-10 px-6 font-bold text-xs"
+                className="rounded-full border-primary/20 text-primary hover:bg-primary/5 h-10 px-6 font-bold text-xs w-full sm:w-auto justify-center"
                 onClick={handleExportFullRecord}
                 disabled={isExportingPdf}
               >
-                <FileText className="w-4 h-4 mr-2" />
+                <FileText className="w-4 h-4 mr-2 shrink-0" />
                 Relatório Completo
               </Button>
               <Button
                 variant="outline"
-                className="rounded-full border-primary/20 text-primary hover:bg-primary/5 h-10 px-6 font-bold text-xs"
+                className="rounded-full border-primary/20 text-primary hover:bg-primary/5 h-10 px-6 font-bold text-xs w-full sm:w-auto justify-center"
                 onClick={handleExportNotes}
                 disabled={isExportingPdf || !patient.notes_encrypted}
               >
-                <Download className="w-4 h-4 mr-2" />
+                <Download className="w-4 h-4 mr-2 shrink-0" />
                 Exportar Notas
               </Button>
             </div>
