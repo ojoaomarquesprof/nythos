@@ -14,7 +14,7 @@ import {
   AlertCircle,
   Download
 } from "lucide-react";
-import { createPdfDocument, addPdfFooter, addTableToPdf } from "@/lib/pdf-generator";
+import { usePdfExport } from "@/hooks/use-pdf-export";
 import type { Profile, Patient } from "@/types/database";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -67,6 +66,7 @@ export function CareNetworkCard({
   const supabase = createClient() as any;
   const router = useRouter();
   const { hasSubscription, loading: subLoading } = useSubscription();
+  const { exportPdf, isExporting: isExportingPdf } = usePdfExport();
 
   // Form State
   const [formData, setFormData] = useState({
@@ -139,25 +139,40 @@ export function CareNetworkCard({
       `Data do Relatório: ${new Date().toLocaleDateString("pt-BR")}`
     ].filter(Boolean).join(" | ");
 
-    const { doc, startY } = await createPdfDocument({
+    const tableBody = professionals.map((contact: Professional) => {
+      const specLabel = specialties.find(s => s.value === contact.specialty)?.label || contact.specialty;
+      return [contact.name, specLabel, contact.phone || "—"];
+    });
+
+    await exportPdf({
       title: "Rede de Apoio Multidisciplinar",
       subtitle: patientDetails,
-      profile
+      profile,
+      fileName: `rede_apoio_${patient.full_name.toLowerCase().replace(/\s+/g, "_")}.pdf`,
+      content: [
+        {
+          table: {
+            headerRows: 1,
+            widths: ['*', 'auto', 'auto'],
+            body: [
+              [
+                { text: 'Nome do Profissional', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
+                { text: 'Especialidade', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
+                { text: 'Contato', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] }
+              ],
+              ...tableBody.map(row => row.map(cell => ({ text: cell, margin: [5, 5] })))
+            ]
+          },
+          layout: {
+            fillColor: function (rowIndex: number) {
+              return (rowIndex % 2 === 0 && rowIndex > 0) ? '#f8fafc' : null;
+            },
+            hLineColor: '#cbd5e1',
+            vLineColor: '#cbd5e1'
+          }
+        }
+      ]
     });
-
-    addTableToPdf(doc, {
-      startY,
-      head: [["Nome do Profissional", "Especialidade", "Contato"]],
-      body: professionals.map((contact: Professional) => {
-        const specLabel = specialties.find(s => s.value === contact.specialty)?.label || contact.specialty;
-        return [contact.name, specLabel, contact.phone || "—"];
-      }),
-      styles: { fontSize: 10 },
-      headStyles: { fillColor: [229, 231, 235], textColor: [40, 40, 40], fontStyle: "bold" },
-    });
-
-    addPdfFooter(doc);
-    doc.save(`rede_apoio_${patient.full_name.toLowerCase().replace(/\s+/g, "_")}.pdf`);
   }
 
   return (
@@ -182,7 +197,7 @@ export function CareNetworkCard({
               variant="outline" 
               className="h-9 px-4 rounded-full border-primary/20 text-primary hover:bg-primary/5 transition-all"
               onClick={handleExportPdf}
-              disabled={professionals.length === 0 || !profile || !patient}
+              disabled={professionals.length === 0 || !profile || !patient || isExportingPdf}
             >
               <Download className="w-4 h-4 mr-2" />
               <span className="hidden sm:inline">PDF</span>

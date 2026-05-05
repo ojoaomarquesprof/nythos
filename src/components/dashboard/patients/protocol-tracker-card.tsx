@@ -13,7 +13,7 @@ import {
   ChevronRight,
   Download
 } from "lucide-react";
-import { createPdfDocument, addPdfFooter, addTableToPdf } from "@/lib/pdf-generator";
+import { usePdfExport } from "@/hooks/use-pdf-export";
 import type { Profile, Patient } from "@/types/database";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -84,6 +83,7 @@ export function ProtocolTrackerCard({
   const supabase = createClient() as any;
   const router = useRouter();
   const { hasSubscription, loading: subLoading } = useSubscription();
+  const { exportPdf, isExporting: isExportingPdf } = usePdfExport();
 
   // Form State
   const [formData, setFormData] = useState({
@@ -163,27 +163,43 @@ export function ProtocolTrackerCard({
       `Data do Relatório: ${new Date().toLocaleDateString("pt-BR")}`
     ].filter(Boolean).join(" | ");
 
-    const { doc, startY } = await createPdfDocument({
+    const tableBody = evaluations.map((e: any) => [
+      e.protocol_name,
+      formatDate(e.evaluation_date),
+      e.score || "—",
+      e.status === "completed" ? "Concluído" : "Em andamento"
+    ]);
+
+    await exportPdf({
       title: "Relatório de Protocolos e Avaliações",
       subtitle: patientDetails,
-      profile
+      profile,
+      fileName: `protocolos_${patient.full_name.toLowerCase().replace(/\s+/g, "_")}.pdf`,
+      content: [
+        {
+          table: {
+            headerRows: 1,
+            widths: ['*', 'auto', 'auto', 'auto'],
+            body: [
+              [
+                { text: 'Protocolo', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
+                { text: 'Data', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
+                { text: 'Score / Resultado', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
+                { text: 'Status', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] }
+              ],
+              ...tableBody.map(row => row.map(cell => ({ text: cell, margin: [5, 5] })))
+            ]
+          },
+          layout: {
+            fillColor: function (rowIndex: number) {
+              return (rowIndex % 2 === 0 && rowIndex > 0) ? '#f8fafc' : null;
+            },
+            hLineColor: '#cbd5e1',
+            vLineColor: '#cbd5e1'
+          }
+        }
+      ]
     });
-
-    addTableToPdf(doc, {
-      startY,
-      head: [["Protocolo", "Data", "Score / Resultado", "Status"]],
-      body: evaluations.map((e: any) => [
-        e.protocol_name,
-        formatDate(e.evaluation_date),
-        e.score || "—",
-        e.status === "completed" ? "Concluído" : "Em andamento"
-      ]),
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [200, 200, 200], textColor: [40, 40, 40], fontStyle: "bold" },
-    });
-
-    addPdfFooter(doc);
-    doc.save(`protocolos_${patient.full_name.toLowerCase().replace(/\s+/g, "_")}.pdf`);
   }
 
   return (
@@ -208,7 +224,7 @@ export function ProtocolTrackerCard({
               variant="outline" 
               className="h-9 px-4 rounded-full border-teal- text-teal- hover:bg-teal- transition-all"
               onClick={handleExportPdf}
-              disabled={evaluations.length === 0 || !profile || !patient}
+              disabled={evaluations.length === 0 || !profile || !patient || isExportingPdf}
             >
               <Download className="w-4 h-4 mr-2" />
               <span className="hidden sm:inline">PDF</span>

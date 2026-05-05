@@ -104,7 +104,6 @@ export default function PatientDetailPage() {
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState("");
   const [savingNote, setSavingNote] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -603,7 +602,6 @@ export default function PatientDetailPage() {
 
   const handleExportFullRecord = async () => {
     if (!patient || !profile) return;
-    setIsExporting(true);
     
     try {
       // 1. Fetch all data in parallel
@@ -615,8 +613,192 @@ export default function PatientDetailPage() {
       ]);
 
       const anamneses = (anamnesisRes.data as any[]) || [];
+      const contentElements: any[] = [];
 
-      const { doc, startY } = await createPdfDocument({
+      // Section 1: Care Network
+      if (networkRes.data && networkRes.data.length > 0) {
+        contentElements.push({ text: "1. Rede de Apoio Multidisciplinar", style: "header", color: '#4f46e5', margin: [0, 10, 0, 10] });
+        
+        const netBody = networkRes.data.map((p: any) => {
+          const specLabel = SPECIALTIES.find(s => s.value === p.specialty)?.label || p.specialty;
+          return [p.name, specLabel, p.phone || "—"];
+        });
+
+        contentElements.push({
+          table: {
+            headerRows: 1,
+            widths: ['*', 'auto', 'auto'],
+            body: [
+              [
+                { text: 'Profissional', bold: true, fillColor: '#4f46e5', color: 'white', margin: [5, 5] },
+                { text: 'Especialidade', bold: true, fillColor: '#4f46e5', color: 'white', margin: [5, 5] },
+                { text: 'Contato', bold: true, fillColor: '#4f46e5', color: 'white', margin: [5, 5] }
+              ],
+              ...netBody.map((row: any[]) => row.map((cell: any) => ({ text: cell, margin: [5, 5] })))
+            ]
+          },
+          layout: {
+            fillColor: function (rowIndex: number) { return (rowIndex % 2 === 0 && rowIndex > 0) ? '#f8fafc' : null; },
+            hLineColor: '#e2e8f0', vLineColor: '#e2e8f0'
+          },
+          margin: [0, 0, 0, 20]
+        });
+      }
+
+      // Section 2: Protocol Tracker
+      if (protocolsRes.data && protocolsRes.data.length > 0) {
+        contentElements.push({ text: "2. Protocolos e Avaliações", style: "header", color: '#4f46e5', margin: [0, 10, 0, 10] });
+        
+        const protBody = protocolsRes.data.map((e: any) => [
+          e.protocol_name,
+          formatDate(e.evaluation_date),
+          e.score || "—",
+          e.status === "completed" ? "Concluído" : "Em andamento"
+        ]);
+
+        contentElements.push({
+          table: {
+            headerRows: 1,
+            widths: ['*', 'auto', 'auto', 'auto'],
+            body: [
+              [
+                { text: 'Protocolo', bold: true, fillColor: '#6366f1', color: 'white', margin: [5, 5] },
+                { text: 'Data', bold: true, fillColor: '#6366f1', color: 'white', margin: [5, 5] },
+                { text: 'Score', bold: true, fillColor: '#6366f1', color: 'white', margin: [5, 5] },
+                { text: 'Status', bold: true, fillColor: '#6366f1', color: 'white', margin: [5, 5] }
+              ],
+              ...protBody.map((row: any[]) => row.map((cell: any) => ({ text: cell, margin: [5, 5] })))
+            ]
+          },
+          layout: {
+            fillColor: function (rowIndex: number) { return (rowIndex % 2 === 0 && rowIndex > 0) ? '#f8fafc' : null; },
+            hLineColor: '#e2e8f0', vLineColor: '#e2e8f0'
+          },
+          margin: [0, 0, 0, 20]
+        });
+      }
+
+      // Section 3: ABC Behavior Log
+      if (behaviorRes.data && behaviorRes.data.length > 0) {
+        contentElements.push({ text: "3. Registro Comportamental (ABC)", style: "header", color: '#4f46e5', margin: [0, 10, 0, 10] });
+        
+        const abcBody = behaviorRes.data.map((r: any) => [
+          formatDate(r.occurrence_date),
+          r.behavior,
+          r.antecedent,
+          r.consequence,
+          r.intensity.toString()
+        ]);
+
+        contentElements.push({
+          table: {
+            headerRows: 1,
+            widths: ['auto', '*', '*', '*', 'auto'],
+            body: [
+              [
+                { text: 'Data', bold: true, fillColor: '#e11d48', color: 'white', margin: [5, 5] },
+                { text: 'Comportamento', bold: true, fillColor: '#e11d48', color: 'white', margin: [5, 5] },
+                { text: 'Antecedente (A)', bold: true, fillColor: '#e11d48', color: 'white', margin: [5, 5] },
+                { text: 'Consequência (C)', bold: true, fillColor: '#e11d48', color: 'white', margin: [5, 5] },
+                { text: 'Int.', bold: true, fillColor: '#e11d48', color: 'white', margin: [5, 5] }
+              ],
+              ...abcBody.map((row: any[]) => row.map((cell: any) => ({ text: cell, margin: [5, 5] })))
+            ]
+          },
+          layout: {
+            fillColor: function (rowIndex: number) { return (rowIndex % 2 === 0 && rowIndex > 0) ? '#f8fafc' : null; },
+            hLineColor: '#e2e8f0', vLineColor: '#e2e8f0'
+          },
+          margin: [0, 0, 0, 20]
+        });
+      }
+
+      // Section 4: Anamneses
+      if (anamneses && anamneses.length > 0) {
+        contentElements.push({ text: "4. Anamneses e Avaliações", style: "header", color: '#4f46e5', margin: [0, 10, 0, 10] });
+        
+        for (const anam of anamneses) {
+          contentElements.push({ text: anam.anamnesis_templates.title, fontSize: 12, bold: true, margin: [0, 10, 0, 2] });
+          contentElements.push({ text: `Respondido em: ${formatDate(anam.created_at)}`, fontSize: 10, italics: true, color: '#64748b', margin: [0, 0, 0, 10] });
+          
+          const fields = anam.anamnesis_templates.fields as any[];
+          const body = fields.map((f: any, idx: number) => [
+            `${idx + 1}. ${f.label}`,
+            anam.responses[f.id] || "—"
+          ]);
+
+          contentElements.push({
+            table: {
+              headerRows: 1,
+              widths: ['40%', '*'],
+              body: [
+                [
+                  { text: 'Pergunta', bold: true, fillColor: '#4f46e5', color: 'white', margin: [5, 5] },
+                  { text: 'Resposta', bold: true, fillColor: '#4f46e5', color: 'white', margin: [5, 5] }
+                ],
+                ...body.map((row: any[]) => row.map((cell: any) => ({ text: cell, margin: [5, 5] })))
+              ]
+            },
+            layout: {
+              fillColor: function (rowIndex: number) { return (rowIndex % 2 === 0 && rowIndex > 0) ? '#f8fafc' : null; },
+              hLineColor: '#e2e8f0', vLineColor: '#e2e8f0'
+            },
+            margin: [0, 0, 0, 20]
+          });
+        }
+      }
+
+      // Section 5: Sessions
+      if (sessions && sessions.length > 0) {
+        contentElements.push({ text: "5. Histórico de Sessões", style: "header", color: '#4f46e5', margin: [0, 10, 0, 10] });
+        
+        const sessBody = sessions.map((s: any) => {
+          let notes = "—";
+          if (s.session_notes_encrypted) {
+            try {
+              const ev = JSON.parse(s.session_notes_encrypted);
+              notes = ev.notes || s.session_notes_encrypted;
+            } catch {
+              notes = s.session_notes_encrypted;
+            }
+          }
+          return [
+            formatDate(s.scheduled_at),
+            s.session_type,
+            SESSION_STATUS[s.status as keyof typeof SESSION_STATUS].label,
+            notes
+          ];
+        });
+
+        contentElements.push({
+          table: {
+            headerRows: 1,
+            widths: ['auto', 'auto', 'auto', '*'],
+            body: [
+              [
+                { text: 'Data', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
+                { text: 'Tipo', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
+                { text: 'Status', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
+                { text: 'Notas de Evolução', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] }
+              ],
+              ...sessBody.map((row: any[]) => row.map((cell: any) => ({ text: cell, margin: [5, 5] })))
+            ]
+          },
+          layout: {
+            fillColor: function (rowIndex: number) { return (rowIndex % 2 === 0 && rowIndex > 0) ? '#f8fafc' : null; },
+            hLineColor: '#e2e8f0', vLineColor: '#e2e8f0'
+          },
+          margin: [0, 0, 0, 20]
+        });
+      }
+
+      // Section 6: Evolution Notes (encrypted)
+      if (patient.notes_encrypted) {
+        contentElements.push({ text: "6. Evolução Clínica Geral", style: "header", color: '#4f46e5', margin: [0, 10, 0, 10] });
+        contentElements.push({ text: patient.notes_encrypted, margin: [0, 0, 0, 20] });
+      }
+
+      await exportPdf({
         title: "Prontuário Clínico Integrado",
         subtitle: [
           `Paciente: ${patient.full_name}`,
@@ -624,235 +806,61 @@ export default function PatientDetailPage() {
           patient.date_of_birth ? `Data de Nasc.: ${formatDate(patient.date_of_birth)}` : null,
           `Data do Relatório: ${new Date().toLocaleDateString("pt-BR")}`
         ].filter(Boolean).join(" | "),
-        profile
+        profile,
+        fileName: `prontuario_completo_${patient.full_name.replace(/\s+/g, '_')}.pdf`,
+        content: contentElements
       });
-
-      let currentY = startY;
-
-      // Section 1: Care Network
-      if (networkRes.data && networkRes.data.length > 0) {
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(14);
-        doc.text("1. Rede de Apoio Multidisciplinar", 14, currentY);
-        currentY += 8;
-
-        addTableToPdf(doc, {
-          startY: currentY,
-          head: [["Profissional", "Especialidade", "Contato"]],
-          body: networkRes.data.map((p: any) => {
-            const specLabel = SPECIALTIES.find(s => s.value === p.specialty)?.label || p.specialty;
-            return [p.name, specLabel, p.phone || "—"];
-          }),
-          styles: { fontSize: 9 },
-          headStyles: { fillColor: [79, 70, 229] },
-        });
-        currentY = (doc as any).lastAutoTable.finalY + 15;
-      }
-
-      // Section 2: Protocol Tracker
-      if (protocolsRes.data && protocolsRes.data.length > 0) {
-        if (currentY > 250) { doc.addPage(); currentY = 20; }
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(14);
-        doc.text("2. Protocolos e Avaliações", 14, currentY);
-        currentY += 8;
-
-        addTableToPdf(doc, {
-          startY: currentY,
-          head: [["Protocolo", "Data", "Score", "Status"]],
-          body: protocolsRes.data.map((e: any) => [
-            e.protocol_name,
-            formatDate(e.evaluation_date),
-            e.score || "—",
-            e.status === "completed" ? "Concluído" : "Em andamento"
-          ]),
-          styles: { fontSize: 9 },
-          headStyles: { fillColor: [99, 102, 241] },
-        });
-        currentY = (doc as any).lastAutoTable.finalY + 15;
-      }
-
-      // Section 3: ABC Behavior Log
-      if (behaviorRes.data && behaviorRes.data.length > 0) {
-        if (currentY > 250) { doc.addPage(); currentY = 20; }
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(14);
-        doc.text("3. Registro Comportamental (ABC)", 14, currentY);
-        currentY += 8;
-
-        addTableToPdf(doc, {
-          startY: currentY,
-          head: [["Data", "Comportamento", "Antecedente (A)", "Consequência (C)", "Int."]],
-          body: behaviorRes.data.map((r: any) => [
-            formatDate(r.occurrence_date),
-            r.behavior,
-            r.antecedent,
-            r.consequence,
-            r.intensity.toString()
-          ]),
-          styles: { fontSize: 8 },
-          headStyles: { fillColor: [225, 29, 72] },
-          columnStyles: { 1: { cellWidth: 40 }, 2: { cellWidth: 40 }, 3: { cellWidth: 40 } }
-        });
-        currentY = (doc as any).lastAutoTable.finalY + 15;
-      }
-
-      // Section 4: Anamneses
-      if (anamneses && anamneses.length > 0) {
-        if (currentY > 250) { doc.addPage(); currentY = 20; }
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(14);
-        doc.text("4. Anamneses e Avaliações", 14, currentY);
-        currentY += 10;
-
-        for (const anam of anamneses) {
-          if (currentY > 240) { doc.addPage(); currentY = 20; }
-          
-          doc.setFontSize(11);
-          doc.setFont("helvetica", "bold");
-          doc.text(anam.anamnesis_templates.title, 14, currentY);
-          doc.setFontSize(8);
-          doc.setFont("helvetica", "italic");
-          doc.text(`Respondido em: ${formatDate(anam.created_at)}`, 14, currentY + 5);
-          currentY += 12;
-
-          const fields = anam.anamnesis_templates.fields as any[];
-          const body = fields.map((f: any, idx: number) => [
-            `${idx + 1}. ${f.label}`,
-            anam.responses[f.id] || "—"
-          ]);
-
-          addTableToPdf(doc, {
-            startY: currentY,
-            head: [["Pergunta", "Resposta"]],
-            body: body,
-            styles: { fontSize: 8 },
-            headStyles: { fillColor: [79, 70, 229] },
-            columnStyles: { 0: { cellWidth: 80 }, 1: { cellWidth: 100 } }
-          });
-          currentY = (doc as any).lastAutoTable.finalY + 15;
-        }
-      }
-
-      // Section 5: Sessions
-      if (sessions && sessions.length > 0) {
-        if (currentY > 250) { doc.addPage(); currentY = 20; }
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(14);
-        doc.text("5. Histórico de Sessões", 14, currentY);
-        currentY += 8;
-
-        addTableToPdf(doc, {
-          startY: currentY,
-          head: [["Data", "Tipo", "Status", "Notas de Evolução"]],
-          body: sessions.map((s: any) => {
-            let notes = "—";
-            if (s.session_notes_encrypted) {
-              try {
-                const ev = JSON.parse(s.session_notes_encrypted);
-                notes = ev.notes || s.session_notes_encrypted;
-              } catch {
-                notes = s.session_notes_encrypted;
-              }
-            }
-            return [
-              formatDate(s.scheduled_at),
-              s.session_type,
-              SESSION_STATUS[s.status as keyof typeof SESSION_STATUS].label,
-              notes
-            ];
-          }),
-          styles: { fontSize: 8 },
-          headStyles: { fillColor: [139, 92, 246] },
-          columnStyles: { 3: { cellWidth: 90 } }
-        });
-        currentY = (doc as any).lastAutoTable.finalY + 15;
-      }
-
-      // Section 5: Evolution Notes (encrypted)
-      if (patient.notes_encrypted) {
-        if (currentY > 240) { doc.addPage(); currentY = 20; }
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(14);
-        doc.text("6. Evolução Clínica Geral", 14, currentY);
-        currentY += 8;
-        
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-        const splitText = doc.splitTextToSize(patient.notes_encrypted, 180);
-        doc.text(splitText, 14, currentY);
-      }
-
-      addPdfFooter(doc);
-      doc.save(`prontuario_completo_${patient.full_name.replace(/\s+/g, '_')}.pdf`);
     } catch (e) {
       console.error(e);
       showError("Erro na Exportação", "Ocorreu um erro ao gerar o relatório completo.");
-    } finally {
-      setIsExporting(false);
     }
   };
 
   const handleExportSingleSession = async (session: Session) => {
     if (!patient || !profile) return;
-    setIsExporting(true);
     
+    let evolution: any = null;
     try {
-      let evolution: any = null;
-      try {
-        evolution = JSON.parse(session.session_notes_encrypted || "{}");
-      } catch (e) {
-        evolution = { notes: session.session_notes_encrypted };
-      }
-
-      const { doc, startY } = await createPdfDocument({
-        title: "Relatório de Atendimento Individual",
-        subtitle: `Paciente: ${patient.full_name} | Data: ${formatDate(session.scheduled_at)}`,
-        profile
-      });
-
-      let currentY = startY;
-      
-      // Detalhes em Tabela
-      addTableToPdf(doc, {
-        startY: currentY,
-        head: [['Informação', 'Detalhe']],
-        body: [
-          ["Data/Hora", `${formatDate(session.scheduled_at)} às ${formatTime(session.scheduled_at)}`],
-          ["Duração", `${session.duration_minutes} minutos`],
-          ["Modalidade", session.session_type === "online" ? "Online" : "Presencial"],
-          ["Humor do Paciente", evolution.mood_happy_sad ? `${evolution.mood_happy_sad}/10` : "Não registrado"],
-          ["Nível de Agitação", evolution.mood_anxious_calm ? `${evolution.mood_anxious_calm}/10` : "Não registrado"],
-        ],
-        theme: 'striped',
-        headStyles: { fillColor: [79, 70, 229] },
-        styles: { fontSize: 10 }
-      });
-
-      currentY = (doc as any).lastAutoTable.finalY + 15;
-
-      // Evolução
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.setTextColor(79, 70, 229);
-      doc.text("Evolução Clínica", 14, currentY);
-      currentY += 8;
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.setTextColor(51, 65, 85);
-      const notesText = evolution.notes || session.session_notes_encrypted || "Nenhuma nota registrada.";
-      const splitText = doc.splitTextToSize(notesText, 180);
-      doc.text(splitText, 14, currentY);
-
-      addPdfFooter(doc);
-      doc.save(`sessao_${patient.full_name.replace(/\s+/g, '_')}_${formatDate(session.scheduled_at).replace(/\//g, '-')}.pdf`);
+      evolution = JSON.parse(session.session_notes_encrypted || "{}");
     } catch (e) {
-      console.error(e);
-      showError("Erro na Exportação", "Erro ao gerar PDF da sessão individual.");
-    } finally {
-      setIsExporting(false);
+      evolution = { notes: session.session_notes_encrypted };
     }
+
+    await exportPdf({
+      title: "Relatório de Atendimento Individual",
+      subtitle: `Paciente: ${patient.full_name} | Data: ${formatDate(session.scheduled_at)}`,
+      profile,
+      fileName: `sessao_${patient.full_name.replace(/\s+/g, '_')}_${formatDate(session.scheduled_at).replace(/\//g, '-')}.pdf`,
+      content: [
+        {
+          table: {
+            headerRows: 1,
+            widths: ['auto', '*'],
+            body: [
+              [
+                { text: 'Informação', bold: true, fillColor: '#4f46e5', color: 'white', margin: [5, 5] },
+                { text: 'Detalhe', bold: true, fillColor: '#4f46e5', color: 'white', margin: [5, 5] }
+              ],
+              [{ text: "Data/Hora", margin: [5, 5] }, { text: `${formatDate(session.scheduled_at)} às ${formatTime(session.scheduled_at)}`, margin: [5, 5] }],
+              [{ text: "Duração", margin: [5, 5] }, { text: `${session.duration_minutes} minutos`, margin: [5, 5] }],
+              [{ text: "Modalidade", margin: [5, 5] }, { text: session.session_type === "online" ? "Online" : "Presencial", margin: [5, 5] }],
+              [{ text: "Humor do Paciente", margin: [5, 5] }, { text: evolution.mood_happy_sad ? `${evolution.mood_happy_sad}/10` : "Não registrado", margin: [5, 5] }],
+              [{ text: "Nível de Agitação", margin: [5, 5] }, { text: evolution.mood_anxious_calm ? `${evolution.mood_anxious_calm}/10` : "Não registrado", margin: [5, 5] }]
+            ]
+          },
+          layout: {
+            fillColor: function (rowIndex: number) {
+              return (rowIndex % 2 === 0 && rowIndex > 0) ? '#f8fafc' : null;
+            },
+            hLineColor: '#e2e8f0',
+            vLineColor: '#e2e8f0'
+          },
+          margin: [0, 0, 0, 20]
+        },
+        { text: "Evolução Clínica", style: "header", color: '#4f46e5', margin: [0, 10, 0, 10] },
+        { text: evolution.notes || session.session_notes_encrypted || "Nenhuma nota registrada.", style: "normalText" }
+      ]
+    });
   };
 
   const [isMobile, setIsMobile] = useState(false);
@@ -1057,7 +1065,7 @@ export default function PatientDetailPage() {
               variant="outline"
               size="sm"
               onClick={handleExportSessions}
-              disabled={isExporting || isExportingPdf || sessions.length === 0}
+              disabled={isExportingPdf || sessions.length === 0}
             >
               <Download className="w-4 h-4 mr-2" />
               Exportar Sessões (PDF)
@@ -1458,7 +1466,7 @@ export default function PatientDetailPage() {
                 variant="outline"
                 className="rounded-full border-primary/20 text-primary hover:bg-primary/5 h-10 px-6 font-bold text-xs"
                 onClick={handleExportFullRecord}
-                disabled={isExporting || isExportingPdf}
+                disabled={isExportingPdf}
               >
                 <FileText className="w-4 h-4 mr-2" />
                 Relatório Completo
@@ -1467,7 +1475,7 @@ export default function PatientDetailPage() {
                 variant="outline"
                 className="rounded-full border-primary/20 text-primary hover:bg-primary/5 h-10 px-6 font-bold text-xs"
                 onClick={handleExportNotes}
-                disabled={isExporting || isExportingPdf || !patient.notes_encrypted}
+                disabled={isExportingPdf || !patient.notes_encrypted}
               >
                 <Download className="w-4 h-4 mr-2" />
                 Exportar Notas
@@ -2079,7 +2087,7 @@ export default function PatientDetailPage() {
                       <Button 
                         variant="outline" 
                         onClick={() => handleExportSingleSession(viewingSession)}
-                        disabled={isExporting || isExportingPdf}
+                        disabled={isExportingPdf}
                         className="rounded-full px-6 h-10 font-bold border-primary/20 text-primary hover:bg-primary/5"
                       >
                         <Download className="w-4 h-4 mr-2" />

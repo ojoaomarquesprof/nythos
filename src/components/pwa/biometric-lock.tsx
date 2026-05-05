@@ -17,9 +17,18 @@ export function BiometricLock({ onUnlock }: BiometricLockProps) {
   const [pin, setPin] = useState("");
 
   const handleBiometricAuth = async () => {
-    const success = await authenticate();
-    if (success) {
-      onUnlock();
+    try {
+      const success = await authenticate();
+      if (success) {
+        onUnlock();
+      } else {
+        // Fallback silently without throwing technical errors
+        setShowFallback(true);
+      }
+    } catch (e) {
+      // The session may have expired, user cancelled, or Safari cleared WebAuthn state
+      console.warn("Biometric authentication failed or was cancelled", e);
+      setShowFallback(true);
     }
   };
 

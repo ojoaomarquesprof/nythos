@@ -35,7 +35,8 @@ import {
   PAYMENT_METHODS,
 } from "@/lib/constants";
 import type { Database, CashFlow, Profile } from "@/types/database";
-import { createPdfDocument, addPdfFooter, addTableToPdf, getBase64ImageFromUrl } from "@/lib/pdf-generator";
+import { usePdfExport } from "@/hooks/use-pdf-export";
+import { getBase64ImageFromUrl } from "@/lib/pdf-generator";
 
 export default function FinancesPage() {
   const { therapistId } = useSubscription();
@@ -44,7 +45,7 @@ export default function FinancesPage() {
   const [loading, setLoading] = useState(true);
   const [showExpense, setShowExpense] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
+  const { exportPdf, isExporting } = usePdfExport();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [filter, setFilter] = useState<"all" | "income" | "expense">("all");
   const [errorDialog, setErrorDialog] = useState({ open: false, title: "", message: "" });
@@ -160,39 +161,48 @@ export default function FinancesPage() {
       showError("Perfil Não Encontrado", "Configure seu perfil nas Configurações antes de gerar relatórios com identidade visual.");
       return;
     }
-    setIsExporting(true);
     
-    try {
-      const title = filter === "all" ? "Fluxo de Caixa Geral" : filter === "income" ? "Relatório de Receitas" : "Relatório de Despesas";
-      const { doc } = await createPdfDocument({
-        title,
-        subtitle: `Período selecionado (Filtro: ${title})\nGerado em: ${new Date().toLocaleDateString("pt-BR")}`,
-        profile
-      });
+    const title = filter === "all" ? "Fluxo de Caixa Geral" : filter === "income" ? "Relatório de Receitas" : "Relatório de Despesas";
 
-      const tableData = filtered.map(tx => [
-        new Date(tx.due_date || tx.paid_at || tx.created_at).toLocaleDateString("pt-BR"),
-        tx.description,
-        CASH_FLOW_CATEGORIES[tx.category as keyof typeof CASH_FLOW_CATEGORIES]?.label || tx.category,
-        tx.type === "income" ? "+" + formatCurrency(Number(tx.amount)) : "-" + formatCurrency(Number(tx.amount)),
-        tx.status === "confirmed" ? "Confirmado" : "Pendente"
-      ]);
+    const tableBody = filtered.map(tx => [
+      new Date(tx.due_date || tx.paid_at || tx.created_at).toLocaleDateString("pt-BR"),
+      tx.description,
+      CASH_FLOW_CATEGORIES[tx.category as keyof typeof CASH_FLOW_CATEGORIES]?.label || tx.category,
+      tx.type === "income" ? "+" + formatCurrency(Number(tx.amount)) : "-" + formatCurrency(Number(tx.amount)),
+      tx.status === "confirmed" ? "Confirmado" : "Pendente"
+    ]);
 
-      addTableToPdf(doc, {
-        startY: 65,
-        head: [['Data', 'Descrição', 'Categoria', 'Valor', 'Status']],
-        body: tableData,
-        theme: 'striped',
-        headStyles: { fillColor: [139, 92, 246] }, // Primary violet color
-      });
-
-      addPdfFooter(doc);
-      doc.save(`financeiro_${filter}.pdf`);
-    } catch (e) {
-      showError("Erro na Exportação", "Ocorreu um erro ao gerar o PDF financeiro.");
-    } finally {
-      setIsExporting(false);
-    }
+    await exportPdf({
+      title,
+      subtitle: `Período selecionado (Filtro: ${title})\nGerado em: ${new Date().toLocaleDateString("pt-BR")}`,
+      profile,
+      fileName: `financeiro_${filter}.pdf`,
+      content: [
+        {
+          table: {
+            headerRows: 1,
+            widths: ['auto', '*', 'auto', 'auto', 'auto'],
+            body: [
+              [
+                { text: 'Data', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
+                { text: 'Descrição', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
+                { text: 'Categoria', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
+                { text: 'Valor', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
+                { text: 'Status', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] }
+              ],
+              ...tableBody.map((row: any[]) => row.map((cell: any) => ({ text: cell, margin: [5, 5] })))
+            ]
+          },
+          layout: {
+            fillColor: function (rowIndex: number) {
+              return (rowIndex % 2 === 0 && rowIndex > 0) ? '#f8fafc' : null;
+            },
+            hLineColor: '#e2e8f0',
+            vLineColor: '#e2e8f0'
+          }
+        }
+      ]
+    });
   };
 
   const handleExportReceipt = async (tx: CashFlow) => {
@@ -200,104 +210,63 @@ export default function FinancesPage() {
       showError("Perfil Necessário", "Configure seu perfil com nome completo e dados profissionais para emitir recibos.");
       return;
     }
-    setIsExporting(true);
     
-    try {
-      const docNumber = `${new Date(tx.created_at).getFullYear()}${String(new Date(tx.created_at).getMonth() + 1).padStart(2, '0')}${tx.id.split("-")[0].slice(-4).toUpperCase()}`;
-      const { doc, startY } = await createPdfDocument({
-        title: "Recibo de Pagamento",
-        subtitle: `Nº do Recibo: ${docNumber}`,
-        profile
-      });
+    const docNumber = `${new Date(tx.created_at).getFullYear()}${String(new Date(tx.created_at).getMonth() + 1).padStart(2, '0')}${tx.id.split("-")[0].slice(-4).toUpperCase()}`;
+    const patientName = tx.description.replace("Sessão - ", "").toUpperCase();
+    const amountExtenso = Number(tx.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const fullDate = tx.paid_at ? new Date(tx.paid_at) : new Date(tx.created_at);
+    const dateStr = fullDate.toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' });
 
-      let currentY = startY + 5;
-
-      // 1. Box de Valor (Destaque Superior Direito)
-      doc.setFillColor(245, 243, 255); // Light violet bg
-      doc.roundedRect(140, currentY, 55, 15, 2, 2, 'F');
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(14);
-      doc.setTextColor(109, 40, 217); // Indigo-700
-      doc.text(formatCurrency(Number(tx.amount)), 167.5, currentY + 10, { align: "center" });
-      
-      currentY += 25;
-
-      // 2. Título Centralizado com linha decorativa
-      doc.setFontSize(18);
-      doc.text("RECIBO", 105, currentY, { align: "center" });
-      doc.setDrawColor(109, 40, 217);
-      doc.setLineWidth(0.5);
-      doc.line(90, currentY + 2, 120, currentY + 2);
-      
-      currentY += 20;
-
-      // 3. Texto Formal
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(11);
-      doc.setTextColor(51, 65, 85); // Slate-700
-      
-      const patientName = tx.description.replace("Sessão - ", "").toUpperCase();
-      const amountExtenso = Number(tx.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-      const fullDate = tx.paid_at ? new Date(tx.paid_at) : new Date(tx.created_at);
-      const dateStr = fullDate.toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' });
-      
-      const lines = [
-        `Recebemos de ${patientName},`,
-        `a importância supra de ${formatCurrency(Number(tx.amount))} (${amountExtenso}),`,
-        `referente aos serviços profissionais de: Sessão de Atendimento.`,
-        "",
-        `Para maior clareza, firmamos o presente recibo.`,
-        "",
-        `Data do Pagamento: ${dateStr}`
-      ];
-
-      lines.forEach(line => {
-        if (line) {
-          doc.text(line, 20, currentY);
-          currentY += 8;
-        } else {
-          currentY += 4;
-        }
-      });
-
-      currentY += 35;
-
-      // 4. Área de Assinatura Premium
-      if (profile.signature_url) {
-        try {
-          const sigBase64 = await getBase64ImageFromUrl(profile.signature_url);
-          doc.addImage(sigBase64, 'PNG', 80, currentY - 28, 50, 25);
-        } catch (e) {
-          console.error("Erro ao carregar imagem da assinatura:", e);
-        }
+    let sigImage: any = null;
+    if (profile.signature_url) {
+      try {
+        const { getBase64ImageFromUrl } = await import('@/lib/pdf-generator');
+        const sigBase64 = await getBase64ImageFromUrl(profile.signature_url);
+        sigImage = { image: sigBase64, width: 150, alignment: 'center', margin: [0, 20, 0, 5] };
+      } catch (e) {
+        console.error("Erro ao carregar imagem da assinatura:", e);
       }
-
-      doc.setDrawColor(203, 213, 225); // Slate-300
-      doc.setLineWidth(0.2);
-      doc.line(60, currentY, 150, currentY);
-      
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-      doc.setTextColor(30, 41, 59);
-      doc.text(profile.full_name.toUpperCase(), 105, currentY + 6, { align: "center" });
-      
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.setTextColor(100, 116, 139);
-      doc.text(profile.crp || "Registro Profissional", 105, currentY + 11, { align: "center" });
-
-      // 5. Rodapé decorativo
-      doc.setFillColor(109, 40, 217);
-      doc.rect(10, 285, 190, 2, 'F');
-
-      addPdfFooter(doc);
-      doc.save(`recibo_${patientName.replace(/\s+/g, '_')}.pdf`);
-    } catch (e) {
-      console.error(e);
-      showError("Erro no Recibo", "Ocorreu um erro ao gerar o arquivo do recibo.");
-    } finally {
-      setIsExporting(false);
     }
+
+    await exportPdf({
+      title: "Recibo de Pagamento",
+      subtitle: `Nº do Recibo: ${docNumber}`,
+      profile,
+      fileName: `recibo_${patientName.replace(/\s+/g, '_')}.pdf`,
+      content: [
+        {
+          columns: [
+            { text: "RECIBO", fontSize: 24, bold: true, color: '#6d28d9', margin: [0, 20, 0, 0] },
+            {
+              table: {
+                widths: ['*'],
+                body: [
+                  [{ text: formatCurrency(Number(tx.amount)), fontSize: 16, bold: true, color: '#6d28d9', alignment: 'center', fillColor: '#f5f3ff', margin: [10, 10] }]
+                ]
+              },
+              layout: 'noBorders',
+              width: 150
+            }
+          ]
+        },
+        {
+          text: [
+            `Recebemos de `, { text: patientName, bold: true }, `,\n\n`,
+            `a importância supra de `, { text: `${formatCurrency(Number(tx.amount))} (${amountExtenso})`, bold: true }, `,\n\n`,
+            `referente aos serviços profissionais de: Sessão de Atendimento.\n\n`,
+            `Para maior clareza, firmamos o presente recibo.\n\n\n`,
+            `Data do Pagamento: ${dateStr}`
+          ],
+          fontSize: 12,
+          color: '#334155',
+          margin: [0, 30, 0, 60]
+        },
+        sigImage,
+        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 250, y2: 0, lineWidth: 1, lineColor: '#cbd5e1' }], margin: [130, (sigImage ? 0 : 40), 0, 10] },
+        { text: profile.full_name || "Assinatura do Profissional", alignment: 'center', fontSize: 12, bold: true, color: '#334155' },
+        profile.crp ? { text: `CRP: ${profile.crp}`, alignment: 'center', fontSize: 10, color: '#64748b' } : null
+      ].filter(Boolean)
+    });
   };
 
   return (

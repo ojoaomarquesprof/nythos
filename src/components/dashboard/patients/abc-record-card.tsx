@@ -15,7 +15,7 @@ import {
   History,
   Download
 } from "lucide-react";
-import { createPdfDocument, addPdfFooter, addTableToPdf } from "@/lib/pdf-generator";
+import { usePdfExport } from "@/hooks/use-pdf-export";
 import type { Profile, Patient } from "@/types/database";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,6 +62,7 @@ export function AbcRecordCard({
   const supabase = createClient() as any;
   const router = useRouter();
   const { hasSubscription, loading: subLoading } = useSubscription();
+  const { exportPdf, isExporting: isExportingPdf } = usePdfExport();
 
   // Form State
   const [formData, setFormData] = useState({
@@ -148,33 +148,45 @@ export function AbcRecordCard({
       `Data do Relatório: ${new Date().toLocaleDateString("pt-BR")}`
     ].filter(Boolean).join(" | ");
 
-    const { doc, startY } = await createPdfDocument({
+    const tableBody = records.map((r: any) => [
+      formatDate(r.occurrence_date),
+      r.behavior,
+      r.antecedent,
+      r.consequence,
+      r.intensity.toString()
+    ]);
+
+    await exportPdf({
       title: "Registro de Análise do Comportamento (ABC)",
       subtitle: patientDetails,
-      profile
+      profile,
+      fileName: `abc_${patient.full_name.toLowerCase().replace(/\s+/g, "_")}.pdf`,
+      content: [
+        {
+          table: {
+            headerRows: 1,
+            widths: ['auto', 'auto', '*', '*', 'auto'],
+            body: [
+              [
+                { text: 'Data', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
+                { text: 'Comportamento', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
+                { text: 'Antecedente (A)', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
+                { text: 'Consequência (C)', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
+                { text: 'Intensidade', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] }
+              ],
+              ...tableBody.map(row => row.map(cell => ({ text: cell, margin: [5, 5] })))
+            ]
+          },
+          layout: {
+            fillColor: function (rowIndex: number) {
+              return (rowIndex % 2 === 0 && rowIndex > 0) ? '#f8fafc' : null;
+            },
+            hLineColor: '#cbd5e1',
+            vLineColor: '#cbd5e1'
+          }
+        }
+      ]
     });
-
-    addTableToPdf(doc, {
-      startY,
-      head: [["Data", "Comportamento", "Antecedente (A)", "Consequência (C)", "Intensidade"]],
-      body: records.map((r: any) => [
-        formatDate(r.occurrence_date),
-        r.behavior,
-        r.antecedent,
-        r.consequence,
-        r.intensity.toString()
-      ]),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [200, 200, 200], textColor: [40, 40, 40], fontStyle: "bold" },
-      columnStyles: {
-        1: { cellWidth: 40 },
-        2: { cellWidth: 45 },
-        3: { cellWidth: 45 },
-      }
-    });
-
-    addPdfFooter(doc);
-    doc.save(`abc_${patient.full_name.toLowerCase().replace(/\s+/g, "_")}.pdf`);
   }
 
   return (
@@ -199,7 +211,7 @@ export function AbcRecordCard({
               variant="outline" 
               className="h-9 px-4 rounded-full border-rose-200 text-rose-600 hover:bg-rose-50 transition-all"
               onClick={handleExportPdf}
-              disabled={records.length === 0 || !profile || !patient}
+              disabled={records.length === 0 || !profile || !patient || isExportingPdf}
             >
               <Download className="w-4 h-4 mr-2" />
               <span className="hidden sm:inline">PDF</span>

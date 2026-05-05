@@ -50,6 +50,18 @@ export function usePushNotifications() {
     setState((prev) => ({ ...prev, isLoading: true }));
 
     try {
+      // iOS Web Push Requirement: Must be in standalone mode (Added to Home Screen)
+      const { isIOS, isStandalone } = await import("@/lib/pwa-utils");
+      if (isIOS() && !isStandalone()) {
+        const { toast } = await import("sonner");
+        toast.error("Adicione à Tela de Início", {
+          description: "Para receber notificações no iOS, adicione o Nythos à sua Tela de Início e abra-o por lá.",
+          duration: 5000,
+        });
+        setState((prev) => ({ ...prev, isLoading: false }));
+        return null;
+      }
+
       const permission = await Notification.requestPermission();
       setState((prev) => ({ ...prev, permission }));
 
