@@ -10,7 +10,9 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
-  Ban
+  Ban,
+  MessageCircle,
+  Filter
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,11 +20,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type User = {
   id: string;
   email: string;
   full_name: string;
+  phone: string | null;
   role: string;
   created_at: string;
   subscription: {
@@ -37,6 +41,7 @@ export default function AdminPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [filterType, setFilterType] = useState("all");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -83,15 +88,47 @@ export default function AdminPage() {
     }
   };
 
-  const filteredUsers = users.filter(u => 
-    u.full_name?.toLowerCase().includes(search.toLowerCase()) || 
-    u.email?.toLowerCase().includes(search.toLowerCase())
-  );
+  const isExpiredTrial = (u: User) => {
+    if (u.subscription?.status !== 'trialing') return false;
+    const end = new Date(u.subscription.current_period_end).getTime();
+    return end < Date.now();
+  };
+
+  const isActiveTrial = (u: User) => {
+    if (u.subscription?.status !== 'trialing') return false;
+    const end = new Date(u.subscription.current_period_end).getTime();
+    return end >= Date.now();
+  };
+
+  const isActiveSub = (u: User) => {
+    return u.subscription?.status === 'active';
+  };
+
+  const filteredUsers = users.filter(u => {
+    const matchesSearch = u.full_name?.toLowerCase().includes(search.toLowerCase()) || 
+                          u.email?.toLowerCase().includes(search.toLowerCase());
+    
+    if (!matchesSearch) return false;
+
+    if (filterType === "active") return isActiveSub(u);
+    if (filterType === "trial") return isActiveTrial(u);
+    if (filterType === "expired_trial") return isExpiredTrial(u);
+    if (filterType === "total_active") return isActiveSub(u) || isActiveTrial(u);
+    
+    return true; // "all"
+  });
 
   const stats = {
-    total: users.length,
-    active: users.filter(u => u.subscription?.status === 'active').length,
-    trialing: users.filter(u => u.subscription?.status === 'trialing').length,
+    active: users.filter(isActiveSub).length,
+    trialing: users.filter(isActiveTrial).length,
+    expired_trial: users.filter(isExpiredTrial).length,
+    total_active: users.filter(u => isActiveSub(u) || isActiveTrial(u)).length,
+  };
+
+  const formatPhone = (phone: string | null) => {
+    if (!phone) return null;
+    const digits = phone.replace(/\D/g, '');
+    return digits.length >= 10 ? `55${digits}` : null;
   };
 
   return (
@@ -107,19 +144,8 @@ export default function AdminPage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-6 flex items-center gap-4">
-            <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
-              <Users className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-slate-500">Total de Usuários</p>
-              <p className="text-2xl font-black text-slate-800">{stats.total}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-0 shadow-sm">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="border-0 shadow-sm cursor-pointer transition-transform hover:scale-105" onClick={() => setFilterType("active")}>
           <CardContent className="p-6 flex items-center gap-4">
             <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center">
               <CheckCircle2 className="w-6 h-6" />
@@ -130,21 +156,46 @@ export default function AdminPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-0 shadow-sm">
+        
+        <Card className="border-0 shadow-sm cursor-pointer transition-transform hover:scale-105" onClick={() => setFilterType("trial")}>
           <CardContent className="p-6 flex items-center gap-4">
             <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center">
               <Clock className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-sm font-bold text-slate-500">Em Teste (Trial)</p>
+              <p className="text-sm font-bold text-slate-500">Trial Ativo</p>
               <p className="text-2xl font-black text-slate-800">{stats.trialing}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-sm cursor-pointer transition-transform hover:scale-105" onClick={() => setFilterType("expired_trial")}>
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-xl flex items-center justify-center">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-500">Trial Expirado</p>
+              <p className="text-2xl font-black text-slate-800">{stats.expired_trial}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-sm cursor-pointer transition-transform hover:scale-105" onClick={() => setFilterType("total_active")}>
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
+              <Users className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-500">Total Usuários (Trial + Ativos)</p>
+              <p className="text-2xl font-black text-slate-800">{stats.total_active}</p>
             </div>
           </CardContent>
         </Card>
       </div>
 
       <Card className="border-0 shadow-sm overflow-hidden">
-        <CardHeader className="border-b bg-slate-50/50 flex flex-row items-center justify-between py-4">
+        <CardHeader className="border-b bg-slate-50/50 flex flex-col md:flex-row items-start md:items-center gap-4 py-4">
           <div className="relative w-full max-w-sm">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <Input 
@@ -154,14 +205,32 @@ export default function AdminPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          
+          <div className="flex items-center gap-2 w-full md:w-auto ml-auto">
+            <Filter className="w-4 h-4 text-slate-400" />
+            <Select value={filterType} onValueChange={(val) => setFilterType(val as string)}>
+              <SelectTrigger className="w-[200px] bg-white font-medium">
+                <SelectValue placeholder="Filtrar por status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os Registros</SelectItem>
+                <SelectItem value="active">Apenas Ativos</SelectItem>
+                <SelectItem value="trial">Apenas Trial Ativo</SelectItem>
+                <SelectItem value="expired_trial">Apenas Trial Expirado</SelectItem>
+                <SelectItem value="total_active">Ativos + Trial (Total)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </CardHeader>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
+          <table className="w-full text-sm text-left whitespace-nowrap">
             <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b">
               <tr>
-                <th className="px-6 py-4 font-bold">Usuário</th>
-                <th className="px-6 py-4 font-bold">Role</th>
-                <th className="px-6 py-4 font-bold">Status (Assinatura)</th>
+                <th className="px-6 py-4 font-bold">Nome</th>
+                <th className="px-6 py-4 font-bold">E-mail</th>
+                <th className="px-6 py-4 font-bold">WhatsApp</th>
+                <th className="px-6 py-4 font-bold">Cadastro</th>
+                <th className="px-6 py-4 font-bold">Status</th>
                 <th className="px-6 py-4 font-bold">Vencimento</th>
                 <th className="px-6 py-4 font-bold text-right">Ações</th>
               </tr>
@@ -169,61 +238,83 @@ export default function AdminPage() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-slate-500 font-medium">
+                  <td colSpan={7} className="px-6 py-8 text-center text-slate-500 font-medium">
                     Carregando usuários...
                   </td>
                 </tr>
               ) : filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-slate-500 font-medium">
+                  <td colSpan={7} className="px-6 py-8 text-center text-slate-500 font-medium">
                     Nenhum usuário encontrado.
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="font-bold text-slate-800">{user.full_name || 'Sem Nome'}</div>
-                      <div className="text-xs text-slate-500">{user.email}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <Badge variant="outline" className="font-bold capitalize bg-white">
-                        {user.role}
-                      </Badge>
-                    </td>
-                    <td className="px-6 py-4">
-                      {user.subscription ? (
-                        <Badge className={`font-bold ${
-                          user.subscription.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
-                          user.subscription.status === 'trialing' ? 'bg-amber-100 text-amber-700' :
-                          'bg-rose-100 text-rose-700'
-                        }`}>
-                          {user.subscription.status}
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className="font-bold bg-slate-100 text-slate-600">Sem Assinatura</Badge>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-slate-600 font-medium">
-                      {user.subscription?.current_period_end 
-                        ? new Date(user.subscription.current_period_end).toLocaleDateString('pt-BR')
-                        : '-'}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <Button 
-                        variant="secondary" 
-                        size="sm" 
-                        className="font-bold shadow-sm"
-                        onClick={() => {
-                          setSelectedUser(user);
-                          setModalOpen(true);
-                        }}
-                      >
-                        Gerenciar
-                      </Button>
-                    </td>
-                  </tr>
-                ))
+                filteredUsers.map((user) => {
+                  const phoneWa = formatPhone(user.phone);
+                  const isTrialExpired = isExpiredTrial(user);
+
+                  return (
+                    <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-slate-800">{user.full_name || 'Sem Nome'}</div>
+                        <div className="text-[10px] text-slate-400 font-medium uppercase mt-0.5">{user.role}</div>
+                      </td>
+                      <td className="px-6 py-4 text-slate-600 font-medium">
+                        {user.email}
+                      </td>
+                      <td className="px-6 py-4">
+                        {phoneWa ? (
+                          <a 
+                            href={`https://wa.me/${phoneWa}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-emerald-600 hover:text-emerald-700 font-bold bg-emerald-50 px-2.5 py-1 rounded-md transition-colors"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            {user.phone}
+                          </a>
+                        ) : (
+                          <span className="text-slate-400 text-xs">-</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-slate-600 font-medium">
+                        {new Date(user.created_at).toLocaleDateString('pt-BR')}
+                      </td>
+                      <td className="px-6 py-4">
+                        {user.subscription ? (
+                          <Badge className={`font-bold ${
+                            user.subscription.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
+                            isTrialExpired ? 'bg-rose-100 text-rose-700' :
+                            user.subscription.status === 'trialing' ? 'bg-amber-100 text-amber-700' :
+                            'bg-rose-100 text-rose-700'
+                          }`}>
+                            {isTrialExpired ? 'trial expirado' : user.subscription.status}
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="font-bold bg-slate-100 text-slate-600">sem assinatura</Badge>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-slate-600 font-medium">
+                        {user.subscription?.current_period_end 
+                          ? new Date(user.subscription.current_period_end).toLocaleDateString('pt-BR')
+                          : '-'}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <Button 
+                          variant="secondary" 
+                          size="sm" 
+                          className="font-bold shadow-sm"
+                          onClick={() => {
+                            setSelectedUser(user);
+                            setModalOpen(true);
+                          }}
+                        >
+                          Gerenciar
+                        </Button>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
