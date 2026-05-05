@@ -67,6 +67,7 @@ import { ProtocolTrackerCard } from "@/components/dashboard/patients/protocol-tr
 import { AbcRecordCard } from "@/components/dashboard/patients/abc-record-card";
 import { AnamnesisRequestCard } from "@/components/dashboard/patients/anamnesis-request-card";
 import { useSubscription } from "@/hooks/use-subscription";
+import { usePdfExport } from "@/hooks/use-pdf-export";
 
 const getWeekStart = (date: Date) => {
   const d = new Date(date);
@@ -504,120 +505,100 @@ export default function PatientDetailPage() {
     }
   };
 
+  const { exportPdf, isExporting: isExportingPdf } = usePdfExport();
+
   const handleExportSessions = async () => {
     if (!patient || !profile) {
       showError("Erro", "Não foi possível carregar os dados necessários para gerar o PDF.");
       return;
     }
-    setIsExporting(true);
     
-    try {
-      const { doc, startY } = await createPdfDocument({
-        title: "Relatório de Sessões",
-        subtitle: `Paciente: ${patient.full_name}\nGerado em: ${new Date().toLocaleDateString("pt-BR")}`,
-        profile
-      });
+    const tableBody = sessions.map(s => [
+      new Date(s.scheduled_at).toLocaleDateString("pt-BR"),
+      formatTime(s.scheduled_at),
+      `${s.duration_minutes} min`,
+      s.session_type === "online" ? "Online" : "Presencial",
+      SESSION_STATUS[s.status].label
+    ]);
 
-      const tableData = sessions.map(s => [
-        new Date(s.scheduled_at).toLocaleDateString("pt-BR"),
-        formatTime(s.scheduled_at),
-        `${s.duration_minutes} min`,
-        s.session_type === "online" ? "Online" : "Presencial",
-        SESSION_STATUS[s.status].label
-      ]);
-
-      addTableToPdf(doc, {
-        startY: startY,
-        head: [['Data', 'Hora', 'Duração', 'Tipo', 'Status']],
-        body: tableData,
-        theme: 'striped',
-        headStyles: { fillColor: [139, 92, 246] }, // Primary violet color
-      });
-
-      addPdfFooter(doc);
-      doc.save(`sessoes_${patient.full_name.replace(/\s+/g, '_')}.pdf`);
-    } catch (error) {
-      console.error(error);
-      showError("Erro na Exportação", "Ocorreu um erro ao gerar o PDF das sessões.");
-    } finally {
-      setIsExporting(false);
-    }
+    await exportPdf({
+      title: "Relatório de Sessões",
+      subtitle: `Paciente: ${patient.full_name}\nData de Geração: ${new Date().toLocaleDateString("pt-BR")}`,
+      profile,
+      fileName: `sessoes_${patient.full_name.replace(/\s+/g, '_')}.pdf`,
+      content: [
+        {
+          table: {
+            headerRows: 1,
+            widths: ['auto', 'auto', 'auto', '*', 'auto'],
+            body: [
+              [
+                { text: 'Data', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
+                { text: 'Hora', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
+                { text: 'Duração', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
+                { text: 'Tipo', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
+                { text: 'Status', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] }
+              ],
+              ...tableBody.map(row => row.map(cell => ({ text: cell, margin: [5, 5] })))
+            ]
+          },
+          layout: {
+            fillColor: function (rowIndex: number) {
+              return (rowIndex % 2 === 0 && rowIndex > 0) ? '#f8fafc' : null;
+            },
+            hLineColor: '#e2e8f0',
+            vLineColor: '#e2e8f0'
+          }
+        }
+      ]
+    });
   };
 
   const handleExportNotes = async () => {
     if (!patient || !profile || !patient.notes_encrypted) return;
-    setIsExporting(true);
     
-    try {
-      const { doc, startY } = await createPdfDocument({
-        title: "Prontuário do Paciente",
-        subtitle: [
-          `Paciente: ${patient.full_name}`,
-          patient.cpf ? `CPF: ${patient.cpf}` : null,
-          patient.date_of_birth ? `Data de Nasc.: ${formatDate(patient.date_of_birth)}` : null,
-          `Data do Relatório: ${new Date().toLocaleDateString("pt-BR")}`
-        ].filter(Boolean).join(" | "),
-        profile
-      });
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.text("Evolução Clínica e Observações", 14, startY);
-      
-      let currentY = startY + 10;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-
-      // 1. Notas Manuais
-      if (patient.notes_encrypted) {
-        doc.setFont("helvetica", "bold");
-        doc.text("Notas Gerais:", 14, currentY);
-        doc.setFont("helvetica", "normal");
-        const splitNotes = doc.splitTextToSize(patient.notes_encrypted, 180);
-        doc.text(splitNotes, 14, currentY + 5);
-        currentY += (splitNotes.length * 5) + 15;
-      }
-
-      // 2. Evoluções de Sessão
-      const completedSessions = sessions.filter(s => s.status === "completed" && s.session_notes_encrypted);
-      if (completedSessions.length > 0) {
-        doc.setFont("helvetica", "bold");
-        doc.text("Evoluções por Sessão:", 14, currentY);
-        currentY += 8;
-
-        completedSessions.forEach(session => {
-          if (currentY > 270) { doc.addPage(); currentY = 20; }
-          
-          let evolution: any = null;
-          try {
-            evolution = JSON.parse(session.session_notes_encrypted || "{}");
-          } catch (e) {
-            evolution = { notes: session.session_notes_encrypted };
-          }
-
-          const dateStr = `${new Date(session.scheduled_at).toLocaleDateString("pt-BR")} - `;
-          const moodStr = evolution.mood_happy_sad ? ` (Humor: ${evolution.mood_happy_sad}/10)` : "";
-          
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(9);
-          doc.text(dateStr + moodStr, 14, currentY);
-          
-          doc.setFont("helvetica", "normal");
-          doc.setFontSize(9);
-          const splitEv = doc.splitTextToSize(evolution.notes || evolution || "", 170);
-          doc.text(splitEv, 20, currentY + 5);
-          
-          currentY += (splitEv.length * 4) + 12;
-        });
-      }
-
-      addPdfFooter(doc);
-      doc.save(`prontuario_evolucao_${patient.full_name.replace(/\s+/g, '_')}.pdf`);
-    } catch (e) {
-      showError("Erro na Exportação", "Ocorreu um erro ao gerar o PDF do prontuário.");
-    } finally {
-      setIsExporting(false);
+    const completedSessions = sessions.filter(s => s.status === "completed" && s.session_notes_encrypted);
+    
+    const contentBody: any[] = [];
+    
+    // 1. Notas Manuais
+    if (patient.notes_encrypted) {
+      contentBody.push({ text: "Notas Gerais", style: "header" });
+      contentBody.push({ text: patient.notes_encrypted, style: "normalText", margin: [0, 0, 0, 20] });
     }
+
+    // 2. Evoluções de Sessão
+    if (completedSessions.length > 0) {
+      contentBody.push({ text: "Evoluções por Sessão", style: "header", margin: [0, 10, 0, 10] });
+      
+      completedSessions.forEach(session => {
+        let evolution: any = null;
+        try {
+          evolution = JSON.parse(session.session_notes_encrypted || "{}");
+        } catch (e) {
+          evolution = { notes: session.session_notes_encrypted };
+        }
+
+        const dateStr = `${new Date(session.scheduled_at).toLocaleDateString("pt-BR")}`;
+        const moodStr = evolution.mood_happy_sad ? ` (Humor: ${evolution.mood_happy_sad}/10)` : "";
+        
+        contentBody.push({ text: `${dateStr}${moodStr}`, style: "subheader" });
+        contentBody.push({ text: evolution.notes || evolution || "", style: "normalText", margin: [0, 0, 0, 10] });
+      });
+    }
+
+    await exportPdf({
+      title: "Prontuário de Evolução",
+      subtitle: [
+        `Paciente: ${patient.full_name}`,
+        patient.cpf ? `CPF: ${patient.cpf}` : null,
+        patient.date_of_birth ? `Data de Nasc.: ${formatDate(patient.date_of_birth)}` : null,
+        `Data do Relatório: ${new Date().toLocaleDateString("pt-BR")}`
+      ].filter(Boolean).join(" | "),
+      profile,
+      fileName: `prontuario_evolucao_${patient.full_name.replace(/\s+/g, '_')}.pdf`,
+      content: contentBody
+    });
   };
 
   const handleExportFullRecord = async () => {
@@ -1076,7 +1057,7 @@ export default function PatientDetailPage() {
               variant="outline"
               size="sm"
               onClick={handleExportSessions}
-              disabled={isExporting || sessions.length === 0}
+              disabled={isExporting || isExportingPdf || sessions.length === 0}
             >
               <Download className="w-4 h-4 mr-2" />
               Exportar Sessões (PDF)
@@ -1477,7 +1458,7 @@ export default function PatientDetailPage() {
                 variant="outline"
                 className="rounded-full border-primary/20 text-primary hover:bg-primary/5 h-10 px-6 font-bold text-xs"
                 onClick={handleExportFullRecord}
-                disabled={isExporting}
+                disabled={isExporting || isExportingPdf}
               >
                 <FileText className="w-4 h-4 mr-2" />
                 Relatório Completo
@@ -1486,7 +1467,7 @@ export default function PatientDetailPage() {
                 variant="outline"
                 className="rounded-full border-primary/20 text-primary hover:bg-primary/5 h-10 px-6 font-bold text-xs"
                 onClick={handleExportNotes}
-                disabled={isExporting || !patient.notes_encrypted}
+                disabled={isExporting || isExportingPdf || !patient.notes_encrypted}
               >
                 <Download className="w-4 h-4 mr-2" />
                 Exportar Notas
@@ -2098,7 +2079,7 @@ export default function PatientDetailPage() {
                       <Button 
                         variant="outline" 
                         onClick={() => handleExportSingleSession(viewingSession)}
-                        disabled={isExporting}
+                        disabled={isExporting || isExportingPdf}
                         className="rounded-full px-6 h-10 font-bold border-primary/20 text-primary hover:bg-primary/5"
                       >
                         <Download className="w-4 h-4 mr-2" />
