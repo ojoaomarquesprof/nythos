@@ -182,6 +182,16 @@ export function Sidebar() {
           );
         })}
 
+        {profile?.role === 'admin' && (
+          <Link
+            href="/admin"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 text-teal-600 hover:text-teal-700 hover:bg-teal-50"
+          >
+            <ShieldCheck className="w-5 h-5 flex-shrink-0" strokeWidth={1.8} />
+            <span>Painel Super Admin</span>
+          </Link>
+        )}
+
         {/* User card */}
         <div className="mt-3 flex items-center gap-3 px-3 py-3 rounded-xl bg-muted/30 border border-border/50">
           <Avatar className="w-9 h-9">
