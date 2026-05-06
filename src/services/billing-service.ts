@@ -179,5 +179,128 @@ export const BillingService = {
       console.error(`Error in BillingService.cancelSession(${sessionId}):`, err);
       return { data: false, error: err.message || "Erro ao cancelar sessão." };
     }
+  },
+
+  async getTransactions(userId: string): Promise<ServiceResponse<CashFlow[]>> {
+    try {
+      const { data, error } = await supabase
+        .from("cash_flow")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (err: any) {
+      console.error("Error in BillingService.getTransactions:", err);
+      return { data: null, error: err.message || "Erro ao carregar transações." };
+    }
+  },
+
+  async confirmPayment(id: string, method: string): Promise<ServiceResponse<boolean>> {
+    try {
+      const { error } = await supabase
+        .from("cash_flow")
+        .update({
+          status: "confirmed",
+          paid_at: new Date().toISOString(),
+          payment_method: method,
+        })
+        .eq("id", id);
+
+      if (error) throw error;
+      return { data: true, error: null };
+    } catch (err: any) {
+      console.error(`Error in BillingService.confirmPayment(${id}):`, err);
+      return { data: false, error: err.message || "Erro ao confirmar pagamento." };
+    }
+  },
+
+  async addExpense(expense: {
+    user_id: string;
+    amount: number;
+    description: string;
+    category: string;
+    notes?: string | null;
+  }): Promise<ServiceResponse<boolean>> {
+    try {
+      const { error } = await supabase.from("cash_flow").insert({
+        ...expense,
+        type: "expense",
+        status: "confirmed",
+        paid_at: new Date().toISOString(),
+      });
+
+      if (error) throw error;
+      return { data: true, error: null };
+    } catch (err: any) {
+      console.error("Error in BillingService.addExpense:", err);
+      return { data: false, error: err.message || "Erro ao registrar despesa." };
+    }
+  },
+
+  async getFinancialEvolution(userId: string): Promise<ServiceResponse<any[]>> {
+    try {
+      const { data, error } = await supabase
+        .from("cash_flow")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+
+      const last6Months: any[] = [];
+      const now = new Date();
+
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const monthName = d.toLocaleDateString("pt-BR", { month: "short" });
+        const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+
+        last6Months.push({
+          month: capitalizedMonth,
+          monthIndex: d.getMonth(),
+          year: d.getFullYear(),
+          income: 0,
+          expense: 0,
+        });
+      }
+
+      data?.forEach((tx: any) => {
+        const txDate = new Date(tx.due_date || tx.paid_at || tx.created_at);
+        const txMonth = txDate.getMonth();
+        const txYear = txDate.getFullYear();
+
+        const monthData = last6Months.find((m) => m.monthIndex === txMonth && m.year === txYear);
+        if (monthData) {
+          const amount = Number(tx.amount) || 0;
+          if (tx.type === "income" && tx.status === "confirmed") {
+            monthData.income += amount;
+          } else if (tx.type === "expense" && tx.status === "confirmed") {
+            monthData.expense += amount;
+          }
+        }
+      });
+
+      return { data: last6Months, error: null };
+    } catch (err: any) {
+      console.error("Error in BillingService.getFinancialEvolution:", err);
+      return { data: null, error: err.message || "Erro ao carregar evolução financeira." };
+    }
+  },
+
+  async deleteTransaction(id: string): Promise<ServiceResponse<boolean>> {
+    try {
+      const { error } = await supabase
+        .from("cash_flow")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+      return { data: true, error: null };
+    } catch (err: any) {
+      console.error(`Error in BillingService.deleteTransaction(${id}):`, err);
+      return { data: false, error: err.message || "Erro ao excluir transação." };
+    }
   }
 };

@@ -14,6 +14,8 @@ import {
   Download,
   AlertCircle,
   FileText,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,12 +39,19 @@ import {
 import type { Database, CashFlow, Profile } from "@/types/database";
 import { usePdfExport } from "@/hooks/use-pdf-export";
 import { getBase64ImageFromUrl } from "@/lib/pdf-generator";
+import { BillingService } from "@/services/billing-service";
+import { FinancialEvolutionChart } from "@/components/dashboard/finances/evolution-chart";
+import { TransactionDetailsSheet } from "@/components/dashboard/finances/transaction-details-sheet";
 
 export default function FinancesPage() {
   const { therapistId } = useSubscription();
   const supabase = createClient() as any;
   const [transactions, setTransactions] = useState<CashFlow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentDate, setCurrentDate] = useState<Date>(new Date());
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [chartLoading, setChartLoading] = useState(true);
+  const [selectedTransaction, setSelectedTransaction] = useState<CashFlow | null>(null);
   const [showExpense, setShowExpense] = useState(false);
   const [saving, setSaving] = useState(false);
   const { exportPdf, isExporting } = usePdfExport();
@@ -68,54 +77,41 @@ export default function FinancesPage() {
   }, [therapistId]);
 
   async function loadTransactions() {
+    if (!therapistId) return;
     setLoading(true);
+    setChartLoading(true);
     
     // Load profile (of the therapist, for branding)
-    const targetId = therapistId;
-    if (targetId) {
-      const { data: profileData } = await supabase.from("profiles").select("*").eq("id", targetId).single();
-      if (profileData) setProfile(profileData);
-    }
+    const { data: profileData } = await supabase.from("profiles").select("*").eq("id", therapistId).single();
+    if (profileData) setProfile(profileData);
 
-    const { data } = await supabase
-      .from("cash_flow")
-      .select("*")
-      .order("created_at", { ascending: false });
+    // Load transactions from BillingService
+    const { data: txData } = await BillingService.getTransactions(therapistId);
+    if (txData) setTransactions(txData);
 
-    if (data) setTransactions(data);
+    // Load 6-month financial evolution
+    const { data: evoData } = await BillingService.getFinancialEvolution(therapistId);
+    if (evoData) setChartData(evoData);
+
     setLoading(false);
+    setChartLoading(false);
   }
 
   const handleConfirmPayment = async (id: string, method: string) => {
-    const { error } = await (supabase.from("cash_flow") as any)
-      .update({
-        status: "confirmed",
-        paid_at: new Date().toISOString(),
-        payment_method: method,
-      })
-      .eq("id", id);
-
+    const { error } = await BillingService.confirmPayment(id, method);
     if (!error) loadTransactions();
   };
 
   const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!therapistId) return;
     setSaving(true);
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setSaving(false);
-      return;
-    }
-
-    const { error } = await (supabase.from("cash_flow") as any).insert({
-      user_id: therapistId || user.id,
-      type: "expense",
+    const { error } = await BillingService.addExpense({
+      user_id: therapistId,
       amount: parseFloat(expenseForm.amount),
       description: expenseForm.description,
       category: expenseForm.category,
-      status: "confirmed",
-      paid_at: new Date().toISOString(),
       notes: expenseForm.notes || null,
     });
 
@@ -127,12 +123,21 @@ export default function FinancesPage() {
     setSaving(false);
   };
 
-  // Calculations
-  const currentMonth = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
+  const handleDeleteTransaction = async (id: string) => {
+    const { error } = await BillingService.deleteTransaction(id);
+    if (!error) {
+      loadTransactions();
+    } else {
+      showError("Erro ao Excluir", error || "Não foi possível excluir a transação.");
+    }
+  };
+
+  // Calculations (Time Travel!)
+  const selectedMonth = currentDate.getMonth();
+  const selectedYear = currentDate.getFullYear();
   const monthTransactions = transactions.filter((t) => {
     const d = new Date(t.due_date || t.paid_at || t.created_at);
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
   });
 
   const totalIncome = monthTransactions
@@ -272,15 +277,37 @@ export default function FinancesPage() {
   return (
     <div className="px-4 py-5 md:px-6 md:py-6 space-y-5 max-w-7xl mx-auto w-full">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold">Financeiro</h1>
-          <p className="text-sm text-muted-foreground">
-            {new Date().toLocaleDateString("pt-BR", {
-              month: "long",
-              year: "numeric",
-            })}
-          </p>
+          <h1 className="text-2xl font-black text-slate-800">Financeiro</h1>
+          <div className="flex items-center gap-2 mt-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="w-8 h-8 rounded-full border-slate-200 text-slate-600 hover:bg-slate-50 transition-all shrink-0"
+              onClick={() => {
+                setCurrentDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+              }}
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <p className="text-sm font-bold text-slate-700 capitalize min-w-[130px] text-center">
+              {currentDate.toLocaleDateString("pt-BR", {
+                month: "long",
+                year: "numeric",
+              })}
+            </p>
+            <Button
+              variant="outline"
+              size="icon"
+              className="w-8 h-8 rounded-full border-slate-200 text-slate-600 hover:bg-slate-50 transition-all shrink-0"
+              onClick={() => {
+                setCurrentDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+              }}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
         <SubscriptionGate>
           <Button
@@ -388,6 +415,9 @@ export default function FinancesPage() {
         </Card>
       </div>
 
+      {/* Financial Evolution Chart */}
+      <FinancialEvolutionChart data={chartData} loading={chartLoading} />
+
       {/* Transactions */}
       <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-md rounded-3xl overflow-hidden">
         <CardHeader className="pb-4 px-6 pt-6 border-b border-teal-500">
@@ -403,7 +433,7 @@ export default function FinancesPage() {
                   size="sm" 
                   onClick={handleExportPdf}
                   disabled={isExporting || filtered.length === 0}
-                  className="h-10 rounded-xl font-bold border-teal- hover:bg-teal-500 text-teal- transition-all"
+                  className="h-10 rounded-xl font-bold border-teal-200 hover:bg-teal-50 text-teal-600 transition-all"
                 >
                   <Download className="w-4 h-4 mr-2" />
                   PDF
@@ -461,7 +491,8 @@ export default function FinancesPage() {
                 return (
                   <div
                     key={tx.id}
-                    className="flex items-center gap-4 py-6 group hover:bg-teal-500/40 transition-all px-4 -mx-4 rounded-[24px] relative overflow-hidden border border-transparent hover:border-teal-500/50"
+                    onClick={() => setSelectedTransaction(tx)}
+                    className="flex items-center gap-4 py-6 group hover:bg-teal-500/10 cursor-pointer transition-all px-4 -mx-4 rounded-[24px] relative overflow-hidden border border-transparent hover:border-teal-500/50"
                   >
                     {/* Icon Container */}
                     <div
@@ -476,7 +507,7 @@ export default function FinancesPage() {
                     {/* Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-1">
-                        <p className="text-base font-bold text-[#1e1b4b] truncate group-hover:text-teal- transition-colors">
+                        <p className="text-base font-bold text-[#1e1b4b] truncate group-hover:text-teal-600 transition-colors">
                           {tx.description}
                         </p>
                         {isPending && (
@@ -486,7 +517,7 @@ export default function FinancesPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-3">
-                        <p className="text-[10px] font-black text-teal- uppercase tracking-[0.15em] flex items-center gap-2">
+                        <p className="text-[10px] font-black text-teal-600 uppercase tracking-[0.15em] flex items-center gap-2">
                           <span>{formatDate(tx.due_date || tx.paid_at || tx.created_at)}</span>
                           <span className="w-1 h-1 rounded-full bg-teal-500" />
                           <span className="text-teal-600/60">{category?.label || tx.category}</span>
@@ -507,11 +538,14 @@ export default function FinancesPage() {
 
                       {isPending && isIncome && (
                         <SubscriptionGate>
-                          <div className="flex gap-1.5">
+                          <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
                             {["pix", "cash", "credit_card"].map((method) => (
                               <button
                                 key={method}
-                                onClick={() => handleConfirmPayment(tx.id, method)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleConfirmPayment(tx.id, method);
+                                }}
                                 className="h-8 px-2.5 rounded-lg text-[10px] font-bold uppercase tracking-tighter bg-emerald-50 text-emerald-700 hover:bg-emerald-500 hover:text-white transition-all shadow-sm active:scale-95"
                                 title={`Confirmar como ${PAYMENT_METHODS[method as keyof typeof PAYMENT_METHODS]?.label}`}
                               >
@@ -523,13 +557,16 @@ export default function FinancesPage() {
                       )}
 
                       {tx.status === "confirmed" && (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                           {isIncome && (
                             <Button
                               variant="ghost"
                               size="sm"
                               className="h-8 px-3 text-[10px] font-black uppercase tracking-widest text-primary hover:text-primary hover:bg-primary/5 rounded-xl transition-all"
-                              onClick={() => handleExportReceipt(tx)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleExportReceipt(tx);
+                              }}
                               disabled={isExporting}
                             >
                               <FileText className="w-3 h-3 mr-1.5" />
@@ -682,6 +719,15 @@ export default function FinancesPage() {
           </div>
         </DialogContent>
       </Dialog>
+      {/* Transaction Details Sheet */}
+      <TransactionDetailsSheet
+        open={selectedTransaction !== null}
+        onOpenChange={(open) => !open && setSelectedTransaction(null)}
+        transaction={selectedTransaction}
+        onExportReceipt={handleExportReceipt}
+        isExportingReceipt={isExporting}
+        onDeleteTransaction={handleDeleteTransaction}
+      />
     </div>
   );
 }
