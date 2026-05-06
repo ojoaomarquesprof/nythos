@@ -26,6 +26,11 @@ export async function middleware(request: NextRequest) {
     return await verifyAuthRoutes(request)
   }
 
+  // /p/[token] é público — qualquer um com o link pode acessar
+  if (pathname.startsWith('/p/')) {
+    return NextResponse.next()
+  }
+
   // Rotas públicas (como /, /public/...) passam direto
   return NextResponse.next()
 }

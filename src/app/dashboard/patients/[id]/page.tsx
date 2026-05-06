@@ -36,6 +36,7 @@ import {
   Zap,
   Waves,
   HeartPulse,
+  ListChecks,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,9 @@ import { AbcRecordCard } from "@/components/dashboard/patients/abc-record-card";
 import { AnamnesisRequestCard } from "@/components/dashboard/patients/anamnesis-request-card";
 import { useSubscription } from "@/hooks/use-subscription";
 import { usePdfExport } from "@/hooks/use-pdf-export";
+import { PatientEngagementCard } from "@/components/dashboard/patients/patient-engagement-card";
+import { PatientTasksManager } from "@/components/dashboard/patients/patient-tasks-manager";
+
 
 const getWeekStart = (date: Date) => {
   const d = new Date(date);
@@ -98,7 +102,7 @@ export default function PatientDetailPage() {
     { value: "protocols", label: "Protocolos e Rastreadores", shortLabel: "Protocolos", icon: ClipboardList },
     { value: "anamnesis", label: "Anamnese e Formulários", shortLabel: "Anamnese", icon: Shield },
     { value: "archive", label: "Arquivo de Sessões", shortLabel: "Arquivo", icon: Archive },
-    { value: "alerts", label: "Lembretes e Alertas", shortLabel: "Alertas", icon: Bell },
+    { value: "alerts", label: "Interações e Tarefas", shortLabel: "Interações", icon: ListChecks },
   ];
   const [sessions, setSessions] = useState<Session[]>([]);
   const [patientCashFlow, setPatientCashFlow] = useState<CashFlow[]>([]);
@@ -1000,7 +1004,7 @@ export default function PatientDetailPage() {
               </TabsTrigger>
               <TabsTrigger value="alerts" className="glass-pill whitespace-nowrap px-4 lg:px-4 py-3 lg:py-2.5">
                 <Bell className="w-4 h-4" />
-                <span className="lg:inline">Alertas</span>
+                <span className="lg:inline">Interações</span>
               </TabsTrigger>
             </TabsList>
           </div>
@@ -1400,6 +1404,7 @@ export default function PatientDetailPage() {
               </div>
             )}
           </div>
+
         </TabsContent>
 
         {/* Prontuário */}
@@ -2134,6 +2139,21 @@ export default function PatientDetailPage() {
             
             <AnamnesisRequestCard patientId={patient.id} />
           </div>
+        </TabsContent>
+
+        {/* Interações e Tarefas do Paciente */}
+        <TabsContent value="alerts" className="mt-0 space-y-6 w-full animate-fade-in">
+          <PatientEngagementCard
+            patientId={patient.id}
+            patientEmail={patient.email}
+            authUserId={patient.auth_user_id}
+            accessToken={(patient as any).access_token ?? null}
+            dateOfBirth={patient.date_of_birth ?? null}
+          />
+          <PatientTasksManager
+            patientId={patient.id}
+            initialTasks={patientTasks}
+          />
         </TabsContent>
           </div>
         </div>

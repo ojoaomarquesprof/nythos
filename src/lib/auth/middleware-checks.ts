@@ -76,28 +76,24 @@ export async function verifyClinicAccess(request: NextRequest) {
 /**
  * 3. Patient Access Checker
  * Domínio: /patient
+ * Agora usa o cookie nythos_patient_session (HMAC) — sem Supabase Auth.
  */
 export async function verifyPatientAccess(request: NextRequest) {
-  // Ignora validação na própria rota de login do paciente para evitar loop infinito
+  // A rota /patient/login é pública (landing de redirecionamento)
   if (request.nextUrl.pathname.startsWith('/patient/login')) {
     return NextResponse.next()
   }
 
-  const response = NextResponse.next({ request: { headers: request.headers } })
-  const supabase = createMiddlewareClient(request, response)
+  // Verifica apenas presença do cookie (validação criptográfica ocorre no servidor)
+  const cookieHeader = request.headers.get('cookie') ?? ''
+  const hasSession = /(?:^|;\s*)nythos_patient_session=([^;]+)/.test(cookieHeader)
 
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
+  if (!hasSession) {
+    // Tenta redirecionar para o login legado; o terapeuta pode compartilhar o link /p/token
     return NextResponse.redirect(new URL('/patient/login', request.url))
   }
 
-  if (user.user_metadata?.user_type !== 'patient') {
-    // Profissionais tentando acessar área de paciente
-    return NextResponse.redirect(new URL('/dashboard', request.url))
-  }
-
-  return response
+  return NextResponse.next()
 }
 
 /**
