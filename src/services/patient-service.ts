@@ -1,8 +1,8 @@
 import { createClient } from "@/lib/supabase/client";
-import type { Patient, PatientTask } from "@/types/database";
+import type { Patient, PatientTask, PatientUpdate } from "@/types/database";
 import type { ServiceResponse } from "./types";
 
-const supabase = createClient() as any;
+const supabase = createClient();
 
 export const PatientService = {
   async getById(id: string): Promise<ServiceResponse<Patient>> {
@@ -70,7 +70,7 @@ export const PatientService = {
     }
   },
 
-  async updatePatient(id: string, data: Partial<Patient>): Promise<ServiceResponse<Patient>> {
+  async updatePatient(id: string, data: PatientUpdate): Promise<ServiceResponse<Patient>> {
     try {
       const { data: updated, error } = await supabase
         .from("patients")

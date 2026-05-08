@@ -1,8 +1,11 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { supabaseAdmin, createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
+import type { Database } from "@/types/database";
+
+type SessionInsert = Database['public']['Tables']['sessions']['Insert'];
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -61,8 +64,7 @@ async function refreshGoogleToken(
     const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
     // Persist the refreshed token
-    const admin = createAdminClient();
-    await (admin as any)
+    await supabaseAdmin
       .from("profiles")
       .update({
         google_access_token: newAccessToken,
@@ -107,7 +109,7 @@ export async function getCalendarStatus(): Promise<CalendarStatusResult> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { connected: false };
 
-  const { data: profile } = await (supabase as any)
+  const { data: profile } = await supabase
     .from("profiles")
     .select("google_access_token, google_refresh_token, google_token_expiry, google_calendar_id")
     .eq("id", user.id)
@@ -151,7 +153,7 @@ export async function disconnectGoogleCalendar(): Promise<{ success: boolean; er
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { success: false, error: "Não autenticado." };
 
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from("profiles")
     .update({
       google_access_token: null,
@@ -177,7 +179,7 @@ export async function syncGoogleCalendar(
   if (!user) return { success: false, imported: 0, skipped: 0, error: "Não autenticado.", needsAuth: true };
 
   // Load profile with tokens
-  const { data: profile, error: profileError } = await (supabase as any)
+  const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("google_access_token, google_refresh_token, google_token_expiry, google_calendar_id")
     .eq("id", user.id)
@@ -246,7 +248,7 @@ export async function syncGoogleCalendar(
   }
 
   // 4. Load the therapist's patients to match names
-  const { data: patients } = await (supabase as any)
+  const { data: patients } = await supabase
     .from("patients")
     .select("id, full_name")
     .eq("user_id", user.id)
@@ -255,7 +257,7 @@ export async function syncGoogleCalendar(
   const patientList: { id: string; full_name: string }[] = patients ?? [];
 
   // 5. Load existing sessions in the sync window to avoid duplicates
-  const { data: existingSessions } = await (supabase as any)
+  const { data: existingSessions } = await supabase
     .from("sessions")
     .select("scheduled_at, google_event_id")
     .eq("user_id", user.id)
@@ -280,7 +282,7 @@ export async function syncGoogleCalendar(
   let imported = 0;
   let skipped = 0;
 
-  const admin = createAdminClient();
+  
 
   for (const event of events) {
     // Skip cancelled events or all-day events (no dateTime)
@@ -315,7 +317,7 @@ export async function syncGoogleCalendar(
     }
 
     // Build session record
-    const sessionRecord: Record<string, unknown> = {
+    const sessionRecord: SessionInsert = {
       user_id: user.id,
       patient_id: matchedPatient.id,
       scheduled_at: scheduledAt,
@@ -327,7 +329,10 @@ export async function syncGoogleCalendar(
     };
 
     try {
-      await (admin as any).from("sessions").insert(sessionRecord);
+      // Use createAdminClient() directly here — the singleton supabaseAdmin has a known
+      // TypeScript inference issue with .insert() overloads in this version of supabase-js.
+      const { error: insertError } = await createAdminClient().from("sessions").insert(sessionRecord);
+      if (insertError) throw insertError;
       existingTimes.add(timeKey);
       imported++;
     } catch (insertErr) {
@@ -344,3 +349,5 @@ export async function syncGoogleCalendar(
     skipped,
   };
 }
+
+

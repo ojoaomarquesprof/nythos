@@ -143,7 +143,7 @@ export default function PatientsPage() {
                   : "text-muted-foreground hover:text-primary/60"
               )}
             >
-              {f === "all" ? "Todos" : statusConfig[f].label}
+              {f === "all" ? "Todos" : statusConfig[f as keyof typeof statusConfig].label}
             </button>
           ))}
         </div>
@@ -208,7 +208,7 @@ export default function PatientsPage() {
               </thead>
               <tbody className="divide-y divide-teal-">
                 {filtered.map((patient, index) => {
-                  const status = statusConfig[patient.status];
+                  const status = statusConfig[patient.status as keyof typeof statusConfig];
                   return (
                     <tr 
                       key={patient.id} 

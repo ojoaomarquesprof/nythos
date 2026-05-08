@@ -116,7 +116,7 @@ export function RecentActivity() {
             id: `p_${p.id}`,
             type: "patient_added",
             description: `Novo paciente cadastrado: ${p.full_name}`,
-            date: new Date(p.created_at),
+            date: new Date(p.created_at ?? new Date().toISOString()),
           });
         });
       }
@@ -132,7 +132,7 @@ export function RecentActivity() {
                 cf.type === "income"
                   ? `Pagamento recebido: ${cf.description}`
                   : `Despesa registrada: ${cf.description}`,
-              date: new Date(cf.created_at),
+              date: new Date(cf.created_at ?? new Date().toISOString()),
               highlight: formatCurrency(Number(cf.amount)),
             });
           }
@@ -164,7 +164,7 @@ export function RecentActivity() {
               id: `s_comp_${s.id}`,
               type: "session_completed",
               description: `Sessão com ${patientName} finalizada`,
-              date: new Date(s.updated_at),
+              date: new Date(s.updated_at ?? new Date().toISOString()),
               highlight: "Realizada",
             });
           } else if (s.status === "scheduled") {
@@ -172,7 +172,7 @@ export function RecentActivity() {
               id: `s_sch_${s.id}`,
               type: "session_scheduled",
               description: `Sessão agendada com ${patientName}`,
-              date: new Date(s.updated_at), // Using updated_at to show when it was created/updated
+              date: new Date(s.updated_at ?? new Date().toISOString()), // Using updated_at to show when it was created/updated
               highlight: `${formatDate(s.scheduled_at, {
                 day: "2-digit",
                 month: "short",

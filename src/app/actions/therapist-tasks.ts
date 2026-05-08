@@ -33,7 +33,7 @@ export interface TaskActionResult {
 // ─── Helper: resolve terapeuta logado ────────────────────────────────────────
 
 async function requireTherapist() {
-  const supabase = (await createClient()) as any;
+  const supabase = (await createClient());
   const {
     data: { user },
     error,
@@ -165,3 +165,4 @@ export async function deletePatientTask(
     };
   }
 }
+

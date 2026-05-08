@@ -119,7 +119,7 @@ export function PatientEngagementCard({
   const availableMonths = Array.from(
     new Set(
       stats?.diaryList?.map((entry) => {
-        const date = new Date(entry.created_at);
+        const date = new Date(entry.created_at ?? new Date().toISOString());
         return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
       }) || []
     )
@@ -134,7 +134,7 @@ export function PatientEngagementCard({
 
   const filteredDiary = stats?.diaryList?.filter((entry) => {
     if (selectedDiaryMonth === "all") return true;
-    const date = new Date(entry.created_at);
+    const date = new Date(entry.created_at ?? new Date().toISOString());
     const entryMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
     return entryMonth === selectedDiaryMonth;
   }) || [];
@@ -432,7 +432,8 @@ export function PatientEngagementCard({
                 if (tasksFilter === "completed") return t.status === "completed";
                 return true;
               }) || []).map((task) => {
-                const meta = CATEGORY_META[task.category] ?? CATEGORY_META.general;
+                const categoryKey = (task.category ?? "general") as keyof typeof CATEGORY_META;
+                const meta = CATEGORY_META[categoryKey] ?? CATEGORY_META.general;
                 const priority = PRIORITY_META[task.priority as keyof typeof PRIORITY_META] ?? {
                   label: "Normal",
                   color: "text-slate-600",
@@ -487,7 +488,7 @@ export function PatientEngagementCard({
                       {task.completed_at && (
                         <span className="text-[10px] text-slate-400 font-medium flex items-center gap-0.5 ml-auto">
                           <Check className="w-3 h-3 text-emerald-500" /> Feita:{" "}
-                          {new Date(task.completed_at).toLocaleDateString("pt-BR")}
+                          {new Date(task.completed_at!).toLocaleDateString("pt-BR")}
                         </span>
                       )}
                     </div>
@@ -550,7 +551,7 @@ export function PatientEngagementCard({
             ) : (
               filteredDiary.map((entry) => {
                 const emo = getDisplayEmotionAndNotes(entry);
-                const dateStr = new Date(entry.created_at).toLocaleDateString("pt-BR", {
+                const dateStr = new Date(entry.created_at ?? new Date().toISOString()).toLocaleDateString("pt-BR", {
                   day: "2-digit",
                   month: "short",
                   hour: "2-digit",

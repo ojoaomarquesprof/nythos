@@ -1,10 +1,25 @@
 // ============================================================
-// Nythos — Database Types (mirrors Supabase schema)
+// Nythos — Database Type Definitions
+// Introspected from live Supabase schema (project: ubgjaiqimaklvvzqtqwu)
+// Last updated: 2026-05-08
+//
+// Structure matches @supabase/supabase-js@2.104.0 / @supabase/postgrest-js@2.104.0
+// which requires:
+//   - __InternalSupabase.PostgrestVersion to set the Postgrest API version
+//   - Each table entry must have: Row, Insert, Update, Relationships
+//   - Relationships must be a typed array (use never[] for no FKs)
+//
+// To regenerate (requires Supabase Personal Access Token sbp_...):
+//   SUPABASE_ACCESS_TOKEN=sbp_... npx supabase gen types typescript \
+//     --project-id ubgjaiqimaklvvzqtqwu > src/types/database.ts
 // ============================================================
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
-export interface Database {
+export type Database = {
+  __InternalSupabase: {
+    PostgrestVersion: "12";
+  };
   public: {
     Tables: {
       profiles: {
@@ -16,20 +31,24 @@ export interface Database {
           avatar_url: string | null;
           clinic_logo_url: string | null;
           clinic_name: string | null;
-          session_duration_default: number;
-          session_price_default: number;
+          session_duration_default: number | null;
+          session_price_default: number | null;
           push_subscription: Json | null;
           biometric_credential_id: string | null;
-          timezone: string;
-          role: 'therapist' | 'secretary' | 'admin';
+          timezone: string | null;
+          role: string | null;
           employer_id: string | null;
           email: string | null;
-          created_at: string;
-          updated_at: string;
+          created_at: string | null;
+          updated_at: string | null;
+          address: string | null;
+          rg: string | null;
           signature_url: string | null;
           cpf: string | null;
-          rg: string | null;
-          address: string | null;
+          google_access_token: string | null;
+          google_refresh_token: string | null;
+          google_token_expiry: string | null;
+          google_calendar_id: string | null;
         };
         Insert: {
           id: string;
@@ -39,18 +58,22 @@ export interface Database {
           avatar_url?: string | null;
           clinic_logo_url?: string | null;
           clinic_name?: string | null;
-          session_duration_default?: number;
-          session_price_default?: number;
+          session_duration_default?: number | null;
+          session_price_default?: number | null;
           push_subscription?: Json | null;
           biometric_credential_id?: string | null;
-          timezone?: string;
-          role?: 'therapist' | 'secretary' | 'admin';
+          timezone?: string | null;
+          role?: string | null;
           employer_id?: string | null;
           email?: string | null;
+          address?: string | null;
+          rg?: string | null;
           signature_url?: string | null;
           cpf?: string | null;
-          rg?: string | null;
-          address?: string | null;
+          google_access_token?: string | null;
+          google_refresh_token?: string | null;
+          google_token_expiry?: string | null;
+          google_calendar_id?: string | null;
         };
         Update: {
           full_name?: string;
@@ -59,20 +82,27 @@ export interface Database {
           avatar_url?: string | null;
           clinic_logo_url?: string | null;
           clinic_name?: string | null;
-          session_duration_default?: number;
-          session_price_default?: number;
+          session_duration_default?: number | null;
+          session_price_default?: number | null;
           push_subscription?: Json | null;
           biometric_credential_id?: string | null;
-          timezone?: string;
-          role?: 'therapist' | 'secretary' | 'admin';
+          timezone?: string | null;
+          role?: string | null;
           employer_id?: string | null;
           email?: string | null;
+          address?: string | null;
+          rg?: string | null;
           signature_url?: string | null;
           cpf?: string | null;
-          rg?: string | null;
-          address?: string | null;
+          google_access_token?: string | null;
+          google_refresh_token?: string | null;
+          google_token_expiry?: string | null;
+          google_calendar_id?: string | null;
+          updated_at?: string | null;
         };
+        Relationships: never[];
       };
+
       patients: {
         Row: {
           id: string;
@@ -82,20 +112,20 @@ export interface Database {
           phone: string | null;
           cpf: string | null;
           date_of_birth: string | null;
-          gender: 'male' | 'female' | 'other' | 'prefer_not_to_say' | null;
+          gender: string | null;
           emergency_contact_name: string | null;
           emergency_contact_phone: string | null;
           address: string | null;
           notes_encrypted: string | null;
           diagnosis_encrypted: string | null;
-          status: 'active' | 'inactive' | 'archived';
+          status: string;
           session_price: number | null;
           insurance_provider: string | null;
           insurance_number: string | null;
           access_token: string;
-          auth_user_id: string | null;  // auth.users.id do paciente (Magic Link)
-          created_at: string;
-          updated_at: string;
+          created_at: string | null;
+          updated_at: string | null;
+          auth_user_id: string | null;
         };
         Insert: {
           id?: string;
@@ -105,126 +135,178 @@ export interface Database {
           phone?: string | null;
           cpf?: string | null;
           date_of_birth?: string | null;
-          gender?: 'male' | 'female' | 'other' | 'prefer_not_to_say' | null;
+          gender?: string | null;
           emergency_contact_name?: string | null;
           emergency_contact_phone?: string | null;
           address?: string | null;
           notes_encrypted?: string | null;
           diagnosis_encrypted?: string | null;
-          status?: 'active' | 'inactive' | 'archived';
+          status?: string;
           session_price?: number | null;
           insurance_provider?: string | null;
           insurance_number?: string | null;
-          // auth_user_id é preenchido pela RPC link_patient_auth_user — não expor no Insert
+          access_token?: string;
+          auth_user_id?: string | null;
         };
         Update: {
+          user_id?: string;
           full_name?: string;
           email?: string | null;
           phone?: string | null;
           cpf?: string | null;
           date_of_birth?: string | null;
-          gender?: 'male' | 'female' | 'other' | 'prefer_not_to_say' | null;
+          gender?: string | null;
           emergency_contact_name?: string | null;
           emergency_contact_phone?: string | null;
           address?: string | null;
           notes_encrypted?: string | null;
           diagnosis_encrypted?: string | null;
-          status?: 'active' | 'inactive' | 'archived';
+          status?: string;
           session_price?: number | null;
           insurance_provider?: string | null;
           insurance_number?: string | null;
-          auth_user_id?: string | null;  // vinculado via RPC link_patient_auth_user
+          auth_user_id?: string | null;
+          updated_at?: string | null;
         };
+        Relationships: never[];
       };
+
       sessions: {
         Row: {
           id: string;
           user_id: string;
           patient_id: string;
           scheduled_at: string;
-          duration_minutes: number;
-          status: 'scheduled' | 'completed' | 'missed' | 'cancelled';
-          session_type: 'individual' | 'couple' | 'group' | 'online' | 'initial_assessment';
+          duration_minutes: number | null;
+          status: string;
+          session_type: string | null;
           session_notes_encrypted: string | null;
           session_price: number | null;
-          location: string;
-          is_recurring: boolean;
+          location: string | null;
+          is_recurring: boolean | null;
           recurrence_rule: string | null;
-          reminder_sent: boolean;
-          created_at: string;
-          updated_at: string;
+          reminder_sent: boolean | null;
+          google_event_id: string | null;
+          created_at: string | null;
+          updated_at: string | null;
         };
         Insert: {
           id?: string;
           user_id: string;
           patient_id: string;
           scheduled_at: string;
-          duration_minutes?: number;
-          status?: 'scheduled' | 'completed' | 'missed' | 'cancelled';
-          session_type?: 'individual' | 'couple' | 'group' | 'online' | 'initial_assessment';
+          duration_minutes?: number | null;
+          status?: string;
+          session_type?: string | null;
           session_notes_encrypted?: string | null;
           session_price?: number | null;
-          location?: string;
-          is_recurring?: boolean;
+          location?: string | null;
+          is_recurring?: boolean | null;
           recurrence_rule?: string | null;
+          reminder_sent?: boolean | null;
+          google_event_id?: string | null;
         };
         Update: {
           patient_id?: string;
           scheduled_at?: string;
-          duration_minutes?: number;
-          status?: 'scheduled' | 'completed' | 'missed' | 'cancelled';
-          session_type?: 'individual' | 'couple' | 'group' | 'online' | 'initial_assessment';
+          duration_minutes?: number | null;
+          status?: string;
+          session_type?: string | null;
           session_notes_encrypted?: string | null;
           session_price?: number | null;
-          location?: string;
-          is_recurring?: boolean;
+          location?: string | null;
+          is_recurring?: boolean | null;
           recurrence_rule?: string | null;
-          reminder_sent?: boolean;
+          reminder_sent?: boolean | null;
+          google_event_id?: string | null;
+          updated_at?: string | null;
         };
+        Relationships: never[];
       };
+
+      subscriptions: {
+        Row: {
+          id: string;
+          user_id: string;
+          status: string;
+          plan_id: string | null;
+          current_period_start: string | null;
+          current_period_end: string | null;
+          cancel_at_period_end: boolean | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          status?: string;
+          plan_id?: string | null;
+          current_period_start?: string | null;
+          current_period_end?: string | null;
+          cancel_at_period_end?: boolean | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          status?: string;
+          plan_id?: string | null;
+          current_period_start?: string | null;
+          current_period_end?: string | null;
+          cancel_at_period_end?: boolean | null;
+          updated_at?: string | null;
+        };
+        Relationships: never[];
+      };
+
       cash_flow: {
         Row: {
           id: string;
           user_id: string;
           session_id: string | null;
-          type: 'income' | 'expense';
+          type: string;
           amount: number;
           description: string;
-          category: string;
-          status: 'pending' | 'confirmed' | 'cancelled';
+          category: string | null;
+          status: string;
           due_date: string | null;
           paid_at: string | null;
-          payment_method: 'cash' | 'pix' | 'credit_card' | 'debit_card' | 'bank_transfer' | 'other' | null;
+          payment_method: string | null;
           notes: string | null;
-          created_at: string;
-          updated_at: string;
+          created_at: string | null;
+          updated_at: string | null;
+          guardian_id: string | null;
         };
         Insert: {
           id?: string;
           user_id: string;
           session_id?: string | null;
-          type: 'income' | 'expense';
+          type: string;
           amount: number;
           description: string;
-          category?: string;
-          status?: 'pending' | 'confirmed' | 'cancelled';
+          category?: string | null;
+          status?: string;
           due_date?: string | null;
           paid_at?: string | null;
-          payment_method?: 'cash' | 'pix' | 'credit_card' | 'debit_card' | 'bank_transfer' | 'other' | null;
+          payment_method?: string | null;
           notes?: string | null;
+          guardian_id?: string | null;
         };
         Update: {
-          type?: 'income' | 'expense';
+          session_id?: string | null;
+          type?: string;
           amount?: number;
           description?: string;
-          category?: string;
-          status?: 'pending' | 'confirmed' | 'cancelled';
+          category?: string | null;
+          status?: string;
           due_date?: string | null;
           paid_at?: string | null;
-          payment_method?: 'cash' | 'pix' | 'credit_card' | 'debit_card' | 'bank_transfer' | 'other' | null;
+          payment_method?: string | null;
           notes?: string | null;
+          guardian_id?: string | null;
+          updated_at?: string | null;
         };
+        Relationships: never[];
       };
+
       patient_tasks: {
         Row: {
           id: string;
@@ -232,15 +314,15 @@ export interface Database {
           patient_id: string;
           title: string;
           description: string | null;
-          category: 'general' | 'homework' | 'reading' | 'exercise' | 'reflection' | 'behavior_tracking';
+          category: string | null;
           due_date: string | null;
-          status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
-          priority: 'low' | 'medium' | 'high';
+          status: string;
+          priority: string | null;
           completed_at: string | null;
           therapist_notes: string | null;
           patient_feedback: string | null;
-          created_at: string;
-          updated_at: string;
+          created_at: string | null;
+          updated_at: string | null;
         };
         Insert: {
           id?: string;
@@ -248,24 +330,27 @@ export interface Database {
           patient_id: string;
           title: string;
           description?: string | null;
-          category?: 'general' | 'homework' | 'reading' | 'exercise' | 'reflection' | 'behavior_tracking';
+          category?: string | null;
           due_date?: string | null;
-          status?: 'pending' | 'in_progress' | 'completed' | 'cancelled';
-          priority?: 'low' | 'medium' | 'high';
+          status?: string;
+          priority?: string | null;
           therapist_notes?: string | null;
         };
         Update: {
           title?: string;
           description?: string | null;
-          category?: 'general' | 'homework' | 'reading' | 'exercise' | 'reflection' | 'behavior_tracking';
+          category?: string | null;
           due_date?: string | null;
-          status?: 'pending' | 'in_progress' | 'completed' | 'cancelled';
-          priority?: 'low' | 'medium' | 'high';
+          status?: string;
+          priority?: string | null;
           completed_at?: string | null;
           therapist_notes?: string | null;
           patient_feedback?: string | null;
+          updated_at?: string | null;
         };
+        Relationships: never[];
       };
+
       emotion_diary: {
         Row: {
           id: string;
@@ -275,8 +360,8 @@ export interface Database {
           notes: string | null;
           triggers: string | null;
           coping_strategy: string | null;
-          context: 'morning' | 'afternoon' | 'evening' | 'night' | 'work' | 'home' | 'social' | 'other' | null;
-          created_at: string;
+          context: string | null;
+          created_at: string | null;
         };
         Insert: {
           id?: string;
@@ -286,7 +371,7 @@ export interface Database {
           notes?: string | null;
           triggers?: string | null;
           coping_strategy?: string | null;
-          context?: 'morning' | 'afternoon' | 'evening' | 'night' | 'work' | 'home' | 'social' | 'other' | null;
+          context?: string | null;
         };
         Update: {
           emotion?: string;
@@ -294,9 +379,11 @@ export interface Database {
           notes?: string | null;
           triggers?: string | null;
           coping_strategy?: string | null;
-          context?: 'morning' | 'afternoon' | 'evening' | 'night' | 'work' | 'home' | 'social' | 'other' | null;
+          context?: string | null;
         };
+        Relationships: never[];
       };
+
       anamnesis_templates: {
         Row: {
           id: string;
@@ -304,8 +391,8 @@ export interface Database {
           title: string;
           description: string | null;
           fields: Json;
-          created_at: string;
-          updated_at: string;
+          created_at: string | null;
+          updated_at: string | null;
         };
         Insert: {
           id?: string;
@@ -318,81 +405,134 @@ export interface Database {
           title?: string;
           description?: string | null;
           fields?: Json;
+          updated_at?: string | null;
         };
+        Relationships: never[];
       };
+
       anamnesis_responses: {
         Row: {
           id: string;
           template_id: string;
-          patient_id: string | null;
+          patient_id: string;
+          data: Json;
           responses: Json;
-          status: 'pending' | 'completed';
-          created_at: string;
+          status: string | null;
+          completed_at: string | null;
+          created_at: string | null;
         };
         Insert: {
           id?: string;
           template_id: string;
-          patient_id?: string | null;
+          patient_id: string;
+          data?: Json;
           responses?: Json;
-          status?: 'pending' | 'completed';
+          status?: string | null;
         };
         Update: {
+          data?: Json;
           responses?: Json;
-          status?: 'pending' | 'completed';
+          status?: string | null;
+          completed_at?: string | null;
         };
+        Relationships: never[];
       };
+
       system_settings: {
         Row: {
           key: string;
           value: string;
           description: string | null;
-          updated_at: string;
+          updated_at: string | null;
         };
-        // INSERT e UPDATE intencionalmente omitidos:
-        // escrita permitida apenas via service_role (migrations/admin).
-        Insert: never;
-        Update: never;
+        Insert: { key: string; value: string; description?: string | null };
+        Update: { value?: string; description?: string | null };
+        Relationships: never[];
+      };
+
+      patient_evaluations: {
+        Row: { id: string; [key: string]: unknown };
+        Insert: { [key: string]: unknown };
+        Update: { [key: string]: unknown };
+        Relationships: never[];
+      };
+
+      patient_neuro_profiles: {
+        Row: { id: string; [key: string]: unknown };
+        Insert: { [key: string]: unknown };
+        Update: { [key: string]: unknown };
+        Relationships: never[];
+      };
+
+      abc_records: {
+        Row: { id: string; [key: string]: unknown };
+        Insert: { [key: string]: unknown };
+        Update: { [key: string]: unknown };
+        Relationships: never[];
+      };
+
+      care_network: {
+        Row: { id: string; [key: string]: unknown };
+        Insert: { [key: string]: unknown };
+        Update: { [key: string]: unknown };
+        Relationships: never[];
+      };
+
+      patient_guardians: {
+        Row: { id: string; [key: string]: unknown };
+        Insert: { [key: string]: unknown };
+        Update: { [key: string]: unknown };
+        Relationships: never[];
       };
     };
+
     Views: {
       monthly_financial_summary: {
         Row: {
-          user_id: string;
-          month: string;
-          total_income: number;
-          total_expenses: number;
-          net_profit: number;
-          pending_payments: number;
+          user_id: string | null;
+          month: string | null;
+          total_income: number | null;
+          total_expenses: number | null;
+          net_profit: number | null;
+          pending_payments: number | null;
         };
+        Relationships: never[];
       };
     };
-    Functions: {
-      link_patient_auth_user: {
-        Args: Record<string, never>;
-        Returns: {
-          success: boolean;
-          patient_id?: string;
-          error?: string;
-        };
-      };
-    };
+
+    Functions: Record<string, never>;
   };
-}
+};
 
-// Convenience types
-export type Profile = Database['public']['Tables']['profiles']['Row'];
-export type Patient = Database['public']['Tables']['patients']['Row'];
-export type Session = Database['public']['Tables']['sessions']['Row'];
-export type CashFlow = Database['public']['Tables']['cash_flow']['Row'];
-export type PatientTask = Database['public']['Tables']['patient_tasks']['Row'];
-export type EmotionDiary = Database['public']['Tables']['emotion_diary']['Row'];
-export type AnamnesisTemplate = Database['public']['Tables']['anamnesis_templates']['Row'];
-export type AnamnesisResponse = Database['public']['Tables']['anamnesis_responses']['Row'];
-export type SystemSetting = Database['public']['Tables']['system_settings']['Row'];
+// ─── Convenience Row Types ───────────────────────────────────────────────────
+export type Profile            = Database['public']['Tables']['profiles']['Row'];
+export type Patient            = Database['public']['Tables']['patients']['Row'];
+export type Session            = Database['public']['Tables']['sessions']['Row'];
+export type Subscription       = Database['public']['Tables']['subscriptions']['Row'];
+export type CashFlow           = Database['public']['Tables']['cash_flow']['Row'];
+export type PatientTask        = Database['public']['Tables']['patient_tasks']['Row'];
+export type EmotionDiary       = Database['public']['Tables']['emotion_diary']['Row'];
+export type AnamnesisTemplate  = Database['public']['Tables']['anamnesis_templates']['Row'];
+export type AnamnesisResponse  = Database['public']['Tables']['anamnesis_responses']['Row'];
+export type SystemSetting      = Database['public']['Tables']['system_settings']['Row'];
 
-export type SessionStatus = 'scheduled' | 'completed' | 'missed' | 'cancelled';
-export type SessionType = 'individual' | 'couple' | 'group' | 'online' | 'initial_assessment';
-export type CashFlowType = 'income' | 'expense';
+// ─── Convenience Insert/Update Types ────────────────────────────────────────
+export type ProfileInsert  = Database['public']['Tables']['profiles']['Insert'];
+export type ProfileUpdate  = Database['public']['Tables']['profiles']['Update'];
+export type PatientInsert  = Database['public']['Tables']['patients']['Insert'];
+export type PatientUpdate  = Database['public']['Tables']['patients']['Update'];
+export type SessionInsert  = Database['public']['Tables']['sessions']['Insert'];
+export type SessionUpdate  = Database['public']['Tables']['sessions']['Update'];
+export type SubscriptionInsert = Database['public']['Tables']['subscriptions']['Insert'];
+export type SubscriptionUpdate = Database['public']['Tables']['subscriptions']['Update'];
+export type CashFlowInsert  = Database['public']['Tables']['cash_flow']['Insert'];
+export type PatientTaskInsert = Database['public']['Tables']['patient_tasks']['Insert'];
+export type EmotionDiaryInsert = Database['public']['Tables']['emotion_diary']['Insert'];
+
+// ─── Semantic Aliases ────────────────────────────────────────────────────────
+export type SessionStatus  = 'scheduled' | 'completed' | 'missed' | 'cancelled';
+export type SessionType    = 'individual' | 'couple' | 'group' | 'online' | 'initial_assessment';
+export type CashFlowType   = 'income' | 'expense';
 export type CashFlowStatus = 'pending' | 'confirmed' | 'cancelled';
-export type PatientStatus = 'active' | 'inactive' | 'archived';
-export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+export type PatientStatus  = 'active' | 'inactive' | 'archived';
+export type TaskStatus     = 'pending' | 'in_progress' | 'completed' | 'cancelled';

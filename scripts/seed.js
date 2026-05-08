@@ -1,19 +1,49 @@
+/**
+ * scripts/seed.js
+ * Seeds the database with sample patients, sessions, and cash flow records.
+ * Requires: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local
+ * Usage: npm run seed
+ */
+
+// Load .env.local manually (no dotenv dependency required)
+const fs = require('fs');
+const path = require('path');
+
+const envPath = path.join(__dirname, '..', '.env.local');
+if (fs.existsSync(envPath)) {
+  fs.readFileSync(envPath, 'utf8')
+    .split('\n')
+    .forEach(line => {
+      const [k, ...rest] = line.split('=');
+      if (k && !k.startsWith('#') && rest.length) {
+        process.env[k.trim()] = rest.join('=').trim();
+      }
+    });
+}
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error(
+    '❌ Missing required environment variables.\n' +
+    '   Ensure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set in .env.local'
+  );
+  process.exit(1);
+}
+
 const { createClient } = require('@supabase/supabase-js');
-
-const supabaseUrl = 'https://ubgjaiqimaklvvzqtqwu.supabase.co';
-const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InViZ2phaXFpbWFrbHZ2enF0cXd1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Njg2NTk2MSwiZXhwIjoyMDkyNDQxOTYxfQ.I3DrbJ7v-nilKJhLAZIjZzhm4a0pSOVmHzLT2k-2DvI';
-
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function seed() {
-  console.log("Fetching user...");
+  console.log('Fetching user...');
   const { data: usersData } = await supabase.auth.admin.listUsers();
-  if (!usersData || usersData.users.length === 0) return console.log("No users.");
-  
+  if (!usersData || usersData.users.length === 0) return console.log('No users.');
+
   const user = usersData.users[0];
   const userId = user.id;
 
-  console.log("Seeding patients...");
+  console.log('Seeding patients...');
   const patientsToInsert = [
     { user_id: userId, full_name: 'Ana Carolina Silva', email: 'ana@exemplo.com', phone: '11999991111', status: 'active', session_price: 150 },
     { user_id: userId, full_name: 'Bruno Mendes', email: 'bruno@exemplo.com', phone: '11999992222', status: 'active', session_price: 200 },
@@ -22,9 +52,9 @@ async function seed() {
   ];
 
   const { data: patients, error: pErr } = await supabase.from('patients').insert(patientsToInsert).select();
-  if (pErr) return console.error("Error inserting patients", pErr);
+  if (pErr) return console.error('Error inserting patients', pErr);
 
-  console.log("Seeding sessions...");
+  console.log('Seeding sessions...');
   const today = new Date();
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -39,7 +69,7 @@ async function seed() {
       duration_minutes: 50,
       session_type: 'individual',
       status: 'completed',
-      location: 'office'
+      location: 'office',
     },
     {
       user_id: userId,
@@ -48,7 +78,7 @@ async function seed() {
       duration_minutes: 50,
       session_type: 'online',
       status: 'scheduled',
-      location: 'google_meet'
+      location: 'google_meet',
     },
     {
       user_id: userId,
@@ -57,14 +87,14 @@ async function seed() {
       duration_minutes: 50,
       session_type: 'individual',
       status: 'scheduled',
-      location: 'office'
-    }
+      location: 'office',
+    },
   ];
 
   const { error: sErr } = await supabase.from('sessions').insert(sessionsToInsert);
-  if (sErr) return console.error("Error inserting sessions", sErr);
+  if (sErr) return console.error('Error inserting sessions', sErr);
 
-  console.log("Seeding cash flow...");
+  console.log('Seeding cash flow...');
   const lastMonth = new Date(today);
   lastMonth.setMonth(lastMonth.getMonth() - 1);
 
@@ -77,7 +107,7 @@ async function seed() {
       category: 'session',
       status: 'confirmed',
       created_at: yesterday.toISOString(),
-      paid_at: yesterday.toISOString()
+      paid_at: yesterday.toISOString(),
     },
     {
       user_id: userId,
@@ -86,7 +116,7 @@ async function seed() {
       description: 'Sessão Bruno (Adiantada)',
       category: 'session',
       status: 'pending',
-      created_at: today.toISOString()
+      created_at: today.toISOString(),
     },
     {
       user_id: userId,
@@ -96,7 +126,7 @@ async function seed() {
       category: 'rent',
       status: 'confirmed',
       created_at: lastMonth.toISOString(),
-      paid_at: lastMonth.toISOString()
+      paid_at: lastMonth.toISOString(),
     },
     {
       user_id: userId,
@@ -106,14 +136,14 @@ async function seed() {
       category: 'session',
       status: 'confirmed',
       created_at: lastMonth.toISOString(),
-      paid_at: lastMonth.toISOString()
-    }
+      paid_at: lastMonth.toISOString(),
+    },
   ];
 
   const { error: cErr } = await supabase.from('cash_flow').insert(cashFlowToInsert);
-  if (cErr) return console.error("Error inserting cash flow", cErr);
+  if (cErr) return console.error('Error inserting cash flow', cErr);
 
-  console.log("✅ Seed complete! Dashboard should now have real data.");
+  console.log('✅ Seed complete! Dashboard should now have real data.');
 }
 
 seed();

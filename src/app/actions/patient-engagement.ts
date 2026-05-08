@@ -160,7 +160,7 @@ export async function saveDiaryEntry(formData: {
   try {
     // createAdminClient() instancia um novo cliente para cada chamada
     // (evita estado compartilhado entre requisições)
-    const admin = createAdminClient() as any;
+    const admin = createAdminClient();
 
     const insertPayload = {
       patient_id: patientId,              // ← do cookie, nunca do cliente
@@ -232,11 +232,11 @@ export async function toggleTaskStatus(
   const newStatus = isNowCompleted ? "completed" : "pending";
 
   try {
-    const admin = createAdminClient() as any;
+    const admin = createAdminClient();
 
     console.log("[toggleTaskStatus] Updating task:", taskId, "→", newStatus, "for patient:", patientId);
 
-    const { error, count } = await admin
+    const { data: updatedRows, error } = await admin
       .from("patient_tasks")
       .update({
         status: newStatus,
@@ -246,7 +246,7 @@ export async function toggleTaskStatus(
       // Filtro duplo de segurança: ID da tarefa + patient_id do cookie
       .eq("id", taskId)
       .eq("patient_id", patientId)
-      .select("id", { count: "exact", head: true });
+      .select("id");
 
     if (error) {
       console.error("[toggleTaskStatus] Supabase error:", {
@@ -257,7 +257,7 @@ export async function toggleTaskStatus(
       return { success: false, error: error.message };
     }
 
-    if (count === 0) {
+    if (!updatedRows || updatedRows.length === 0) {
       console.warn("[toggleTaskStatus] No rows updated — task not found or wrong patient");
       return { success: false, error: "Tarefa não encontrada." };
     }
@@ -282,7 +282,7 @@ export async function getPatientEngagement(
   patientId: string
 ): Promise<EngagementResult> {
   try {
-    const supabase = (await createClient()) as any;
+    const supabase = (await createClient());
 
     const {
       data: { user },
@@ -328,3 +328,4 @@ export async function getPatientEngagement(
     return { success: false, error: err?.message || "Erro ao buscar dados." };
   }
 }
+

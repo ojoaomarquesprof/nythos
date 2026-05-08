@@ -30,7 +30,7 @@ export async function getPatientByToken(token: string): Promise<VerifyTokenResul
   }
 
   try {
-    const admin = createAdminClient() as any;
+    const admin = createAdminClient();
     const { data, error } = await admin
       .from("patients")
       .select("id, full_name, status")
@@ -72,7 +72,7 @@ export async function verifyPatientToken(
   }
 
   try {
-    const admin = createAdminClient() as any;
+    const admin = createAdminClient();
 
     const { data: patient, error } = await admin
       .from("patients")
@@ -121,3 +121,4 @@ export async function logoutPatient(): Promise<void> {
   await clearPatientSession();
   redirect("/patient/login");
 }
+

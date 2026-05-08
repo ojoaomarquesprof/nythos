@@ -356,7 +356,7 @@ export default function PatientDetailPage() {
         profile.id,
         rescheduleSession.id,
         scheduledAt,
-        rescheduleSession.duration_minutes
+        rescheduleSession.duration_minutes ?? 50
       );
 
       if (conflictError) throw new Error(conflictError);
@@ -464,7 +464,7 @@ export default function PatientDetailPage() {
       formatTime(s.scheduled_at),
       `${s.duration_minutes} min`,
       s.session_type === "online" ? "Online" : "Presencial",
-      SESSION_STATUS[s.status].label
+      SESSION_STATUS[s.status as keyof typeof SESSION_STATUS]?.label
     ]);
 
     await exportPdf({
@@ -1033,7 +1033,7 @@ export default function PatientDetailPage() {
             </Card>
           ) : (
             scheduledOnlySessions.map((session: Session) => {
-              const statusCfg = SESSION_STATUS[session.status];
+              const statusCfg = SESSION_STATUS[session.status as keyof typeof SESSION_STATUS] || SESSION_STATUS.scheduled;
               return (
                 <Card key={session.id} className="border shadow-none">
                   <CardContent className="p-4">
@@ -1268,7 +1268,7 @@ export default function PatientDetailPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-white/30 p-8 rounded-[32px] border border-white/40 shadow-md">
                 <div className="space-y-1.5">
                   <p className="text-[10px] font-black text-muted-foreground uppercase ml-2 tracking-widest">Início do Tratamento:</p>
-                  <Input readOnly className="glass-input-field h-12 text-sm font-bold cursor-default px-5" value={formatDate(patient.created_at)} />
+                  <Input readOnly className="glass-input-field h-12 text-sm font-bold cursor-default px-5" value={formatDate(patient.created_at ?? new Date().toISOString())} />
                 </div>
                 <div className="space-y-1.5">
                   <p className="text-[10px] font-black text-muted-foreground uppercase ml-2 tracking-widest">Gênero:</p>
@@ -1621,7 +1621,7 @@ export default function PatientDetailPage() {
                       </div>
                       <div>
                         <p className="text-sm font-bold text-slate-800">{tx.description}</p>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{formatDate(tx.created_at)}</p>
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{formatDate(tx.created_at ?? new Date().toISOString())}</p>
                       </div>
                     </div>
                     <div className="text-right">
@@ -1665,7 +1665,7 @@ export default function PatientDetailPage() {
               </Card>
             ) : (
               archivedSessions.map((session) => {
-                const statusCfg = SESSION_STATUS[session.status];
+                const statusCfg = SESSION_STATUS[session.status as keyof typeof SESSION_STATUS] || SESSION_STATUS.scheduled;
                 return (
                   <Card key={session.id} className="glass-panel border-0 shadow-sm rounded-[24px] bg-white/40 hover:bg-white/60 transition-all border border-white/20">
                     <CardContent className="p-5">
@@ -1880,8 +1880,8 @@ export default function PatientDetailPage() {
                   </div>
                   {!isEditingSession && (
                     <div className="flex items-center gap-3">
-                      <Badge className={cn("rounded-full px-4 py-1 text-[10px] font-black uppercase tracking-widest border-0", SESSION_STATUS[viewingSession.status].color)}>
-                        {SESSION_STATUS[viewingSession.status].label}
+                      <Badge className={cn("rounded-full px-4 py-1 text-[10px] font-black uppercase tracking-widest border-0", SESSION_STATUS[viewingSession.status as keyof typeof SESSION_STATUS]?.color)}>
+                        {SESSION_STATUS[viewingSession.status as keyof typeof SESSION_STATUS]?.label}
                       </Badge>
                       <Button 
                         variant="ghost" 

@@ -136,7 +136,7 @@ export default function FinancesPage() {
   const selectedMonth = currentDate.getMonth();
   const selectedYear = currentDate.getFullYear();
   const monthTransactions = transactions.filter((t) => {
-    const d = new Date(t.due_date || t.paid_at || t.created_at);
+    const d = new Date(t.due_date ?? t.paid_at ?? t.created_at ?? new Date().toISOString());
     return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
   });
 
@@ -170,7 +170,7 @@ export default function FinancesPage() {
     const title = filter === "all" ? "Fluxo de Caixa Geral" : filter === "income" ? "Relatório de Receitas" : "Relatório de Despesas";
 
     const tableBody = filtered.map(tx => [
-      new Date(tx.due_date || tx.paid_at || tx.created_at).toLocaleDateString("pt-BR"),
+      new Date(tx.due_date ?? tx.paid_at ?? tx.created_at ?? new Date().toISOString()).toLocaleDateString("pt-BR"),
       tx.description,
       CASH_FLOW_CATEGORIES[tx.category as keyof typeof CASH_FLOW_CATEGORIES]?.label || tx.category,
       tx.type === "income" ? "+" + formatCurrency(Number(tx.amount)) : "-" + formatCurrency(Number(tx.amount)),
@@ -216,10 +216,10 @@ export default function FinancesPage() {
       return;
     }
     
-    const docNumber = `${new Date(tx.created_at).getFullYear()}${String(new Date(tx.created_at).getMonth() + 1).padStart(2, '0')}${tx.id.split("-")[0].slice(-4).toUpperCase()}`;
+    const docNumber = `${new Date(tx.created_at ?? new Date().toISOString()).getFullYear()}${String(new Date(tx.created_at ?? new Date().toISOString()).getMonth() + 1).padStart(2, '0')}${tx.id.split("-")[0].slice(-4).toUpperCase()}`;
     const patientName = tx.description.replace("Sessão - ", "").toUpperCase();
     const amountExtenso = Number(tx.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    const fullDate = tx.paid_at ? new Date(tx.paid_at) : new Date(tx.created_at);
+    const fullDate = tx.paid_at ? new Date(tx.paid_at!) : new Date(tx.created_at ?? new Date().toISOString());
     const dateStr = fullDate.toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' });
 
     let sigImage: any = null;
@@ -518,7 +518,7 @@ export default function FinancesPage() {
                       </div>
                       <div className="flex items-center gap-3">
                         <p className="text-[10px] font-black text-teal-600 uppercase tracking-[0.15em] flex items-center gap-2">
-                          <span>{formatDate(tx.due_date || tx.paid_at || tx.created_at)}</span>
+                          <span>{formatDate(tx.due_date ?? tx.paid_at ?? tx.created_at ?? new Date().toISOString())}</span>
                           <span className="w-1 h-1 rounded-full bg-teal-500" />
                           <span className="text-teal-600/60">{category?.label || tx.category}</span>
                         </p>

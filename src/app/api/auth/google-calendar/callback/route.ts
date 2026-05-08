@@ -58,7 +58,7 @@ export async function GET(request: Request) {
 
     // Persist tokens in the user's profile using the admin client (bypasses RLS)
     const admin = createAdminClient();
-    const { error: updateError } = await (admin as any)
+    const { error: updateError } = await admin
       .from("profiles")
       .update({
         google_access_token: access_token,
@@ -81,3 +81,4 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${dashboardUrl}?google_auth=error`);
   }
 }
+

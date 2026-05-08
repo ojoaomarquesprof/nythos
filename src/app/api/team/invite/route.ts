@@ -23,7 +23,7 @@ export async function POST(req: Request) {
           },
         },
       }
-    ) as any;
+    );
 
     const { data: { user: therapist } } = await supabase.auth.getUser();
 
@@ -66,13 +66,13 @@ export async function POST(req: Request) {
     // 3. Atualizar o perfil da nova secretária
     // Como a tabela profiles é populada automaticamente via trigger (provavelmente),
     // vamos usar o admin para forçar o papel e o vínculo.
-    const { error: profileError } = await (supabaseAdmin as any)
+    const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .update({
         full_name: full_name,
         email: email,
         role: 'secretary',
-        employer_id: therapist.id
+        employer_id: therapist.id,
       })
       .eq('id', newUser.user.id);
 
@@ -98,3 +98,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+

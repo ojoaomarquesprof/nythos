@@ -1,10 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-) as any;
+import { supabaseAdmin } from '@/lib/supabase/admin';
 
 export async function POST(req: Request) {
   try {
@@ -28,9 +23,11 @@ export async function POST(req: Request) {
         .upsert({
           user_id: userId,
           status: 'active',
-          gateway_subscription_id: payment.subscription || null,
-          gateway_customer_id: payment.customer,
-          current_period_end: new Date(new Date().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          plan_id: payment.subscription || null,
+          current_period_start: new Date().toISOString(),
+          current_period_end: new Date(
+            new Date().getTime() + 30 * 24 * 60 * 60 * 1000
+          ).toISOString(),
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id' });
 
@@ -38,10 +35,10 @@ export async function POST(req: Request) {
     }
 
     if (event === 'PAYMENT_OVERDUE') {
-        await supabaseAdmin
-            .from('subscriptions')
-            .update({ status: 'past_due' })
-            .eq('user_id', payment.externalReference);
+      await supabaseAdmin
+        .from('subscriptions')
+        .update({ status: 'past_due' })
+        .eq('user_id', payment.externalReference);
     }
 
     return NextResponse.json({ received: true });

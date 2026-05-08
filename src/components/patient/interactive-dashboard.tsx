@@ -250,7 +250,8 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
           ) : (
             <div className="space-y-3">
               {[...pending, ...completed].map(task => {
-                const meta = CATEGORY_META[task.category] ?? CATEGORY_META.general;
+                const categoryKey = (task.category ?? "general") as keyof typeof CATEGORY_META;
+                const meta = CATEGORY_META[categoryKey] ?? CATEGORY_META.general;
                 const due = dueDateLabel(task.due_date);
                 const isCompleted = task.status === "completed";
 
@@ -321,7 +322,7 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
                           <div className="flex items-center gap-2">
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full bg-current/10 ${im.color}`}>{im.label}</span>
                             <span className="text-[10px] text-[oklch(0.6_0.02_280)] flex items-center gap-1">
-                              <Calendar className="w-3 h-3" />{relDate(entry.created_at)}
+                              <Calendar className="w-3 h-3" />{relDate(entry.created_at ?? new Date().toISOString())}
                             </span>
                           </div>
                         </div>

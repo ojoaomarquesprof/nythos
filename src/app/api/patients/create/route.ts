@@ -81,7 +81,7 @@ export async function POST(request: Request) {
   }
 
   // Garantir que quem chama é terapeuta ou admin
-  const { data: profileData } = await (supabaseAdmin as any)
+  const { data: profileData } = await supabaseAdmin
     .from("profiles")
     .select("role, employer_id")
     .eq("id", therapist.id)
@@ -129,7 +129,7 @@ export async function POST(request: Request) {
   let authUserId: string;
   let authUserAlreadyExisted = false;
 
-  const { data: existingPatientWithAuth } = await (supabaseAdmin as any)
+  const { data: existingPatientWithAuth } = await supabaseAdmin
     .from("patients")
     .select("auth_user_id")
     .ilike("email", normalizedEmail)
@@ -167,7 +167,7 @@ export async function POST(request: Request) {
   }
 
   // ── 4. Inserir paciente em public.patients com auth_user_id já definido ──
-  const { data: newPatient, error: insertError } = await (supabaseAdmin as any)
+  const { data: newPatient, error: insertError } = await supabaseAdmin
     .from("patients")
     .insert({
       user_id: effectiveTherapistId,

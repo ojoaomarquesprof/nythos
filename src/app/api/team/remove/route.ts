@@ -24,7 +24,7 @@ export async function DELETE(req: Request) {
           },
         },
       }
-    ) as any;
+    );
 
     const { data: { user: therapist } } = await supabase.auth.getUser();
 
@@ -62,3 +62,4 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+

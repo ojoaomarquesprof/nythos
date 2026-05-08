@@ -44,8 +44,8 @@ export async function GET() {
       throw subsError;
     }
 
-    const profilesData = profiles as any[];
-    const subsData = subscriptions as any[];
+    const profilesData = profiles;
+    const subsData = subscriptions;
 
     // Merge profiles with their subscriptions
     const usersWithSubs = profilesData.map(p => {
@@ -62,3 +62,4 @@ export async function GET() {
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
   }
 }
+

@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { Session, CashFlow } from "@/types/database";
 import type { ServiceResponse } from "./types";
 
-const supabase = createClient() as any;
+const supabase = createClient();
 
 export const BillingService = {
   async getSessionsByPatient(patientId: string): Promise<ServiceResponse<Session[]>> {
@@ -122,9 +122,9 @@ export const BillingService = {
 
       if (error) throw error;
 
-      const hasConflict = conflicts?.some((s: { scheduled_at: string; duration_minutes: number }) => {
+      const hasConflict = conflicts?.some((s: { scheduled_at: string; duration_minutes: number | null }) => {
         const start = new Date(s.scheduled_at);
-        const end = new Date(start.getTime() + s.duration_minutes * 60000);
+        const end = new Date(start.getTime() + (s.duration_minutes ?? 50) * 60000);
         const newStart = scheduledAt;
         const newEnd = new Date(newStart.getTime() + durationMinutes * 60000);
         return (newStart < end && newEnd > start);

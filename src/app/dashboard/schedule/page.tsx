@@ -1134,8 +1134,8 @@ export default function SchedulePage() {
                         const sessionDate = new Date(session.scheduled_at);
                         const minutesFromStart = (sessionDate.getHours() - timelineStartHour) * 60 + sessionDate.getMinutes();
                         const top = (minutesFromStart / 60) * slotHeight;
-                        const height = (session.duration_minutes / 60) * slotHeight;
-                        const statusCfg = SESSION_STATUS[session.status];
+                        const height = ((session.duration_minutes ?? 50) / 60) * slotHeight;
+                        const statusCfg = SESSION_STATUS[session.status as keyof typeof SESSION_STATUS] || SESSION_STATUS.scheduled;
                         
                         return (
                           <div
@@ -1460,8 +1460,8 @@ export default function SchedulePage() {
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                       <Badge className={cn("rounded-full px-3 py-1 text-[9px] font-bold tracking-wider border-0 shadow-lg",
-                        SESSION_STATUS[selectedSessionDetails.status].color)}>
-                        {SESSION_STATUS[selectedSessionDetails.status].label}
+                        SESSION_STATUS[selectedSessionDetails.status as keyof typeof SESSION_STATUS]?.color)}>
+                        {SESSION_STATUS[selectedSessionDetails.status as keyof typeof SESSION_STATUS]?.label}
                       </Badge>
                     </div>
                   </div>
@@ -1511,8 +1511,8 @@ export default function SchedulePage() {
                         </h2>
                         <div className="flex items-center gap-2 mt-1.5">
                           <Badge className={cn("rounded-full px-3 py-0.5 text-[9px] font-bold tracking-wide border-0",
-                            SESSION_STATUS[selectedSessionDetails.status].color)}>
-                            {SESSION_STATUS[selectedSessionDetails.status].label}
+                            SESSION_STATUS[selectedSessionDetails.status as keyof typeof SESSION_STATUS]?.color)}>
+                            {SESSION_STATUS[selectedSessionDetails.status as keyof typeof SESSION_STATUS]?.label}
                           </Badge>
                           <span className="text-xs text-muted-foreground/60 flex items-center gap-1.5">
                             <Clock className="w-3 h-3" />

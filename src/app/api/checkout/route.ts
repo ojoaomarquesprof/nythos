@@ -61,7 +61,7 @@ export async function POST(request: Request) {
           setAll(s) { s.forEach(({ name, value, options }) => cookieStore.set(name, value, options)); },
         },
       }
-    ) as any;
+    );
 
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
@@ -169,15 +169,15 @@ export async function POST(request: Request) {
     }
 
     // 6. Persistir apenas metadados (sem dados do cartão) no Supabase
-    await (supabaseAdmin as any).from("subscriptions").upsert(
+    await supabaseAdmin.from("subscriptions").upsert(
       {
         user_id: user.id,
         status: "active",
-        gateway_subscription_id: subResult.data.id,
-        gateway_customer_id: customerId,
+        plan_id: planType,
         current_period_end: new Date(
           Date.now() + (planType === "yearly" ? 365 : 30) * 24 * 60 * 60 * 1000
         ).toISOString(),
+        current_period_start: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
       { onConflict: "user_id" }

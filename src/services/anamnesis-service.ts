@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/client";
 import type { ServiceResponse } from "./types";
 
-const supabase = createClient() as any;
+const supabase = createClient();
 
 export const AnamnesisService = {
   async getResponsesByPatient(patientId: string): Promise<ServiceResponse<any[]>> {

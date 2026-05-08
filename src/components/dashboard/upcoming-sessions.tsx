@@ -91,7 +91,7 @@ export function UpcomingSessions() {
           <div className="space-y-4">
             {sessions.map((session, index) => {
               const statusConfig =
-                SESSION_STATUS[session.status] || SESSION_STATUS.scheduled;
+                SESSION_STATUS[session.status as keyof typeof SESSION_STATUS] || SESSION_STATUS.scheduled;
               const initials = session.patient?.full_name
                 ? session.patient.full_name
                     .split(" ")

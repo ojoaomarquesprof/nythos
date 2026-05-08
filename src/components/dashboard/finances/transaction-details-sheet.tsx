@@ -112,7 +112,7 @@ export function TransactionDetailsSheet({
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Data de Vencimento / Sessão</p>
                     <p className="text-sm font-bold text-slate-700 mt-0.5">
-                      {formatDate(transaction.due_date || transaction.created_at)}
+                      {formatDate(transaction.due_date ?? transaction.created_at ?? new Date().toISOString())}
                     </p>
                   </div>
                 </div>
@@ -167,7 +167,7 @@ export function TransactionDetailsSheet({
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Data de Vencimento</p>
                     <p className="text-sm font-bold text-slate-700 mt-0.5">
-                      {formatDate(transaction.due_date || transaction.created_at)}
+                      {formatDate(transaction.due_date ?? transaction.created_at ?? new Date().toISOString())}
                     </p>
                   </div>
                 </div>

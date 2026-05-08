@@ -53,7 +53,7 @@ export async function POST(
 
     let result;
     if (existingSub) {
-      result = await (adminClient as any)
+      result = await adminClient
         .from('subscriptions')
         .update({
           status,
@@ -65,7 +65,7 @@ export async function POST(
         .select()
         .single();
     } else {
-      result = await (adminClient as any)
+      result = await adminClient
         .from('subscriptions')
         .insert({
           user_id: id,
