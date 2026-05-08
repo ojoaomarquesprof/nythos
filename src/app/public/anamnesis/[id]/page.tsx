@@ -52,40 +52,23 @@ export default function PublicAnamnesisPage() {
     async function loadData() {
       if (!id) return;
       
-      // 1. Fetch response record
-      const { data: resData, error: resError } = await supabase
-        .from("anamnesis_responses")
-        .select("*")
-        .eq("id", id)
-        .single();
+      const { data: publicData, error: resError } = await supabase
+        .rpc("get_public_anamnesis_response", { p_public_token: id });
 
-      if (resError) {
+      if (resError || !publicData) {
         console.error("Erro Resposta:", resError);
-        setError(`Erro ao carregar resposta: ${resError.message} (${resError.code})`);
+        setError("Link de anamnese indisponível ou expirado.");
         setLoading(false);
         return;
       }
 
-      if (resData) {
-        // 2. Fetch template
-        const { data: tempData, error: tempError } = await supabase
-          .from("anamnesis_templates")
-          .select("*")
-          .eq("id", resData.template_id)
-          .single();
-        
-        if (tempError) {
-          setError(`Erro ao carregar modelo: ${tempError.message}`);
-          setLoading(false);
-          return;
-        }
-
-        // 3. Fetch profile (clinic branding)
-        const { data: profData } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", tempData.user_id)
-          .single();
+      if (publicData) {
+        const resData = {
+          id: publicData.response_id,
+          status: publicData.status,
+        };
+        const tempData = publicData.template;
+        const profData = publicData.profile;
 
         if (resData.status === "completed") {
           setSubmitted(true);
@@ -129,15 +112,13 @@ export default function PublicAnamnesisPage() {
       return;
     }
 
-    const { error: submitError } = await supabase
-      .from("anamnesis_responses")
-      .update({
-        responses: responses,
-        status: "completed"
-      })
-      .eq("id", id);
+    const { data: submitResult, error: submitError } = await supabase
+      .rpc("submit_public_anamnesis_response", {
+        p_public_token: id,
+        p_responses: responses,
+      });
 
-    if (submitError) {
+    if (submitError || !submitResult?.success) {
       setError("Erro ao enviar respostas. Tente novamente mais tarde.");
     } else {
       setSubmitted(true);

@@ -439,21 +439,96 @@ CREATE INDEX idx_patient_tasks_status ON public.patient_tasks(status);
 
 ALTER TABLE public.patient_tasks ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Therapists can view own patient_tasks"
+CREATE POLICY "Professionals can view relevant patient_tasks"
   ON public.patient_tasks FOR SELECT
-  USING (auth.uid() = user_id);
+  TO authenticated
+  USING (
+    (
+      auth.uid() = user_id
+      OR EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE profiles.id = auth.uid()
+          AND profiles.employer_id = patient_tasks.user_id
+      )
+    )
+    AND EXISTS (
+      SELECT 1 FROM public.patients
+      WHERE patients.id = patient_tasks.patient_id
+        AND patients.user_id = patient_tasks.user_id
+    )
+  );
 
-CREATE POLICY "Therapists can insert own patient_tasks"
+CREATE POLICY "Professionals can insert relevant patient_tasks"
   ON public.patient_tasks FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
+  TO authenticated
+  WITH CHECK (
+    (
+      auth.uid() = user_id
+      OR EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE profiles.id = auth.uid()
+          AND profiles.employer_id = patient_tasks.user_id
+      )
+    )
+    AND EXISTS (
+      SELECT 1 FROM public.patients
+      WHERE patients.id = patient_tasks.patient_id
+        AND patients.user_id = patient_tasks.user_id
+    )
+  );
 
-CREATE POLICY "Therapists can update own patient_tasks"
+CREATE POLICY "Professionals can update relevant patient_tasks"
   ON public.patient_tasks FOR UPDATE
-  USING (auth.uid() = user_id);
+  TO authenticated
+  USING (
+    (
+      auth.uid() = user_id
+      OR EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE profiles.id = auth.uid()
+          AND profiles.employer_id = patient_tasks.user_id
+      )
+    )
+    AND EXISTS (
+      SELECT 1 FROM public.patients
+      WHERE patients.id = patient_tasks.patient_id
+        AND patients.user_id = patient_tasks.user_id
+    )
+  )
+  WITH CHECK (
+    (
+      auth.uid() = user_id
+      OR EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE profiles.id = auth.uid()
+          AND profiles.employer_id = patient_tasks.user_id
+      )
+    )
+    AND EXISTS (
+      SELECT 1 FROM public.patients
+      WHERE patients.id = patient_tasks.patient_id
+        AND patients.user_id = patient_tasks.user_id
+    )
+  );
 
-CREATE POLICY "Therapists can delete own patient_tasks"
+CREATE POLICY "Professionals can delete relevant patient_tasks"
   ON public.patient_tasks FOR DELETE
-  USING (auth.uid() = user_id);
+  TO authenticated
+  USING (
+    (
+      auth.uid() = user_id
+      OR EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE profiles.id = auth.uid()
+          AND profiles.employer_id = patient_tasks.user_id
+      )
+    )
+    AND EXISTS (
+      SELECT 1 FROM public.patients
+      WHERE patients.id = patient_tasks.patient_id
+        AND patients.user_id = patient_tasks.user_id
+    )
+  );
 
 -- ============================================================
 -- TABELA: emotion_diary (Diário de Emoções — Área do Paciente)
@@ -495,6 +570,7 @@ CREATE POLICY "Therapists can view their patients emotion diary"
 -- Inserção via função RPC (sem auth direto do paciente por enquanto)
 CREATE POLICY "Allow insert via service role"
   ON public.emotion_diary FOR INSERT
+  TO service_role
   WITH CHECK (true);  -- Controlado via RPC/service role
 
 -- ============================================================

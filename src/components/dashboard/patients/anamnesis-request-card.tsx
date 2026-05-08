@@ -161,10 +161,10 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
     }
   };
 
-  const copyToClipboard = (id: string) => {
-    const url = `${window.location.origin}/public/anamnesis/${id}`;
+  const copyToClipboard = (token: string) => {
+    const url = `${window.location.origin}/public/anamnesis/${token}`;
     navigator.clipboard.writeText(url);
-    setCopiedId(id);
+    setCopiedId(token);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
@@ -275,7 +275,9 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {requests.map((req: any) => (
+              {requests.map((req: any) => {
+                const publicToken = req.public_token ?? req.id;
+                return (
                 <div 
                   key={req.id} 
                   className="flex items-center justify-between p-4 rounded-[24px] border border-white/40 bg-white/40 hover:bg-white/60 transition-all group"
@@ -301,10 +303,10 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
                         size="icon" 
                         variant="ghost" 
                         className="h-9 w-9 rounded-full text-muted-foreground hover:text-primary hover:bg-white"
-                        onClick={() => copyToClipboard(req.id)}
+                        onClick={() => copyToClipboard(publicToken)}
                         title="Copiar Link"
                       >
-                        {copiedId === req.id ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                        {copiedId === publicToken ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                       </Button>
                     )}
                     {req.status === "completed" && (
@@ -329,7 +331,8 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
                     </Button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
