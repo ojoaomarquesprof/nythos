@@ -22,13 +22,23 @@ interface CreatePatientRequest {
   insurance_provider?: string;
   insurance_number?: string;
   send_invite?: boolean;           // legado: fluxo OTP desativado
+  guardian?: {
+    full_name: string;
+    email?: string;
+    phone?: string;
+    cpf?: string;
+    relationship?: string;
+    is_financial_responsible?: boolean;
+  };
 }
 
 interface CreatePatientResponse {
   patient_id: string;
+  access_token: string;
   auth_user_id: string;
   invite_sent: boolean;
   auth_user_already_existed: boolean;
+  guardian_saved: boolean;
 }
 
 // ============================================================
@@ -114,7 +124,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Body inválido." }, { status: 400 });
   }
 
-  const { full_name, email, ...patientFields } = body;
+  const { full_name, email, guardian, ...patientFields } = body;
 
   if (!full_name?.trim()) {
     return NextResponse.json({ error: "Nome completo é obrigatório." }, { status: 422 });
@@ -186,7 +196,7 @@ export async function POST(request: Request) {
       insurance_number:         patientFields.insurance_number ?? null,
       status: "active",
     })
-    .select("id")
+    .select("id, access_token")
     .single();
 
   if (insertError || !newPatient) {
@@ -202,14 +212,50 @@ export async function POST(request: Request) {
   }
 
   // ── 5. Convite OTP desativado ──
+  let guardianSaved = false;
+
+  if (guardian?.full_name?.trim()) {
+    const { error: guardianError } = await supabaseAdmin
+      .from("patient_guardians")
+      .insert({
+        patient_id: newPatient.id,
+        full_name: guardian.full_name.trim(),
+        email: guardian.email?.trim() || null,
+        phone: guardian.phone?.trim() || null,
+        cpf: guardian.cpf?.trim() || null,
+        relationship: guardian.relationship || "other",
+        is_financial_responsible: guardian.is_financial_responsible ?? false,
+      });
+
+    if (guardianError) {
+      console.error("[api/patients/create] Erro ao inserir responsavel:", guardianError);
+      const { error: rollbackError } = await supabaseAdmin
+        .from("patients")
+        .delete()
+        .eq("id", newPatient.id);
+      if (rollbackError) console.error("[api/patients/create] Erro no rollback do paciente:", rollbackError);
+      if (!authUserAlreadyExisted) {
+        await supabaseAdmin.auth.admin.deleteUser(authUserId).catch(console.error);
+      }
+      return NextResponse.json(
+        { error: "Erro ao salvar o responsavel do paciente.", detail: guardianError.message },
+        { status: 500 }
+      );
+    }
+
+    guardianSaved = true;
+  }
+
   const inviteSent = false;
 
   // ── 6. Retornar sucesso ──
   const response: CreatePatientResponse = {
     patient_id: newPatient.id,
+    access_token: String((newPatient as { access_token: string }).access_token),
     auth_user_id: authUserId,
     invite_sent: inviteSent,
     auth_user_already_existed: authUserAlreadyExisted,
+    guardian_saved: guardianSaved,
   };
 
   return NextResponse.json(response, { status: 201 });

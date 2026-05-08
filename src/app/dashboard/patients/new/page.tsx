@@ -21,15 +21,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { createClient } from "@/lib/supabase/client";
-import { useSubscription } from "@/hooks/use-subscription";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 
 export default function NewPatientPage() {
   const router = useRouter();
-  const supabase = createClient() as any;
-  const { therapistId } = useSubscription();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,71 +64,49 @@ export default function NewPatientPage() {
     setIsLoading(true);
     setError(null);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setError("Você precisa estar logado.");
-      setIsLoading(false);
-      return;
-    }
-
     try {
-      const { data: patientData, error: insertError } = await supabase
-        .from("patients")
-        .insert({
-          user_id: therapistId || user.id,
+      const response = await fetch("/api/patients/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           full_name: form.full_name,
-          email: form.email || null,
-          phone: form.phone || null,
-          cpf: form.cpf || null,
-          date_of_birth: form.date_of_birth || null,
+          email: form.email,
+          phone: form.phone || undefined,
+          cpf: form.cpf || undefined,
+          date_of_birth: form.date_of_birth || undefined,
           gender: form.gender,
-          emergency_contact_name: form.emergency_contact_name || null,
-          emergency_contact_phone: form.emergency_contact_phone || null,
-          address: form.address || null,
-          notes_encrypted: form.notes || null,
-          session_price: form.session_price ? parseFloat(form.session_price) : null,
-          insurance_provider: form.insurance_provider || null,
-          insurance_number: form.insurance_number || null,
-          status: "active",
-        })
-        .select("id")
-        .single();
+          emergency_contact_name: form.emergency_contact_name || undefined,
+          emergency_contact_phone: form.emergency_contact_phone || undefined,
+          address: form.address || undefined,
+          session_price: form.session_price ? parseFloat(form.session_price) : undefined,
+          insurance_provider: form.insurance_provider || undefined,
+          insurance_number: form.insurance_number || undefined,
+          guardian: form.has_guardian
+            ? {
+                full_name: form.guardian_name,
+                email: form.guardian_email || undefined,
+                phone: form.guardian_phone || undefined,
+                cpf: form.guardian_cpf || undefined,
+                relationship: form.guardian_relationship,
+                is_financial_responsible: form.guardian_is_financial,
+              }
+            : undefined,
+        }),
+      });
 
-      if (insertError) {
-        console.error("Supabase error (patient):", insertError);
-        setError(insertError.message);
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        setError(result?.error || "Erro ao salvar o paciente.");
         setIsLoading(false);
         return;
       }
 
-      // Se tiver responsável, insere agora
-      if (form.has_guardian && patientData) {
-        const { error: guardianError } = await supabase
-          .from("patient_guardians")
-          .insert({
-            patient_id: patientData.id,
-            full_name: form.guardian_name,
-            email: form.guardian_email || null,
-            phone: form.guardian_phone || null,
-            cpf: form.guardian_cpf || null,
-            relationship: form.guardian_relationship,
-            is_financial_responsible: form.guardian_is_financial,
-          });
-
-        if (guardianError) {
-          console.error("Supabase error (guardian):", guardianError);
-          alert("Paciente criado, mas houve um erro ao salvar o responsável: " + guardianError.message);
-        }
-      }
-
       router.push("/dashboard/patients");
       router.refresh();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Caught error:", err);
-      setError(err?.message || "Erro desconhecido ao salvar o paciente.");
+      setError(err instanceof Error ? err.message : "Erro desconhecido ao salvar o paciente.");
       setIsLoading(false);
     }
   };
@@ -219,7 +193,7 @@ export default function NewPatientPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-[11px] font-black text-primary/60 uppercase ml-4 tracking-widest">E-mail</Label>
+              <Label htmlFor="email" className="text-[11px] font-black text-primary/60 uppercase ml-4 tracking-widest">E-mail *</Label>
               <Input
                 id="email"
                 name="email"
@@ -228,6 +202,7 @@ export default function NewPatientPage() {
                 className="glass-input-field h-14 text-base font-bold px-6"
                 value={form.email}
                 onChange={handleChange}
+                required
               />
             </div>
             <div className="space-y-1.5">
@@ -461,7 +436,7 @@ export default function NewPatientPage() {
               <Textarea
                 id="notes"
                 name="notes"
-                placeholder="Anotações sobre o paciente, queixa principal, encaminhamento..."
+                placeholder="Adicione notas clínicas pelo prontuário após criar o paciente."
                 className="rounded-[24px] border-white/40 bg-white/50 p-6 text-base font-medium min-h-[120px] focus:ring-primary/20 transition-all"
                 value={form.notes}
                 onChange={handleChange}
@@ -469,7 +444,7 @@ export default function NewPatientPage() {
               <div className="flex items-center gap-2 ml-4 mt-2">
                 <Shield className="w-3 h-3 text-emerald-500" />
                 <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
-                  Este campo será criptografado ponta-a-ponta
+                  Por segurança, observações clínicas não são salvas no cadastro inicial
                 </p>
               </div>
             </div>
