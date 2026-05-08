@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import {
   CalendarDays,
   Plus,
@@ -27,7 +27,12 @@ import {
   Waves,
   Play,
   CheckCircle,
-  Timer
+  Timer,
+  RefreshCw,
+  Unlink,
+  Wifi,
+  WifiOff,
+  AlertCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { Card, CardContent, CardTitle, CardDescription, CardHeader } from "@/components/ui/card";
@@ -49,6 +54,13 @@ import { SubscriptionGate } from "@/components/auth/subscription-gate";
 import { useSubscription } from "@/hooks/use-subscription";
 import { SESSION_STATUS, formatTime, formatCurrency } from "@/lib/constants";
 import type { Session, Patient } from "@/types/database";
+import {
+  syncGoogleCalendar,
+  linkGoogleCalendar,
+  disconnectGoogleCalendar,
+  getCalendarStatus,
+  type CalendarSyncResult,
+} from "@/app/actions/calendar-sync";
 
 // Auxiliares de data
 const getWeekStart = (date: Date) => {
@@ -77,6 +89,13 @@ export default function SchedulePage() {
   const [showSessionDetails, setShowSessionDetails] = useState(false);
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState<any>(null);
+
+  // ── Google Calendar Sync State ──────────────────────────────────────────────
+  const [googleConnected, setGoogleConnected] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [syncResult, setSyncResult] = useState<CalendarSyncResult | null>(null);
+  const [syncBanner, setSyncBanner] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
@@ -156,6 +175,92 @@ export default function SchedulePage() {
       loadData();
     }
   }, [currentDate, therapistId, view]);
+
+  // Check Google Calendar connection status on mount
+  useEffect(() => {
+    async function checkGoogleStatus() {
+      const status = await getCalendarStatus();
+      setGoogleConnected(status.connected);
+    }
+    checkGoogleStatus();
+  }, []);
+
+  // Handle OAuth callback result from URL params
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const authResult = params.get("google_auth");
+    if (authResult === "success") {
+      setGoogleConnected(true);
+      setSyncBanner({ type: 'success', message: 'Google Calendar conectado com sucesso! Clique em "Sincronizar" para importar seus eventos.' });
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (authResult === "error") {
+      setSyncBanner({ type: 'error', message: 'Falha ao conectar o Google Calendar. Tente novamente.' });
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  // Auto-dismiss banner after 6s
+  useEffect(() => {
+    if (!syncBanner) return;
+    const timer = setTimeout(() => setSyncBanner(null), 6000);
+    return () => clearTimeout(timer);
+  }, [syncBanner]);
+
+  const handleGoogleConnect = async () => {
+    setConnecting(true);
+    try {
+      const result = await linkGoogleCalendar();
+      if (result.url) {
+        window.location.href = result.url;
+      } else {
+        setSyncBanner({ type: 'error', message: result.error ?? 'Erro ao iniciar conexão.' });
+      }
+    } catch (err) {
+      setSyncBanner({ type: 'error', message: 'Erro inesperado ao conectar o Google.' });
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleGoogleSync = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const result = await syncGoogleCalendar(30);
+      setSyncResult(result);
+      if (result.needsAuth) {
+        setGoogleConnected(false);
+        setSyncBanner({ type: 'error', message: 'Sua sessão com o Google expirou. Reconecte sua conta.' });
+      } else if (result.success) {
+        setSyncBanner({
+          type: 'success',
+          message: result.imported > 0
+            ? `✅ ${result.imported} evento${result.imported !== 1 ? 's' : ''} importado${result.imported !== 1 ? 's' : ''} com sucesso!`
+            : '✅ Agenda atualizada — nenhum evento novo encontrado.',
+        });
+        loadData(); // Refresh the calendar view
+      } else {
+        setSyncBanner({ type: 'error', message: result.error ?? 'Erro ao sincronizar.' });
+      }
+    } catch (err: any) {
+      setSyncBanner({ type: 'error', message: err.message ?? 'Erro inesperado na sincronização.' });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleGoogleDisconnect = async () => {
+    if (!confirm('Deseja realmente desconectar o Google Calendar?')) return;
+    const result = await disconnectGoogleCalendar();
+    if (result.success) {
+      setGoogleConnected(false);
+      setSyncBanner({ type: 'info', message: 'Google Calendar desconectado.' });
+    } else {
+      setSyncBanner({ type: 'error', message: result.error ?? 'Erro ao desconectar.' });
+    }
+  };
 
   async function loadData() {
     setLoading(true);
@@ -714,7 +819,26 @@ export default function SchedulePage() {
   }, [currentDate]);
 
   return (
-    <div className="flex h-[calc(100dvh-200px)] md:h-[calc(100vh-80px)] w-full overflow-hidden animate-fade-in bg-white/30">
+    <div className="flex h-[calc(100dvh-200px)] md:h-[calc(100vh-80px)] w-full overflow-hidden animate-fade-in bg-white/30 relative">
+      {/* ── Sync Banner Notification ───────────────────────────────────────── */}
+      {syncBanner && (
+        <div
+          className={cn(
+            "absolute top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-2xl shadow-xl border backdrop-blur-md text-sm font-bold transition-all animate-fade-in max-w-md w-[90%]",
+            syncBanner.type === 'success' && "bg-emerald-50/95 border-emerald-200 text-emerald-800",
+            syncBanner.type === 'error'   && "bg-rose-50/95 border-rose-200 text-rose-800",
+            syncBanner.type === 'info'    && "bg-blue-50/95 border-blue-200 text-blue-800"
+          )}
+        >
+          {syncBanner.type === 'success' && <CheckCircle className="w-4 h-4 shrink-0" />}
+          {syncBanner.type === 'error'   && <AlertCircle className="w-4 h-4 shrink-0" />}
+          {syncBanner.type === 'info'    && <Info className="w-4 h-4 shrink-0" />}
+          <span className="flex-1">{syncBanner.message}</span>
+          <button onClick={() => setSyncBanner(null)} className="opacity-50 hover:opacity-100 transition-opacity">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
       {/* Sidebar */}
       <aside className="w-72 border-r border-white/40 bg-white/40 backdrop-blur-xl p-6 hidden lg:flex flex-col gap-8 shrink-0">
         <SubscriptionGate>
@@ -782,10 +906,79 @@ export default function SchedulePage() {
               <div className="w-4 h-4 rounded-sm bg-primary shadow-sm" />
               <span className="text-xs font-bold text-primary/80">Sessões Clínicas</span>
             </div>
-            <div className="flex items-center gap-3 px-2 py-1 cursor-pointer hover:bg-white/40 rounded-lg transition-colors opacity-50">
-              <div className="w-4 h-4 rounded-sm bg-emerald-400 shadow-sm" />
-              <span className="text-xs font-bold text-primary/80">Google Agenda (Em breve)</span>
+            <div className="flex items-center gap-3 px-2 py-1 rounded-lg">
+              <div className={cn("w-4 h-4 rounded-sm shadow-sm", googleConnected ? "bg-emerald-500" : "bg-slate-300")} />
+              <span className="text-xs font-bold text-primary/80">Google Calendar</span>
+              {googleConnected && <span className="ml-auto text-[9px] font-black text-emerald-600 uppercase tracking-wide">Ativo</span>}
             </div>
+          </div>
+
+          {/* ── Google Calendar Integration Card ── */}
+          <div className="rounded-2xl border border-white/60 bg-white/40 backdrop-blur-md p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              {/* Google G icon */}
+              <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" aria-hidden="true">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              <span className="text-[11px] font-black text-slate-700">Google Calendar</span>
+              {googleConnected ? (
+                <span className="ml-auto flex items-center gap-1 text-[9px] font-black text-emerald-600 uppercase">
+                  <Wifi className="w-3 h-3" /> Conectado
+                </span>
+              ) : (
+                <span className="ml-auto flex items-center gap-1 text-[9px] font-black text-slate-400 uppercase">
+                  <WifiOff className="w-3 h-3" /> Desconectado
+                </span>
+              )}
+            </div>
+
+            {googleConnected ? (
+              <div className="space-y-2">
+                <button
+                  onClick={handleGoogleSync}
+                  disabled={syncing}
+                  className="w-full h-9 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[11px] font-black flex items-center justify-center gap-2 shadow-md shadow-blue-500/20 hover:shadow-blue-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:scale-100"
+                >
+                  <RefreshCw className={cn("w-3.5 h-3.5", syncing && "animate-spin")} />
+                  {syncing ? "Sincronizando..." : "Sincronizar Agora"}
+                </button>
+                <button
+                  onClick={handleGoogleDisconnect}
+                  className="w-full h-7 rounded-xl bg-transparent text-[10px] font-bold text-slate-400 hover:text-rose-500 flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Unlink className="w-3 h-3" />
+                  Desconectar
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleGoogleConnect}
+                disabled={connecting}
+                className="w-full h-9 rounded-xl bg-white border border-slate-200 text-slate-700 text-[11px] font-black flex items-center justify-center gap-2 shadow-sm hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:scale-100"
+              >
+                {connecting ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" aria-hidden="true">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                  </svg>
+                )}
+                {connecting ? 'Conectando...' : 'Conectar Google'}
+              </button>
+            )}
+
+            {/* Last sync result details */}
+            {syncResult && syncResult.success && (
+              <p className="text-[9px] text-slate-400 text-center font-bold">
+                {syncResult.imported} importados · {syncResult.skipped} ignorados
+              </p>
+            )}
           </div>
         </div>
       </aside>
