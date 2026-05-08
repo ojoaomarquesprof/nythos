@@ -13,7 +13,25 @@ import { cookies } from "next/headers";
 
 const COOKIE_NAME = "nythos_patient_session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days
-const SECRET = process.env.PATIENT_SESSION_SECRET ?? "nythos-dev-fallback-secret-change-me";
+const DEV_FALLBACK_SECRET = "nythos-dev-fallback-secret-change-me";
+
+function getPatientSessionSecret(): string {
+  const secret = process.env.PATIENT_SESSION_SECRET;
+
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("PATIENT_SESSION_SECRET is required in production.");
+    }
+
+    return DEV_FALLBACK_SECRET;
+  }
+
+  if (process.env.NODE_ENV === "production" && secret === DEV_FALLBACK_SECRET) {
+    throw new Error("PATIENT_SESSION_SECRET must not use the development fallback in production.");
+  }
+
+  return secret;
+}
 
 // ─── HMAC helpers (Web Crypto API — available in Edge & Node 18+) ─────────────
 
@@ -21,7 +39,7 @@ async function getKey(): Promise<CryptoKey> {
   const enc = new TextEncoder();
   return crypto.subtle.importKey(
     "raw",
-    enc.encode(SECRET),
+    enc.encode(getPatientSessionSecret()),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign", "verify"]
@@ -89,6 +107,10 @@ export async function getPatientSession(): Promise<string | null> {
   // Extrair patient_id (tudo antes do segundo ponto)
   const firstDot = payload.indexOf(".");
   if (firstDot === -1) return null;
+
+  const timestamp = Number(payload.slice(firstDot + 1));
+  if (!Number.isFinite(timestamp)) return null;
+  if (Date.now() - timestamp > MAX_AGE_SECONDS * 1000) return null;
 
   return payload.slice(0, firstDot);
 }

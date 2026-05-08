@@ -21,7 +21,7 @@ interface CreatePatientRequest {
   session_price?: number;
   insurance_provider?: string;
   insurance_number?: string;
-  send_invite?: boolean;           // se true, envia Magic Link imediatamente
+  send_invite?: boolean;           // legado: fluxo OTP desativado
 }
 
 interface CreatePatientResponse {
@@ -44,7 +44,7 @@ interface CreatePatientResponse {
  *     → Sim: reutiliza o auth_user_id existente (sem criar novo usuário).
  *     → Não: chama auth.admin.createUser para criar a conta no auth.users.
  *  3. Faz INSERT em public.patients já com auth_user_id preenchido.
- *  4. Opcionalmente envia um Magic Link de boas-vindas via admin.generateLink.
+ *  4. O acesso do paciente usa /p/[token] + data de nascimento.
  *
  * SEGURANÇA:
  *  • Usa supabaseAdmin (service_role) APENAS no lado do servidor.
@@ -114,7 +114,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Body inválido." }, { status: 400 });
   }
 
-  const { full_name, email, send_invite = false, ...patientFields } = body;
+  const { full_name, email, ...patientFields } = body;
 
   if (!full_name?.trim()) {
     return NextResponse.json({ error: "Nome completo é obrigatório." }, { status: 422 });
@@ -201,26 +201,8 @@ export async function POST(request: Request) {
     );
   }
 
-  // ── 5. Opcionalmente enviar Magic Link de boas-vindas ──
-  let inviteSent = false;
-
-  if (send_invite) {
-    const { error: inviteError } = await supabaseAdmin.auth.admin.generateLink({
-      type: "magiclink",
-      email: normalizedEmail,
-      options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/patient/callback`,
-      },
-    });
-
-    if (inviteError) {
-      // Não falhar o request por isso — paciente foi criado com sucesso.
-      // O terapeuta pode reenviar o convite depois.
-      console.warn("[api/patients/create] Falha ao gerar Magic Link de convite:", inviteError);
-    } else {
-      inviteSent = true;
-    }
-  }
+  // ── 5. Convite OTP desativado ──
+  const inviteSent = false;
 
   // ── 6. Retornar sucesso ──
   const response: CreatePatientResponse = {

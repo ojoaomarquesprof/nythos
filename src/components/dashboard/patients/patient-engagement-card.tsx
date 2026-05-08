@@ -74,8 +74,6 @@ export function PatientEngagementCard({
     typeof window !== "undefined"
       ? accessToken
         ? `${window.location.origin}/p/${accessToken}`
-        : patientEmail
-        ? `${window.location.origin}/patient/login?email=${encodeURIComponent(patientEmail)}`
         : null
       : accessToken
       ? `https://app.nythos.com.br/p/${accessToken}`
@@ -691,4 +689,3 @@ const PRIORITY_META = {
   medium: { label: "Média", color: "text-amber-700", bg: "bg-amber-100" },
   high: { label: "Alta", color: "text-rose-700", bg: "bg-rose-100" },
 };
-
