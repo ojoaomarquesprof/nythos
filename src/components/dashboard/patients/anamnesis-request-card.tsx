@@ -38,15 +38,20 @@ import type { AnamnesisTemplate, AnamnesisResponse } from "@/types/database";
 import { formatDate } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
+type AnamnesisRequest = AnamnesisResponse & {
+  public_token?: string | null;
+  anamnesis_templates: AnamnesisTemplate | null;
+};
+
 export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
   const supabase = createClient() as any;
   const [templates, setTemplates] = useState<AnamnesisTemplate[]>([]);
-  const [requests, setRequests] = useState<(AnamnesisResponse & { anamnesis_templates: AnamnesisTemplate })[]>([]);
+  const [requests, setRequests] = useState<AnamnesisRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [creating, setCreating] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [viewingResponse, setViewingResponse] = useState<any>(null);
+  const [viewingResponse, setViewingResponse] = useState<AnamnesisRequest | null>(null);
   
   // Manual Entry States
   const [manualEntryTemplate, setManualEntryTemplate] = useState<AnamnesisTemplate | null>(null);
@@ -68,7 +73,7 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
     ]);
 
     if (!templatesRes.error) setTemplates(templatesRes.data || []);
-    if (!requestsRes.error) setRequests(requestsRes.data as any || []);
+    if (!requestsRes.error) setRequests((requestsRes.data || []) as AnamnesisRequest[]);
     setLoading(false);
   }
 
@@ -174,6 +179,12 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
     if (!error) loadData();
   };
 
+  const getResponseValue = (responses: AnamnesisResponse["responses"], fieldId: string) => {
+    if (!responses || typeof responses !== "object" || Array.isArray(responses)) return null;
+    const value = (responses as Record<string, unknown>)[fieldId];
+    return typeof value === "string" || typeof value === "number" ? String(value) : null;
+  };
+
   return (
     <Card className="glass-panel border-0 shadow-lg overflow-hidden rounded-[32px] animate-fade-in">
       <CardHeader className="pb-4 bg-white/30 backdrop-blur-sm border-b border-white/40">
@@ -275,8 +286,9 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {requests.map((req: any) => {
+              {requests.map((req) => {
                 const publicToken = req.public_token ?? req.id;
+                const templateTitle = req.anamnesis_templates?.title ?? "Modelo indisponível";
                 return (
                 <div 
                   key={req.id} 
@@ -290,9 +302,9 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
                       {req.status === "completed" ? <CheckCircle2 className="w-5 h-5" /> : <Clock className="w-5 h-5" />}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-bold truncate text-primary/80">{req.anamnesis_templates.title}</p>
+                      <p className="text-sm font-bold truncate text-primary/80">{templateTitle}</p>
                       <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">
-                        {formatDate(req.created_at)} · {req.status === "completed" ? "Finalizado" : "Pendente"}
+                        {req.created_at ? formatDate(req.created_at) : "Data indisponível"} · {req.status === "completed" ? "Finalizado" : "Pendente"}
                       </p>
                     </div>
                   </div>
@@ -444,31 +456,44 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
               <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
                 <CheckCircle2 className="w-6 h-6" />
               </div>
-              <DialogTitle className="text-2xl font-bold text-emerald-900">{viewingResponse?.anamnesis_templates?.title}</DialogTitle>
+              <DialogTitle className="text-2xl font-bold text-emerald-900">
+                {viewingResponse?.anamnesis_templates?.title ?? "Modelo indisponível"}
+              </DialogTitle>
             </div>
             <DialogDescription className="text-emerald-700/70">
-              Respostas enviadas em {viewingResponse && formatDate(viewingResponse.created_at)}
+              Respostas enviadas em {viewingResponse?.created_at ? formatDate(viewingResponse.created_at) : "data indisponível"}
             </DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto p-8 space-y-6">
-            {viewingResponse && (viewingResponse.anamnesis_templates.fields as any[]).map((field: any, idx: number) => (
+            {viewingResponse?.anamnesis_templates ? (viewingResponse.anamnesis_templates.fields as { id: string; label: string }[]).map((field, idx) => {
+              const responseValue = getResponseValue(viewingResponse.responses, field.id);
+
+              return (
               <div key={field.id} className="space-y-2 p-5 rounded-2xl bg-slate-50/50 border border-slate-100">
                 <div className="flex items-start gap-2">
                   <span className="text-[10px] font-bold text-emerald-300 mt-1 uppercase">Questão {idx + 1}</span>
                   <p className="text-sm font-bold text-slate-800">{field.label}</p>
                 </div>
                 <div className="pl-0 mt-3 pt-3 border-t border-slate-200/50">
-                  {viewingResponse.responses[field.id] ? (
+                  {responseValue ? (
                     <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed">
-                      {viewingResponse.responses[field.id]}
+                      {responseValue}
                     </p>
                   ) : (
                     <p className="text-sm text-slate-400 italic">Nenhuma resposta fornecida</p>
                   )}
                 </div>
               </div>
-            ))}
+              );
+            }) : (
+              <div className="p-5 rounded-2xl bg-slate-50/50 border border-slate-100">
+                <p className="text-sm font-bold text-slate-800">Modelo removido ou indisponível</p>
+                <p className="text-sm text-slate-500 mt-2">
+                  As respostas foram registradas, mas o modelo original não está disponível para exibição.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="p-8 bg-slate-50/80 backdrop-blur-sm border-t border-slate-200 flex justify-end">

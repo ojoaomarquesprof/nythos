@@ -129,6 +129,7 @@ export default function PatientDetailPage() {
     handleSlotClick,
     handleArchive,
     handleUpdatePatient,
+    loadData,
     exportPdf,
     isExportingPdf,
   } = usePatientData();
@@ -432,7 +433,7 @@ export default function PatientDetailPage() {
                 guardian={guardian}
                 isSaving={isSaving}
                 handleUpdatePatient={handleUpdatePatient}
-                loadData={usePatientData().loadData}
+                loadData={loadData}
               />
             </TabsContent>
 
