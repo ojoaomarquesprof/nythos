@@ -533,7 +533,10 @@ export default function PatientDetailPage() {
                 patientEmail={patient.email}
                 authUserId={patient.auth_user_id}
                 accessToken={(patient as any).access_token ?? null}
+                accessTokenExpiresAt={(patient as any).access_token_expires_at ?? null}
+                accessTokenRevokedAt={(patient as any).access_token_revoked_at ?? null}
                 dateOfBirth={patient.date_of_birth ?? null}
+                onAccessLinkChanged={loadData}
               />
               <PatientTasksManager
                 patientId={patient.id}

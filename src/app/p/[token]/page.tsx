@@ -24,6 +24,7 @@ export default async function PatientTokenPage({ params }: Props) {
     <PatientTokenForm
       token={token}
       firstName={result.firstName ?? null}
+      initialError={result.success ? null : result.error ?? null}
     />
   );
 }

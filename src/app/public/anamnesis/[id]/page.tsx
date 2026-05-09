@@ -2,29 +2,27 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { 
-  CheckCircle2, 
-  AlertCircle, 
-  Send, 
+import {
+  AlertCircle,
+  CheckCircle2,
   ChevronRight,
-  ShieldCheck,
   FileText,
-  Clock
+  Send,
+  ShieldCheck,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
-import { cn } from "@/lib/utils";
 
 interface TemplateField {
   id: string;
@@ -34,10 +32,28 @@ interface TemplateField {
   options?: string[];
 }
 
+function mapPublicAnamnesisError(errorCode?: string | null): string {
+  switch (errorCode) {
+    case "revoked":
+      return "Este link foi revogado pelo profissional responsavel.";
+    case "expired":
+      return "Este link expirou. Solicite um novo formulario ao seu terapeuta.";
+    case "already_completed":
+      return "Este formulario ja foi enviado e nao aceita novo preenchimento.";
+    case "invalid_payload":
+      return "Nao foi possivel processar suas respostas. Revise o formulario e tente novamente.";
+    case "not_found":
+    case "not_found_or_already_completed":
+      return "Link de anamnese indisponivel.";
+    default:
+      return "Link de anamnese indisponivel.";
+  }
+}
+
 export default function PublicAnamnesisPage() {
   const { id } = useParams();
   const supabase = createClient() as any;
-  
+
   const [responseRecord, setResponseRecord] = useState<any>(null);
   const [template, setTemplate] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
@@ -45,56 +61,61 @@ export default function PublicAnamnesisPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
-  const [responses, setResponses] = useState<Record<string, any>>({});
+  const [responses, setResponses] = useState<Record<string, string>>({});
 
   useEffect(() => {
     async function loadData() {
       if (!id) return;
-      
-      const { data: publicData, error: resError } = await supabase
-        .rpc("get_public_anamnesis_response", { p_public_token: id });
 
-      if (resError || !publicData) {
-        console.error("Erro Resposta:", resError);
-        setError("Link de anamnese indisponível ou expirado.");
+      const { data: publicData, error: resError } = await supabase.rpc(
+        "get_public_anamnesis_response",
+        { p_public_token: id }
+      );
+
+      if (resError) {
+        console.error("Erro RPC get_public_anamnesis_response:", resError);
+        setError(mapPublicAnamnesisError(resError.message));
         setLoading(false);
         return;
       }
 
-      if (publicData) {
-        const resData = {
-          id: publicData.response_id,
-          status: publicData.status,
-        };
-        const tempData = publicData.template;
-        const profData = publicData.profile;
-
-        if (resData.status === "completed") {
-          setSubmitted(true);
-        }
-
-        setResponseRecord(resData);
-        setTemplate(tempData);
-        setProfile(profData);
-        
-        // Initialize responses if not completed
-        if (resData.status !== "completed") {
-          const initialResponses: Record<string, any> = {};
-          (tempData.fields as unknown as TemplateField[]).forEach(f => {
-            initialResponses[f.id] = "";
-          });
-          setResponses(initialResponses);
-        }
+      if (!publicData || publicData.error) {
+        setError(mapPublicAnamnesisError(publicData?.error));
+        setLoading(false);
+        return;
       }
+
+      const responseData = {
+        id: publicData.response_id,
+        status: publicData.status,
+        expiresAt: publicData.expires_at ?? null,
+        revokedAt: publicData.revoked_at ?? null,
+      };
+
+      if (responseData.status === "completed") {
+        setSubmitted(true);
+      }
+
+      setResponseRecord(responseData);
+      setTemplate(publicData.template);
+      setProfile(publicData.profile);
+
+      if (responseData.status !== "completed") {
+        const initialResponses: Record<string, string> = {};
+        (publicData.template.fields as TemplateField[]).forEach((field) => {
+          initialResponses[field.id] = "";
+        });
+        setResponses(initialResponses);
+      }
+
       setLoading(false);
     }
 
     loadData();
   }, [id, supabase]);
 
-  const handleInputChange = (fieldId: string, value: any) => {
-    setResponses(prev => ({ ...prev, [fieldId]: value }));
+  const handleInputChange = (fieldId: string, value: string) => {
+    setResponses((prev) => ({ ...prev, [fieldId]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -102,27 +123,28 @@ export default function PublicAnamnesisPage() {
     setSubmitting(true);
     setError(null);
 
-    // Validate required fields
-    const fields = template.fields as unknown as TemplateField[];
-    const missingFields = fields.filter(f => f.required && !responses[f.id]);
-    
+    const fields = (template?.fields ?? []) as TemplateField[];
+    const missingFields = fields.filter((field) => field.required && !responses[field.id]);
     if (missingFields.length > 0) {
-      setError(`Por favor, preencha todos os campos obrigatórios.`);
+      setError("Por favor, preencha todos os campos obrigatorios.");
       setSubmitting(false);
       return;
     }
 
-    const { data: submitResult, error: submitError } = await supabase
-      .rpc("submit_public_anamnesis_response", {
+    const { data: submitResult, error: submitError } = await supabase.rpc(
+      "submit_public_anamnesis_response",
+      {
         p_public_token: id,
         p_responses: responses,
-      });
+      }
+    );
 
     if (submitError || !submitResult?.success) {
-      setError("Erro ao enviar respostas. Tente novamente mais tarde.");
+      setError(mapPublicAnamnesisError(submitResult?.error ?? submitError?.message));
     } else {
       setSubmitted(true);
     }
+
     setSubmitting(false);
   };
 
@@ -144,14 +166,10 @@ export default function PublicAnamnesisPage() {
         <Card className="w-full max-w-md border-0 shadow-lg text-center">
           <CardContent className="pt-10 pb-10">
             <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-            <h1 className="text-xl font-bold text-slate-900 mb-2">Link Indisponível</h1>
+            <h1 className="text-xl font-bold text-slate-900 mb-2">Link Indisponivel</h1>
             <p className="text-muted-foreground">{error}</p>
-            {/* Exibir erro técnico para debug */}
-            <p className="text-[10px] text-slate-400 mt-4 font-mono bg-slate-100 p-2 rounded">
-              Status: {error}
-            </p>
-            <Button variant="outline" className="mt-6" onClick={() => window.location.href = "/"}>
-              Voltar ao Início
+            <Button variant="outline" className="mt-6" onClick={() => (window.location.href = "/")}>
+              Voltar ao Inicio
             </Button>
           </CardContent>
         </Card>
@@ -168,10 +186,10 @@ export default function PublicAnamnesisPage() {
             <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <CheckCircle2 className="w-10 h-10 text-green-600" />
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 mb-2">Formulário Concluído!</h1>
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">Formulario Concluido!</h1>
             <p className="text-muted-foreground px-6">
-              Suas respostas foram enviadas para <strong>{profile?.full_name}</strong>. 
-              Este link não permite mais edições.
+              Suas respostas foram enviadas para <strong>{profile?.full_name}</strong>. Este link nao
+              permite mais edicoes.
             </p>
             <div className="mt-8 pt-8 border-t flex flex-col items-center gap-3">
               <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">
@@ -191,19 +209,15 @@ export default function PublicAnamnesisPage() {
   return (
     <div className="min-h-screen bg-slate-50 py-10 px-4">
       <div className="max-w-2xl mx-auto space-y-8">
-        {/* Clinic Header */}
         <div className="text-center space-y-4">
           {profile?.clinic_logo_url ? (
-            <img 
-              src={profile.clinic_logo_url} 
-              alt="Logo" 
-              className="h-16 mx-auto object-contain"
-            />
+            <img src={profile.clinic_logo_url} alt="Logo" className="h-16 mx-auto object-contain" />
           ) : (
             <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
               <FileText className="w-8 h-8 text-primary" />
             </div>
           )}
+
           <div className="space-y-1">
             <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-widest">
               {profile?.clinic_name || profile?.full_name}
@@ -212,24 +226,35 @@ export default function PublicAnamnesisPage() {
             {template.description && (
               <p className="text-slate-500 max-w-lg mx-auto">{template.description}</p>
             )}
+            {responseRecord?.expiresAt && responseRecord?.status === "pending" && (
+              <p className="text-xs text-slate-400">
+                Disponivel ate{" "}
+                {new Date(responseRecord.expiresAt).toLocaleString("pt-BR", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </p>
+            )}
           </div>
         </div>
 
-        {/* Form Card */}
         <Card className="border-0 shadow-2xl rounded-2xl overflow-hidden bg-white">
           <div className="h-1.5 gradient-primary w-full" />
           <CardContent className="p-6 md:p-10">
             <form onSubmit={handleSubmit} className="space-y-8">
               {error && (
-                <div className="p-4 rounded-xl bg-red-50 border border-red-100 flex items-center gap-3 text-red-700 text-sm animate-in fade-in slide-in-from-top-1">
+                <div className="p-4 rounded-xl bg-red-50 border border-red-100 flex items-center gap-3 text-red-700 text-sm">
                   <AlertCircle className="w-5 h-5 shrink-0" />
                   {error}
                 </div>
               )}
 
               <div className="space-y-10">
-                {(template.fields as unknown as TemplateField[]).map((field, idx) => (
-                  <div key={field.id} className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: `${idx * 100}ms` }}>
+                {(template.fields as TemplateField[]).map((field, idx) => (
+                  <div key={field.id} className="space-y-4">
                     <div className="flex items-start justify-between gap-4">
                       <Label className="text-base font-semibold text-slate-800 leading-tight">
                         {field.label}
@@ -241,7 +266,7 @@ export default function PublicAnamnesisPage() {
                     </div>
 
                     {field.type === "text" && (
-                      <Input 
+                      <Input
                         className="h-12 text-base border-slate-200 focus:border-primary transition-all shadow-sm"
                         placeholder="Sua resposta..."
                         value={responses[field.id]}
@@ -251,7 +276,7 @@ export default function PublicAnamnesisPage() {
                     )}
 
                     {field.type === "long_text" && (
-                      <Textarea 
+                      <Textarea
                         className="min-h-[120px] text-base border-slate-200 focus:border-primary transition-all shadow-sm resize-none"
                         placeholder="Descreva detalhadamente..."
                         value={responses[field.id]}
@@ -261,7 +286,7 @@ export default function PublicAnamnesisPage() {
                     )}
 
                     {field.type === "number" && (
-                      <Input 
+                      <Input
                         type="number"
                         className="h-12 text-base border-slate-200 focus:border-primary transition-all shadow-sm"
                         placeholder="0"
@@ -272,7 +297,7 @@ export default function PublicAnamnesisPage() {
                     )}
 
                     {field.type === "date" && (
-                      <Input 
+                      <Input
                         type="date"
                         className="h-12 text-base border-slate-200 focus:border-primary transition-all shadow-sm"
                         value={responses[field.id]}
@@ -282,18 +307,17 @@ export default function PublicAnamnesisPage() {
                     )}
 
                     {field.type === "select" && (
-                      <Select 
-                        value={responses[field.id]} 
-                        onValueChange={(val: any) => handleInputChange(field.id, val || "")}
-                        required={field.required}
+                      <Select
+                        value={responses[field.id]}
+                        onValueChange={(value) => handleInputChange(field.id, value || "")}
                       >
                         <SelectTrigger className="h-12 text-base border-slate-200 shadow-sm">
-                          <SelectValue placeholder="Selecione uma opção..." />
+                          <SelectValue placeholder="Selecione uma opcao..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {field.options?.map((opt: string) => (
-                            <SelectItem key={opt} value={opt} className="text-base">
-                              {opt}
+                          {field.options?.map((option) => (
+                            <SelectItem key={option} value={option} className="text-base">
+                              {option}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -304,8 +328,8 @@ export default function PublicAnamnesisPage() {
               </div>
 
               <div className="pt-10">
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   className="w-full h-14 text-lg font-bold gradient-primary text-white shadow-xl hover:shadow-2xl transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-70 group"
                   disabled={submitting}
                 >
@@ -321,7 +345,7 @@ export default function PublicAnamnesisPage() {
                 <div className="flex items-center justify-center gap-2 mt-6 text-slate-400">
                   <ShieldCheck className="w-4 h-4" />
                   <span className="text-[11px] font-medium uppercase tracking-widest">
-                    Formulário Criptografado e Seguro
+                    Formulario Criptografado e Seguro
                   </span>
                 </div>
               </div>
@@ -329,12 +353,11 @@ export default function PublicAnamnesisPage() {
           </CardContent>
         </Card>
 
-        {/* Footer */}
         <div className="text-center pb-10">
           <p className="text-xs text-muted-foreground flex items-center justify-center gap-1.5">
             Powered by <span className="font-bold text-primary tracking-tight italic">Nythos Health</span>
             <ChevronRight className="w-3 h-3" />
-            SaaS Clínico
+            SaaS Clinico
           </p>
         </div>
       </div>

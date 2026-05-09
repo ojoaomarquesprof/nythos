@@ -123,6 +123,10 @@ export type Database = {
           insurance_provider: string | null;
           insurance_number: string | null;
           access_token: string;
+          access_token_expires_at: string | null;
+          access_token_issued_at: string | null;
+          access_token_last_used_at: string | null;
+          access_token_revoked_at: string | null;
           created_at: string | null;
           updated_at: string | null;
           auth_user_id: string | null;
@@ -146,6 +150,10 @@ export type Database = {
           insurance_provider?: string | null;
           insurance_number?: string | null;
           access_token?: string;
+          access_token_expires_at?: string | null;
+          access_token_issued_at?: string | null;
+          access_token_last_used_at?: string | null;
+          access_token_revoked_at?: string | null;
           auth_user_id?: string | null;
         };
         Update: {
@@ -165,6 +173,11 @@ export type Database = {
           session_price?: number | null;
           insurance_provider?: string | null;
           insurance_number?: string | null;
+          access_token?: string;
+          access_token_expires_at?: string | null;
+          access_token_issued_at?: string | null;
+          access_token_last_used_at?: string | null;
+          access_token_revoked_at?: string | null;
           auth_user_id?: string | null;
           updated_at?: string | null;
         };
@@ -417,6 +430,10 @@ export type Database = {
           patient_id: string;
           data: Json;
           responses: Json;
+          public_token: string | null;
+          public_expires_at: string | null;
+          public_last_used_at: string | null;
+          public_revoked_at: string | null;
           status: string | null;
           completed_at: string | null;
           created_at: string | null;
@@ -427,11 +444,19 @@ export type Database = {
           patient_id: string;
           data?: Json;
           responses?: Json;
+          public_token?: string | null;
+          public_expires_at?: string | null;
+          public_last_used_at?: string | null;
+          public_revoked_at?: string | null;
           status?: string | null;
         };
         Update: {
           data?: Json;
           responses?: Json;
+          public_token?: string | null;
+          public_expires_at?: string | null;
+          public_last_used_at?: string | null;
+          public_revoked_at?: string | null;
           status?: string | null;
           completed_at?: string | null;
         };

@@ -1,11 +1,12 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import {
+  getPatientAccessErrorMessage,
+  getPatientAccessState,
+} from "@/lib/auth/patient-access";
+import { clearPatientSession, createPatientSession } from "@/lib/auth/patient-session";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createPatientSession } from "@/lib/auth/patient-session";
-import { clearPatientSession } from "@/lib/auth/patient-session";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface VerifyTokenResult {
   success: boolean;
@@ -18,35 +19,37 @@ export interface ValidateResult {
   error?: string;
 }
 
-// ─── Actions ─────────────────────────────────────────────────────────────────
+const PATIENT_ACCESS_SELECT =
+  "id, full_name, date_of_birth, status, access_token_issued_at, access_token_expires_at, access_token_revoked_at";
 
 /**
- * Verifica se o token é válido e retorna o primeiro nome do paciente.
- * Chamado ao carregar a página /p/[token] para exibir uma saudação.
+ * Verifies that the public patient token is still active and, when valid,
+ * returns the patient's first name for the greeting on /p/[token].
  */
 export async function getPatientByToken(token: string): Promise<VerifyTokenResult> {
   if (!token || token.length < 8) {
-    return { success: false, error: "Link de acesso inválido." };
+    return { success: false, error: "Link de acesso invalido." };
   }
 
   try {
     const admin = createAdminClient();
     const { data, error } = await admin
       .from("patients")
-      .select("id, full_name, status")
+      .select(PATIENT_ACCESS_SELECT)
       .eq("access_token", token.trim())
-      .single();
+      .maybeSingle();
 
     if (error || !data) {
-      return { success: false, error: "Link de acesso não encontrado ou expirado." };
+      return { success: false, error: getPatientAccessErrorMessage("not_found", "lookup") };
     }
 
-    if (data.status === "archived") {
-      return { success: false, error: "Este link foi desativado. Entre em contato com seu terapeuta." };
+    const accessState = getPatientAccessState(data);
+    if (accessState !== "active") {
+      return { success: false, error: getPatientAccessErrorMessage(accessState, "lookup") };
     }
 
-    const firstName = (data.full_name as string).split(" ")[0];
-    return { success: true, firstName };
+    const firstName = String(data.full_name ?? "").trim().split(" ")[0];
+    return { success: true, firstName: firstName || undefined };
   } catch (err: any) {
     console.error("getPatientByToken:", err);
     return { success: false, error: "Erro ao verificar link. Tente novamente." };
@@ -54,71 +57,70 @@ export async function getPatientByToken(token: string): Promise<VerifyTokenResul
 }
 
 /**
- * Valida o token + data de nascimento.
- * Se corretos, cria o cookie de sessão e redireciona para o dashboard.
- * Se inválidos, retorna mensagem de erro sem criar sessão.
+ * Validates the patient token plus date of birth and then creates the HMAC
+ * session cookie consumed by /patient/dashboard.
  */
 export async function verifyPatientToken(
   token: string,
-  dateOfBirth: string // formato YYYY-MM-DD
+  dateOfBirth: string
 ): Promise<ValidateResult> {
   if (!token || !dateOfBirth) {
     return { success: false, error: "Preencha todos os campos." };
   }
 
-  // Validação básica do formato da data
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
-    return { success: false, error: "Formato de data inválido." };
+    return { success: false, error: "Formato de data invalido." };
   }
 
   try {
     const admin = createAdminClient();
-
     const { data: patient, error } = await admin
       .from("patients")
-      .select("id, date_of_birth, status")
+      .select(PATIENT_ACCESS_SELECT)
       .eq("access_token", token.trim())
-      .single();
+      .maybeSingle();
 
     if (error || !patient) {
-      return { success: false, error: "Link de acesso não encontrado." };
+      return { success: false, error: getPatientAccessErrorMessage("not_found", "verify") };
     }
 
-    if (patient.status === "archived") {
-      return { success: false, error: "Este link foi desativado." };
+    const accessState = getPatientAccessState(patient);
+    if (accessState !== "active") {
+      return { success: false, error: getPatientAccessErrorMessage(accessState, "verify") };
     }
 
     if (!patient.date_of_birth) {
       return {
         success: false,
-        error: "Data de nascimento não cadastrada. Contate seu terapeuta.",
+        error: "Data de nascimento nao cadastrada. Contate seu terapeuta.",
       };
     }
 
-    // Comparação segura: apenas a parte YYYY-MM-DD
-    const stored = (patient.date_of_birth as string).slice(0, 10);
+    const stored = String(patient.date_of_birth).slice(0, 10);
     const provided = dateOfBirth.trim();
 
     if (stored !== provided) {
-      return { success: false, error: "Data de nascimento incorreta. Verifique e tente novamente." };
+      return {
+        success: false,
+        error: "Data de nascimento incorreta. Verifique e tente novamente.",
+      };
     }
 
-    // Tudo certo — cria sessão e redireciona
+    await admin
+      .from("patients")
+      .update({ access_token_last_used_at: new Date().toISOString() })
+      .eq("id", patient.id);
+
     await createPatientSession(patient.id);
   } catch (err: any) {
     console.error("verifyPatientToken:", err);
     return { success: false, error: "Erro interno. Tente novamente em instantes." };
   }
 
-  // redirect() deve ser chamado fora do try/catch
   redirect("/patient/dashboard");
 }
 
-/**
- * Logout do paciente: remove o cookie e redireciona.
- */
 export async function logoutPatient(): Promise<void> {
   await clearPatientSession();
   redirect("/patient/login");
 }
-

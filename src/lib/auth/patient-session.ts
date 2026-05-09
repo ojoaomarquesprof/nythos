@@ -15,6 +15,11 @@ const COOKIE_NAME = "nythos_patient_session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days
 const DEV_FALLBACK_SECRET = "nythos-dev-fallback-secret-change-me";
 
+export interface PatientSessionDetails {
+  patientId: string;
+  issuedAt: number;
+}
+
 function getPatientSessionSecret(): string {
   const secret = process.env.PATIENT_SESSION_SECRET;
 
@@ -90,6 +95,15 @@ export async function createPatientSession(patientId: string): Promise<void> {
  * Retorna o `patient_id` se válido, ou `null` se ausente/inválido/expirado.
  */
 export async function getPatientSession(): Promise<string | null> {
+  const session = await getPatientSessionDetails();
+  return session?.patientId ?? null;
+}
+
+/**
+ * Lê e valida o cookie de sessão do paciente, retornando o patient_id
+ * e o timestamp de emissão do cookie.
+ */
+export async function getPatientSessionDetails(): Promise<PatientSessionDetails | null> {
   const cookieStore = await cookies();
   const raw = cookieStore.get(COOKIE_NAME)?.value;
   if (!raw) return null;
@@ -108,11 +122,14 @@ export async function getPatientSession(): Promise<string | null> {
   const firstDot = payload.indexOf(".");
   if (firstDot === -1) return null;
 
-  const timestamp = Number(payload.slice(firstDot + 1));
-  if (!Number.isFinite(timestamp)) return null;
-  if (Date.now() - timestamp > MAX_AGE_SECONDS * 1000) return null;
+  const issuedAt = Number(payload.slice(firstDot + 1));
+  if (!Number.isFinite(issuedAt)) return null;
+  if (Date.now() - issuedAt > MAX_AGE_SECONDS * 1000) return null;
 
-  return payload.slice(0, firstDot);
+  return {
+    patientId: payload.slice(0, firstDot),
+    issuedAt,
+  };
 }
 
 /**

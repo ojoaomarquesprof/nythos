@@ -137,6 +137,34 @@ export const PatientService = {
       return { data: false, error: err.message || "Erro ao arquivar o paciente." };
     }
   },
+
+  async revokeAccessLink(id: string): Promise<ServiceResponse<Patient>> {
+    try {
+      const { data, error } = await supabase.rpc("revoke_patient_access_link_secure", {
+        p_patient_id: id,
+      });
+
+      if (error) throw error;
+      return { data, error: null };
+    } catch (err: any) {
+      console.error(`Error in PatientService.revokeAccessLink(${id}):`, err);
+      return { data: null, error: err.message || "Erro ao revogar o link do paciente." };
+    }
+  },
+
+  async regenerateAccessLink(id: string): Promise<ServiceResponse<Patient>> {
+    try {
+      const { data, error } = await supabase.rpc("regenerate_patient_access_link_secure", {
+        p_patient_id: id,
+      });
+
+      if (error) throw error;
+      return { data, error: null };
+    } catch (err: any) {
+      console.error(`Error in PatientService.regenerateAccessLink(${id}):`, err);
+      return { data: null, error: err.message || "Erro ao regenerar o link do paciente." };
+    }
+  },
   
   async getFullRecordData(patientId: string): Promise<ServiceResponse<{
     network: any[];
