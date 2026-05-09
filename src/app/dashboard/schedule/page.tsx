@@ -335,9 +335,18 @@ export default function SchedulePage() {
                         {daySessions.map(session => {
                           const sessionDate = new Date(session.scheduled_at);
                           const minutesFromStart = (sessionDate.getHours() - timelineStartHour) * 60 + sessionDate.getMinutes();
-                          const top = (minutesFromStart / 60) * slotHeight;
-                          const height = ((session.duration_minutes ?? 50) / 60) * slotHeight;
+                          const totalTimelineMinutes = (timelineEndHour - timelineStartHour + 1) * 60;
+                          const durationMinutes = session.duration_minutes ?? 50;
+                          const clampedStart = Math.max(0, minutesFromStart);
+                          const clampedEnd = Math.min(totalTimelineMinutes, minutesFromStart + durationMinutes);
+                          if (clampedEnd <= 0 || clampedStart >= totalTimelineMinutes) return null;
+                          const top = (clampedStart / 60) * slotHeight;
+                          const height = Math.max(18, ((clampedEnd - clampedStart) / 60) * slotHeight);
                           const statusCfg = SESSION_STATUS[session.status as keyof typeof SESSION_STATUS] || SESSION_STATUS.scheduled;
+                          const isExternalGoogle = !!(session as any).is_external_google;
+                          const eventTitle = isExternalGoogle
+                            ? ((session as any).external_title || "Compromisso (Google)")
+                            : (session.patient?.full_name || "Sessão");
 
                           return (
                             <div
@@ -351,12 +360,20 @@ export default function SchedulePage() {
                             >
                               <div className={cn(
                                 "h-full rounded-xl p-3 border-l-[6px] shadow-sm hover:scale-[1.01] transition-all cursor-pointer overflow-hidden",
-                                session.status === "completed" ? "bg-emerald-50/90 border-emerald-400" : "bg-teal-/90 border-teal-"
+                                isExternalGoogle
+                                  ? "bg-slate-100/90 border-slate-500"
+                                  : session.status === "completed"
+                                    ? "bg-emerald-50/90 border-emerald-400"
+                                    : "bg-teal-/90 border-teal-"
                               )}>
-                                <h4 className="text-xs font-black truncate text-primary uppercase">{session.patient?.full_name}</h4>
+                                <h4 className="text-xs font-black truncate text-primary uppercase">{eventTitle}</h4>
                                 <div className="mt-auto flex items-center justify-between text-[10px]">
                                   <span>{formatTime(session.scheduled_at)}</span>
-                                  <Badge className={cn("text-[9px] font-black", statusCfg.color)}>{statusCfg.label}</Badge>
+                                  {isExternalGoogle ? (
+                                    <Badge className="text-[9px] font-black bg-slate-200 text-slate-700">Google</Badge>
+                                  ) : (
+                                    <Badge className={cn("text-[9px] font-black", statusCfg.color)}>{statusCfg.label}</Badge>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -396,7 +413,7 @@ export default function SchedulePage() {
                     <div className="space-y-1">
                       {daySessions.slice(0, 3).map(s => (
                         <div key={s.id} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-teal- text-teal- truncate cursor-pointer" onClick={() => { schedule.setSelectedSessionDetails(s); schedule.setShowSessionDetails(true); }}>
-                          {formatTime(s.scheduled_at)} {s.patient?.full_name}
+                          {formatTime(s.scheduled_at)} {(s as any).is_external_google ? ((s as any).external_title || "Google") : s.patient?.full_name}
                         </div>
                       ))}
                     </div>

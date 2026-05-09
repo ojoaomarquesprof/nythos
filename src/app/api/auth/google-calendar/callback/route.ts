@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { cookies } from "next/headers";
+import {
+  GOOGLE_CALENDAR_OAUTH_NONCE_COOKIE,
+  validateGoogleCalendarOAuthState,
+} from "@/lib/google/oauth-state";
 
 // This route handles the OAuth 2.0 callback from Google after the user
 // authorizes Nythos to access their Google Calendar.
@@ -7,20 +12,68 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
-  const userId = url.searchParams.get("state");
+  const state = url.searchParams.get("state");
   const error = url.searchParams.get("error");
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const dashboardUrl = `${appUrl}/dashboard/schedule`;
+  const cookieStore = await cookies();
+  const nonceCookie = cookieStore.get(GOOGLE_CALENDAR_OAUTH_NONCE_COOKIE)?.value;
+
+  function redirectToSchedule(result: "success" | "error", reason?: string) {
+    const dashboardUrl = new URL("/dashboard/schedule", appUrl);
+    dashboardUrl.searchParams.set("google_auth", result);
+    if (reason) dashboardUrl.searchParams.set("google_auth_error", reason);
+
+    const response = NextResponse.redirect(dashboardUrl);
+    response.cookies.set(GOOGLE_CALENDAR_OAUTH_NONCE_COOKIE, "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/api/auth/google-calendar/callback",
+      maxAge: 0,
+    });
+
+    return response;
+  }
+
+  let validatedState: ReturnType<typeof validateGoogleCalendarOAuthState>;
+  try {
+    validatedState = validateGoogleCalendarOAuthState(state, nonceCookie);
+  } catch (err) {
+    console.error("[google-calendar/callback] OAuth state validation failed:", err);
+    return redirectToSchedule("error", "invalid_state");
+  }
+
+  if (!validatedState.ok) {
+    console.error("[google-calendar/callback] Invalid OAuth state:", validatedState.reason);
+    return redirectToSchedule("error", validatedState.reason);
+  }
 
   // Handle user denial
-  if (error || !code || !userId) {
-    console.error("[google-calendar/callback] OAuth error:", error ?? "Missing code or userId");
-    return NextResponse.redirect(`${dashboardUrl}?google_auth=error`);
+  if (error) {
+    console.error("[google-calendar/callback] OAuth error:", error);
+    return redirectToSchedule("error", "google_denied");
+  }
+
+  if (!code) {
+    console.error("[google-calendar/callback] OAuth error: Missing code");
+    return redirectToSchedule("error", "missing_code");
   }
 
   // Exchange authorization code for access + refresh tokens
   try {
+    const admin = createAdminClient();
+    const { data: profile, error: profileError } = await admin
+      .from("profiles")
+      .select("id")
+      .eq("id", validatedState.payload.userId)
+      .maybeSingle();
+
+    if (profileError || !profile) {
+      console.error("[google-calendar/callback] State user not found:", profileError);
+      return redirectToSchedule("error", "invalid_user");
+    }
+
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -36,7 +89,7 @@ export async function GET(request: Request) {
     if (!tokenResponse.ok) {
       const errText = await tokenResponse.text();
       console.error("[google-calendar/callback] Token exchange failed:", errText);
-      return NextResponse.redirect(`${dashboardUrl}?google_auth=error`);
+      return redirectToSchedule("error", "token_exchange_failed");
     }
 
     const tokens = await tokenResponse.json();
@@ -51,13 +104,12 @@ export async function GET(request: Request) {
     };
 
     if (!access_token) {
-      return NextResponse.redirect(`${dashboardUrl}?google_auth=error`);
+      return redirectToSchedule("error", "missing_access_token");
     }
 
     const tokenExpiry = new Date(Date.now() + expires_in * 1000).toISOString();
 
     // Persist tokens in the user's profile using the admin client (bypasses RLS)
-    const admin = createAdminClient();
     const { error: updateError } = await admin
       .from("profiles")
       .update({
@@ -67,18 +119,18 @@ export async function GET(request: Request) {
         ...(refresh_token ? { google_refresh_token: refresh_token } : {}),
         google_token_expiry: tokenExpiry,
       })
-      .eq("id", userId);
+      .eq("id", validatedState.payload.userId);
 
     if (updateError) {
       console.error("[google-calendar/callback] Failed to save tokens:", updateError);
-      return NextResponse.redirect(`${dashboardUrl}?google_auth=error`);
+      return redirectToSchedule("error", "save_failed");
     }
 
     // Redirect back to schedule page with success flag
-    return NextResponse.redirect(`${dashboardUrl}?google_auth=success`);
+    return redirectToSchedule("success");
   } catch (err) {
     console.error("[google-calendar/callback] Unexpected error:", err);
-    return NextResponse.redirect(`${dashboardUrl}?google_auth=error`);
+    return redirectToSchedule("error", "unexpected");
   }
 }
 

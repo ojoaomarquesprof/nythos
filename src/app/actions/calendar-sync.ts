@@ -2,7 +2,13 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin, createAdminClient } from "@/lib/supabase/admin";
+import {
+  createGoogleCalendarOAuthState,
+  GOOGLE_CALENDAR_OAUTH_NONCE_COOKIE,
+  GOOGLE_CALENDAR_OAUTH_STATE_MAX_AGE_SECONDS,
+} from "@/lib/google/oauth-state";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import type { Database } from "@/types/database";
 
 type SessionInsert = Database['public']['Tables']['sessions']['Insert'];
@@ -13,16 +19,18 @@ export interface GoogleCalendarEvent {
   id: string;
   summary?: string;
   description?: string;
-  start: { dateTime?: string; date?: string };
-  end: { dateTime?: string; date?: string };
+  start: { dateTime?: string; date?: string; timeZone?: string };
+  end: { dateTime?: string; date?: string; timeZone?: string };
   location?: string;
   status?: string;
+  transparency?: string;
   htmlLink?: string;
 }
 
 export interface CalendarSyncResult {
   success: boolean;
   imported: number;
+  externalImported?: number;
   skipped: number;
   error?: string;
   needsAuth?: boolean;
@@ -33,6 +41,54 @@ export interface CalendarStatusResult {
   connected: boolean;
   calendarId?: string;
   tokenExpiry?: string | null;
+}
+
+interface ParsedGoogleEventWindow {
+  startsAtIso: string;
+  endsAtIso: string;
+  durationMinutes: number;
+  isAllDay: boolean;
+}
+
+function parseGoogleEventWindow(event: GoogleCalendarEvent): ParsedGoogleEventWindow | null {
+  const timedStart = event.start?.dateTime;
+  const timedEnd = event.end?.dateTime;
+
+  if (timedStart) {
+    const start = new Date(timedStart);
+    const end = timedEnd ? new Date(timedEnd) : new Date(start.getTime() + 50 * 60 * 1000);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+    const safeEnd = end.getTime() > start.getTime() ? end : new Date(start.getTime() + 50 * 60 * 1000);
+    const durationMinutes = Math.max(15, Math.round((safeEnd.getTime() - start.getTime()) / 60000));
+
+    return {
+      startsAtIso: start.toISOString(),
+      endsAtIso: safeEnd.toISOString(),
+      durationMinutes,
+      isAllDay: false,
+    };
+  }
+
+  const allDayStart = event.start?.date;
+  if (!allDayStart) return null;
+
+  const start = new Date(`${allDayStart}T00:00:00`);
+  const endDateRaw = event.end?.date;
+  const parsedEnd = endDateRaw ? new Date(`${endDateRaw}T00:00:00`) : new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  const end = parsedEnd.getTime() > start.getTime()
+    ? parsedEnd
+    : new Date(start.getTime() + 24 * 60 * 60 * 1000);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  const durationMinutes = Math.max(60, Math.round((end.getTime() - start.getTime()) / 60000));
+
+  return {
+    startsAtIso: start.toISOString(),
+    endsAtIso: end.toISOString(),
+    durationMinutes,
+    isAllDay: true,
+  };
 }
 
 // ─── Helper: Refresh the Google access token if expired ─────────────────────
@@ -129,6 +185,24 @@ export async function linkGoogleCalendar(): Promise<{ url?: string; error?: stri
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Não autenticado." };
 
+  let oauthState: ReturnType<typeof createGoogleCalendarOAuthState>;
+  try {
+    oauthState = createGoogleCalendarOAuthState(user.id);
+  } catch (err) {
+    console.error("[calendar-sync] Failed to create Google OAuth state:", err);
+    return { error: "Configuração de segurança do Google Calendar indisponível." };
+  }
+
+  const cookieStore = await cookies();
+  cookieStore.set(GOOGLE_CALENDAR_OAUTH_NONCE_COOKIE, oauthState.nonce, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/api/auth/google-calendar/callback",
+    maxAge: GOOGLE_CALENDAR_OAUTH_STATE_MAX_AGE_SECONDS,
+    expires: oauthState.expiresAt,
+  });
+
   // Build the Google OAuth URL with offline access to get refresh_token
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID!,
@@ -140,7 +214,7 @@ export async function linkGoogleCalendar(): Promise<{ url?: string; error?: stri
     ].join(" "),
     access_type: "offline",
     prompt: "consent", // Force consent to always get refresh_token
-    state: user.id, // Pass user ID for the callback handler
+    state: oauthState.state,
   });
 
   return { url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}` };
@@ -224,6 +298,7 @@ export async function syncGoogleCalendar(
   gcalUrl.searchParams.set("singleEvents", "true");
   gcalUrl.searchParams.set("orderBy", "startTime");
   gcalUrl.searchParams.set("maxResults", "250");
+  gcalUrl.searchParams.set("showDeleted", "true");
 
   const gcalResponse = await fetch(gcalUrl.toString(), {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -280,26 +355,61 @@ export async function syncGoogleCalendar(
 
   // 6. Process events
   let imported = 0;
+  let externalImported = 0;
   let skipped = 0;
 
   
 
   for (const event of events) {
-    // Skip cancelled events or all-day events (no dateTime)
-    if (event.status === "cancelled") { skipped++; continue; }
-    if (!event.start?.dateTime) { skipped++; continue; }
+    if (!event.id) {
+      skipped++;
+      continue;
+    }
+
+    // If a Google event was cancelled, remove any previously imported availability block.
+    if (event.status === "cancelled") {
+      try {
+        await (createAdminClient() as any)
+          .from("external_calendar_events")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("google_event_id", event.id);
+      } catch (err) {
+        console.error("[calendar-sync] Failed to remove cancelled external event:", err, event.id);
+      }
+      skipped++;
+      continue;
+    }
+
+    // Ignore all-day (start.date/end.date) and "free" events that do not block time.
+    const isAllDayEvent = !event.start?.dateTime && !!event.start?.date;
+    const isTransparent = event.transparency === "transparent";
+    if (isAllDayEvent || isTransparent) {
+      try {
+        await (createAdminClient() as any)
+          .from("external_calendar_events")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("google_event_id", event.id);
+      } catch (err) {
+        console.error("[calendar-sync] Failed to remove ignored external event:", err, event.id);
+      }
+      skipped++;
+      continue;
+    }
+
+    const window = parseGoogleEventWindow(event);
+    if (!window) {
+      skipped++;
+      continue;
+    }
 
     // Skip already synced events
-    if (event.id && syncedEventIds.has(event.id)) { skipped++; continue; }
+    if (syncedEventIds.has(event.id)) { skipped++; continue; }
 
-    const scheduledAt = new Date(event.start.dateTime).toISOString();
+    const scheduledAt = window.startsAtIso;
     const timeKey = scheduledAt.slice(0, 16);
     if (existingTimes.has(timeKey)) { skipped++; continue; }
-
-    // Calculate duration in minutes
-    const startMs = new Date(event.start.dateTime).getTime();
-    const endMs = event.end?.dateTime ? new Date(event.end.dateTime).getTime() : startMs + 50 * 60 * 1000;
-    const durationMinutes = Math.round((endMs - startMs) / 60000);
 
     // Try to match a patient from the event title
     const summary = (event.summary ?? "").toLowerCase();
@@ -310,22 +420,54 @@ export async function syncGoogleCalendar(
     // Determine location from event
     const location = event.location ? "office" : "online";
 
-    // Skip events with no patient match — sessions require a patient_id
+    // If no patient matched, store as external availability block (not a clinical session).
     if (!matchedPatient) {
+      try {
+        const externalEventRecord = {
+          user_id: user.id,
+          google_event_id: event.id,
+          calendar_id: calendarId,
+          title: event.summary ?? "Compromisso (Google)",
+          description: event.description ?? null,
+          location: event.location ?? null,
+          starts_at: window.startsAtIso,
+          ends_at: window.endsAtIso,
+          is_all_day: window.isAllDay,
+          html_link: event.htmlLink ?? null,
+        };
+
+        const { error: externalUpsertError } = await (createAdminClient() as any)
+          .from("external_calendar_events")
+          .upsert(externalEventRecord, { onConflict: "user_id,google_event_id" });
+
+        if (externalUpsertError) throw externalUpsertError;
+        externalImported++;
+      } catch (externalErr) {
+        console.error("[calendar-sync] Failed to upsert external calendar block:", externalErr, event.id);
+      }
+
+      // Count as skipped from clinical import perspective (no session created).
       skipped++;
       continue;
     }
+
+    // Matched a patient: this should be a session, not an external block.
+    await (createAdminClient() as any)
+      .from("external_calendar_events")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("google_event_id", event.id);
 
     // Build session record
     const sessionRecord: SessionInsert = {
       user_id: user.id,
       patient_id: matchedPatient.id,
       scheduled_at: scheduledAt,
-      duration_minutes: durationMinutes > 0 ? durationMinutes : 50,
+      duration_minutes: window.durationMinutes > 0 ? window.durationMinutes : 50,
       session_type: "individual",
       location,
       status: "scheduled",
-      google_event_id: event.id ?? null,
+      google_event_id: event.id,
     };
 
     try {
@@ -346,6 +488,7 @@ export async function syncGoogleCalendar(
   return {
     success: true,
     imported,
+    externalImported,
     skipped,
   };
 }

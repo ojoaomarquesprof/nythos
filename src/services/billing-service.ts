@@ -20,7 +20,7 @@ export const BillingService = {
 
   async getTherapistSessionsInRange(userId: string, start: Date, end: Date): Promise<ServiceResponse<any[]>> {
     try {
-      const { data, error } = await supabase
+      const { data: sessionsData, error: sessionsError } = await supabase
         .from("sessions")
         .select("id, scheduled_at, duration_minutes, patient:patients(full_name)")
         .eq("user_id", userId)
@@ -28,8 +28,28 @@ export const BillingService = {
         .lte("scheduled_at", end.toISOString())
         .not("status", "eq", "cancelled");
 
-      if (error) throw error;
-      return { data: data || [], error: null };
+      if (sessionsError) throw sessionsError;
+
+      const { data: externalData, error: externalError } = await supabase
+        .from("external_calendar_events")
+        .select("id, starts_at, ends_at")
+        .eq("user_id", userId)
+        .lt("starts_at", end.toISOString())
+        .gt("ends_at", start.toISOString());
+
+      if (externalError) throw externalError;
+
+      const externalAsSessions = (externalData || []).map((event: any) => ({
+        id: `external:${event.id}`,
+        scheduled_at: event.starts_at,
+        duration_minutes: Math.max(
+          15,
+          Math.round((new Date(event.ends_at).getTime() - new Date(event.starts_at).getTime()) / 60000) || 50
+        ),
+        patient: null,
+      }));
+
+      return { data: [...(sessionsData || []), ...externalAsSessions], error: null };
     } catch (err: any) {
       console.error(`Error in BillingService.getTherapistSessionsInRange(${userId}):`, err);
       return { data: null, error: err.message || "Erro ao carregar agenda do terapeuta." };
@@ -120,7 +140,20 @@ export const BillingService = {
         return (newStart < end && newEnd > start);
       });
 
-      return { data: !!hasConflict, error: null };
+      if (hasConflict) return { data: true, error: null };
+
+      const newStartIso = scheduledAt.toISOString();
+      const newEndIso = new Date(scheduledAt.getTime() + durationMinutes * 60000).toISOString();
+      const { data: externalConflicts, error: externalConflictError } = await supabase
+        .from("external_calendar_events")
+        .select("id")
+        .eq("user_id", userId)
+        .lt("starts_at", newEndIso)
+        .gt("ends_at", newStartIso);
+
+      if (externalConflictError) throw externalConflictError;
+
+      return { data: (externalConflicts?.length ?? 0) > 0, error: null };
     } catch (err: any) {
       console.error(`Error in BillingService.checkRescheduleConflicts():`, err);
       return { data: null, error: err.message || "Erro ao checar conflitos de horários." };
@@ -294,3 +327,4 @@ export const BillingService = {
     }
   }
 };
+

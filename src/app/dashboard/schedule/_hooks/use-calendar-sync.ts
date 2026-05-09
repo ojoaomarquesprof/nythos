@@ -68,10 +68,12 @@ export function useCalendarSync(onSyncSuccess?: () => void) {
         setGoogleConnected(false);
         setSyncBanner({ type: 'error', message: 'Sua sessão com o Google expirou. Reconecte sua conta.' });
       } else if (result.success) {
+        const externalImported = result.externalImported ?? 0;
+        const totalImported = result.imported + externalImported;
         setSyncBanner({
           type: 'success',
-          message: result.imported > 0
-            ? `✅ ${result.imported} evento${result.imported !== 1 ? 's' : ''} importado${result.imported !== 1 ? 's' : ''} com sucesso!`
+          message: totalImported > 0
+            ? `✅ ${result.imported} sessão(ões) e ${externalImported} bloqueio(s) do Google sincronizados.`
             : '✅ Agenda atualizada — nenhum evento novo encontrado.',
         });
         if (onSyncSuccess) onSyncSuccess();

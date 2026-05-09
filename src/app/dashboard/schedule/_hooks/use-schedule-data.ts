@@ -4,6 +4,15 @@ import { useSubscription } from "@/hooks/use-subscription";
 import { SESSION_STATUS } from "@/lib/constants";
 import type { Session, Patient } from "@/types/database";
 
+type ScheduleItem = (Session & { patient?: Patient }) & {
+  is_external_google?: boolean;
+  external_title?: string | null;
+  external_description?: string | null;
+  external_location?: string | null;
+  external_ends_at?: string | null;
+  external_is_all_day?: boolean;
+};
+
 const getWeekStart = (date: Date) => {
   const d = new Date(date);
   const day = d.getDay();
@@ -20,7 +29,7 @@ const getMonthStart = (date: Date) => {
 export function useScheduleData() {
   const { therapistId } = useSubscription();
   const supabase = createClient() as any;
-  const [sessions, setSessions] = useState<(Session & { patient?: Patient })[]>([]);
+  const [sessions, setSessions] = useState<ScheduleItem[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -49,7 +58,7 @@ export function useScheduleData() {
   });
 
   const [selectedSessionDetails, setSelectedSessionDetails] = useState<
-    (Session & { patient?: Patient }) | null
+    ScheduleItem | null
   >(null);
 
   const [isRescheduling, setIsRescheduling] = useState(false);
@@ -65,7 +74,9 @@ export function useScheduleData() {
   const [seriesActionType, setSeriesActionType] = useState<'delete' | 'reschedule' | null>(null);
 
   const [rescheduleWeekOffset, setRescheduleWeekOffset] = useState(0);
-  const [therapistSessionsForReschedule, setTherapistSessionsForReschedule] = useState<Session[]>([]);
+  const [therapistSessionsForReschedule, setTherapistSessionsForReschedule] = useState<
+    Array<{ id: string; scheduled_at: string; duration_minutes: number | null; patient?: { full_name?: string } | null }>
+  >([]);
 
   const rescheduleWeekDays = useMemo(() => {
     const start = getWeekStart(new Date());
@@ -85,7 +96,7 @@ export function useScheduleData() {
       const endRange = new Date(rescheduleWeekDays[5]);
       endRange.setHours(23, 59, 59, 999);
 
-      const { data, error } = await supabase
+      const { data: sessionData, error: sessionError } = await supabase
         .from("sessions")
         .select("id, scheduled_at, duration_minutes, patient:patients(full_name)")
         .eq("user_id", therapistId)
@@ -93,9 +104,28 @@ export function useScheduleData() {
         .lte("scheduled_at", endRange.toISOString())
         .not("status", "eq", "cancelled");
 
-      if (!error && data) {
-        setTherapistSessionsForReschedule(data);
-      }
+      if (sessionError) return;
+
+      const { data: externalData, error: externalError } = await supabase
+        .from("external_calendar_events")
+        .select("id, starts_at, ends_at")
+        .eq("user_id", therapistId)
+        .lt("starts_at", endRange.toISOString())
+        .gt("ends_at", startRange.toISOString());
+
+      if (externalError) return;
+
+      const externalAsSessions = (externalData ?? []).map((event: any) => ({
+        id: `external:${event.id}`,
+        scheduled_at: event.starts_at,
+        duration_minutes: Math.max(
+          15,
+          Math.round((new Date(event.ends_at).getTime() - new Date(event.starts_at).getTime()) / 60000) || 50
+        ),
+        patient: null,
+      }));
+
+      setTherapistSessionsForReschedule([...(sessionData ?? []), ...externalAsSessions]);
     }
     fetchAgendaForReschedule();
   }, [rescheduleWeekOffset, isRescheduling, therapistId, rescheduleWeekDays]);
@@ -122,7 +152,7 @@ export function useScheduleData() {
       end.setDate(end.getDate() + 42);
     }
 
-    const [sessionsRes, patientsRes, profileRes] = await Promise.all([
+    const [sessionsRes, externalEventsRes, patientsRes, profileRes] = await Promise.all([
       supabase
         .from("sessions")
         .select("id, user_id, patient_id, scheduled_at, duration_minutes, status, session_type, session_price, location, is_recurring, recurrence_rule, reminder_sent, google_event_id, created_at, updated_at, patient:patients(id, full_name, email, phone, session_price, status)")
@@ -130,6 +160,13 @@ export function useScheduleData() {
         .gte("scheduled_at", start.toISOString())
         .lt("scheduled_at", end.toISOString())
         .order("scheduled_at", { ascending: true }),
+      supabase
+        .from("external_calendar_events")
+        .select("id, user_id, google_event_id, title, description, location, starts_at, ends_at, is_all_day, created_at, updated_at")
+        .eq("user_id", therapistId)
+        .gte("starts_at", start.toISOString())
+        .lt("starts_at", end.toISOString())
+        .order("starts_at", { ascending: true }),
       supabase
         .from("patients")
         .select("id, user_id, full_name, email, phone, cpf, date_of_birth, status, session_price, created_at, updated_at, access_token, auth_user_id")
@@ -141,7 +178,47 @@ export function useScheduleData() {
         .single()
     ]);
 
-    if (!sessionsRes.error) setSessions(sessionsRes.data);
+    if (!sessionsRes.error && !externalEventsRes.error) {
+      const sessionItems: ScheduleItem[] = (sessionsRes.data ?? []) as ScheduleItem[];
+      const externalItems: ScheduleItem[] = (externalEventsRes.data ?? []).map((event: any) => {
+        const start = new Date(event.starts_at);
+        const end = new Date(event.ends_at);
+        const durationMinutes = Math.max(
+          15,
+          Math.round((end.getTime() - start.getTime()) / 60000) || 50
+        );
+
+        return {
+          id: `external:${event.id}`,
+          user_id: event.user_id,
+          patient_id: "",
+          scheduled_at: event.starts_at,
+          duration_minutes: durationMinutes,
+          status: "scheduled",
+          session_type: "online",
+          session_notes_encrypted: null,
+          session_price: null,
+          location: event.location ? "office" : "online",
+          is_recurring: false,
+          recurrence_rule: null,
+          reminder_sent: false,
+          google_event_id: event.google_event_id,
+          created_at: event.created_at,
+          updated_at: event.updated_at,
+          is_external_google: true,
+          external_title: event.title,
+          external_description: event.description,
+          external_location: event.location,
+          external_ends_at: event.ends_at,
+          external_is_all_day: event.is_all_day,
+        };
+      });
+
+      const merged = [...sessionItems, ...externalItems].sort(
+        (a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
+      );
+      setSessions(merged);
+    }
     if (!patientsRes.error) setPatients(patientsRes.data);
     if (!profileRes.error) setProfile(profileRes.data);
     setLoading(false);
