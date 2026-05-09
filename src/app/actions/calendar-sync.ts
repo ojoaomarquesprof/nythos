@@ -366,9 +366,16 @@ export async function syncGoogleCalendar(
       continue;
     }
 
-    // If a Google event was cancelled, remove any previously imported availability block.
+    // If a Google event was cancelled, cancel linked clinical sessions and remove external blocks.
     if (event.status === "cancelled") {
       try {
+        await createAdminClient()
+          .from("sessions")
+          .update({ status: "cancelled" })
+          .eq("user_id", user.id)
+          .eq("google_event_id", event.id)
+          .neq("status", "cancelled");
+
         await (createAdminClient() as any)
           .from("external_calendar_events")
           .delete()

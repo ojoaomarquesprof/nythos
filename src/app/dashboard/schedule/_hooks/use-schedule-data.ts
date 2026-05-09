@@ -157,6 +157,7 @@ export function useScheduleData() {
         .from("sessions")
         .select("id, user_id, patient_id, scheduled_at, duration_minutes, status, session_type, session_price, location, is_recurring, recurrence_rule, reminder_sent, google_event_id, created_at, updated_at, patient:patients(id, full_name, email, phone, session_price, status)")
         .eq("user_id", therapistId)
+        .neq("status", "cancelled")
         .gte("scheduled_at", start.toISOString())
         .lt("scheduled_at", end.toISOString())
         .order("scheduled_at", { ascending: true }),
@@ -220,7 +221,22 @@ export function useScheduleData() {
       setSessions(merged);
     }
     if (!patientsRes.error) setPatients(patientsRes.data);
-    if (!profileRes.error) setProfile(profileRes.data);
+    if (!profileRes.error) {
+      setProfile(profileRes.data);
+      const defaultDuration = profileRes.data?.session_duration_default;
+      const defaultPrice = profileRes.data?.session_price_default;
+      setNewSession((prev) => ({
+        ...prev,
+        duration_minutes:
+          prev.duration_minutes === "50" && defaultDuration
+            ? String(defaultDuration)
+            : prev.duration_minutes,
+        session_price:
+          prev.session_price === "" && defaultPrice != null
+            ? String(defaultPrice)
+            : prev.session_price,
+      }));
+    }
     setLoading(false);
   }, [currentDate, therapistId, view]);
 

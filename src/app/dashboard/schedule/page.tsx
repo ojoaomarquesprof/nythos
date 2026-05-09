@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   Plus,
@@ -29,10 +29,13 @@ import { SubscriptionGate } from "@/components/auth/subscription-gate";
 import { SESSION_STATUS, formatTime, formatCurrency } from "@/lib/constants";
 import { useScheduleData } from "./_hooks/use-schedule-data";
 import { useCalendarSync } from "./_hooks/use-calendar-sync";
+import { createScheduleSessions, cancelScheduleSession } from "@/app/actions/schedule-sessions";
 
 export default function SchedulePage() {
   const schedule = useScheduleData();
   const calendar = useCalendarSync(schedule.loadData);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [cancellingSession, setCancellingSession] = useState(false);
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
@@ -91,6 +94,121 @@ export default function SchedulePage() {
       return d;
     });
   }, [schedule.currentDate]);
+
+  const selectedItem = schedule.selectedSessionDetails as any;
+  const selectedIsExternal = !!selectedItem?.is_external_google;
+  const selectedPatient = useMemo(
+    () => schedule.patients.find((p) => p.id === schedule.newSession.patient_id) ?? null,
+    [schedule.patients, schedule.newSession.patient_id]
+  );
+  const suggestedPrice = selectedPatient?.session_price ?? schedule.profile?.session_price_default ?? null;
+
+  async function handleCreateSession() {
+    if (!schedule.therapistId) {
+      setScheduleError("Terapeuta não identificado.");
+      return;
+    }
+
+    setScheduleError(null);
+    schedule.setSaving(true);
+    try {
+      const duration = parseInt(schedule.newSession.duration_minutes, 10);
+      const rawPrice =
+        schedule.newSession.session_price?.trim() !== ""
+          ? Number(schedule.newSession.session_price)
+          : (suggestedPrice ?? null);
+
+      const result = await createScheduleSessions({
+        therapistId: schedule.therapistId,
+        patientId: schedule.newSession.patient_id,
+        scheduledDate: schedule.newSession.scheduled_at,
+        scheduledTime: schedule.newSession.scheduled_time,
+        durationMinutes: Number.isNaN(duration) ? 50 : duration,
+        sessionType: schedule.newSession.session_type,
+        sessionPrice: rawPrice,
+        location: schedule.newSession.location,
+        isRecurring: schedule.newSession.is_recurring,
+        recurrencePeriod: schedule.newSession.recurrence_period as "weekly" | "monthly",
+        recurrenceCount: parseInt(schedule.newSession.recurrence_count, 10),
+        isIndefinite: schedule.newSession.is_indefinite,
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || "Falha ao agendar sessão.");
+      }
+
+      const createdCount = result.createdCount ?? 1;
+      const googleCreatedCount = result.googleCreatedCount ?? 0;
+      if (result.warning) {
+        calendar.setSyncBanner({
+          type: "info",
+          message: `Sess�o(�es) criada(s): ${createdCount}. Google: ${googleCreatedCount}. ${result.warning}`,
+        });
+      } else if (googleCreatedCount > 0) {
+        calendar.setSyncBanner({
+          type: "success",
+          message: `? ${createdCount} sess�o(�es) criada(s) e ${googleCreatedCount} enviada(s) ao Google Calendar.`,
+        });
+      } else {
+        calendar.setSyncBanner({
+          type: "success",
+          message: `? ${createdCount} sess�o(�es) criada(s).`,
+        });
+      }
+
+      schedule.setShowNewSession(false);
+      schedule.setNewSession({
+        patient_id: "",
+        scheduled_at: "",
+        scheduled_time: "14:00",
+        duration_minutes: "50",
+        session_type: "individual",
+        session_price: "",
+        location: "office",
+        is_recurring: false,
+        recurrence_period: "weekly",
+        recurrence_count: "4",
+        is_indefinite: false,
+        is_package: false,
+        package_sessions: "10",
+        discount_percentage: "0",
+      });
+      await schedule.loadData();
+    } catch (err: any) {
+      setScheduleError(err?.message ?? "Falha ao agendar sessão.");
+    } finally {
+      schedule.setSaving(false);
+    }
+  }
+
+  async function handleCancelSession() {
+    if (!selectedItem?.id || selectedIsExternal) return;
+
+    setCancellingSession(true);
+    try {
+      const result = await cancelScheduleSession({ sessionId: selectedItem.id });
+      if (!result.success) {
+        throw new Error(result.error || "Falha ao cancelar sessão.");
+      }
+
+      if (result.warning) {
+        calendar.setSyncBanner({ type: "info", message: result.warning });
+      } else {
+        calendar.setSyncBanner({ type: "success", message: "Sessão cancelada com sucesso." });
+      }
+
+      schedule.setShowSessionDetails(false);
+      schedule.setSelectedSessionDetails(null);
+      await schedule.loadData();
+    } catch (err: any) {
+      calendar.setSyncBanner({
+        type: "error",
+        message: err?.message ?? "Falha ao cancelar sessão.",
+      });
+    } finally {
+      setCancellingSession(false);
+    }
+  }
 
   return (
     <div className="flex h-[calc(100dvh-200px)] md:h-[calc(100vh-80px)] w-full overflow-hidden bg-white/30 relative">
@@ -424,6 +542,231 @@ export default function SchedulePage() {
           )}
         </div>
       </main>
+
+      <Dialog
+        open={schedule.showNewSession}
+        onOpenChange={(open) => {
+          schedule.setShowNewSession(open);
+          if (!open) setScheduleError(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogTitle>Agendar Sessão</DialogTitle>
+          <DialogDescription>Preencha os dados mínimos para criar a sessão clínica.</DialogDescription>
+          <div className="space-y-3 pt-2">
+            <div className="space-y-1">
+              <Label>Paciente</Label>
+              <select
+                className="w-full h-10 rounded-md border bg-background px-3 text-sm"
+                value={schedule.newSession.patient_id}
+                onChange={(e) => {
+                  const patientId = e.target.value;
+                  const patient = schedule.patients.find((p) => p.id === patientId);
+                  const resolvedPrice =
+                    patient?.session_price ??
+                    schedule.profile?.session_price_default ??
+                    null;
+                  schedule.setNewSession({
+                    ...schedule.newSession,
+                    patient_id: patientId,
+                    session_price:
+                      schedule.newSession.session_price?.trim() !== ""
+                        ? schedule.newSession.session_price
+                        : (resolvedPrice != null ? String(resolvedPrice) : ""),
+                  });
+                }}
+              >
+                <option value="">Selecione um paciente</option>
+                {schedule.patients.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.full_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Data</Label>
+                <Input
+                  type="date"
+                  value={schedule.newSession.scheduled_at}
+                  onChange={(e) => schedule.setNewSession({ ...schedule.newSession, scheduled_at: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Horário</Label>
+                <Input
+                  type="time"
+                  value={schedule.newSession.scheduled_time}
+                  onChange={(e) => schedule.setNewSession({ ...schedule.newSession, scheduled_time: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Duração (min)</Label>
+                <Input
+                  type="number"
+                  min={15}
+                  step={5}
+                  value={schedule.newSession.duration_minutes}
+                  onChange={(e) => schedule.setNewSession({ ...schedule.newSession, duration_minutes: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Local</Label>
+                <select
+                  className="w-full h-10 rounded-md border bg-background px-3 text-sm"
+                  value={schedule.newSession.location}
+                  onChange={(e) => schedule.setNewSession({ ...schedule.newSession, location: e.target.value })}
+                >
+                  <option value="office">Presencial</option>
+                  <option value="online">Online</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Tipo de sessão</Label>
+                <select
+                  className="w-full h-10 rounded-md border bg-background px-3 text-sm"
+                  value={schedule.newSession.session_type}
+                  onChange={(e) => schedule.setNewSession({ ...schedule.newSession, session_type: e.target.value })}
+                >
+                  <option value="individual">Individual</option>
+                  <option value="couple">Casal</option>
+                  <option value="group">Grupo</option>
+                  <option value="online">Online</option>
+                  <option value="initial_assessment">Avaliação inicial</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label>Preço da sessão</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder={suggestedPrice != null ? `${suggestedPrice}` : "Padrão"}
+                  value={schedule.newSession.session_price}
+                  onChange={(e) => schedule.setNewSession({ ...schedule.newSession, session_price: e.target.value })}
+                />
+                {suggestedPrice != null && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Valor padrão sugerido: {formatCurrency(Number(suggestedPrice))}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="space-y-2 rounded-md border p-3">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="is-recurring"
+                  checked={schedule.newSession.is_recurring}
+                  onCheckedChange={(checked) =>
+                    schedule.setNewSession({ ...schedule.newSession, is_recurring: checked === true })
+                  }
+                />
+                <Label htmlFor="is-recurring">Sessão recorrente</Label>
+              </div>
+              {schedule.newSession.is_recurring && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label>Periodicidade</Label>
+                    <select
+                      className="w-full h-10 rounded-md border bg-background px-3 text-sm"
+                      value={schedule.newSession.recurrence_period}
+                      onChange={(e) =>
+                        schedule.setNewSession({ ...schedule.newSession, recurrence_period: e.target.value })
+                      }
+                    >
+                      <option value="weekly">Semanal</option>
+                      <option value="monthly">Mensal</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Quantidade</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={24}
+                      disabled={schedule.newSession.is_indefinite}
+                      value={schedule.newSession.recurrence_count}
+                      onChange={(e) =>
+                        schedule.setNewSession({ ...schedule.newSession, recurrence_count: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="col-span-2 flex items-center gap-2">
+                    <Checkbox
+                      id="is-indefinite"
+                      checked={schedule.newSession.is_indefinite}
+                      onCheckedChange={(checked) =>
+                        schedule.setNewSession({ ...schedule.newSession, is_indefinite: checked === true })
+                      }
+                    />
+                    <Label htmlFor="is-indefinite">Sem data final (cria 12 ocorrências iniciais)</Label>
+                  </div>
+                </div>
+              )}
+            </div>
+            {scheduleError && <p className="text-sm text-rose-600">{scheduleError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => schedule.setShowNewSession(false)} disabled={schedule.saving}>
+              Cancelar
+            </Button>
+            <Button onClick={handleCreateSession} disabled={schedule.saving}>
+              {schedule.saving ? "Salvando..." : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={schedule.showSessionDetails}
+        onOpenChange={(open) => {
+          schedule.setShowSessionDetails(open);
+          if (!open) schedule.setSelectedSessionDetails(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogTitle>{selectedIsExternal ? "Bloqueio Externo" : "Detalhes da Sessão"}</DialogTitle>
+          <DialogDescription>
+            {selectedIsExternal ? "Evento importado do Google Calendar (somente leitura)." : "Informações da sessão clínica."}
+          </DialogDescription>
+          {selectedItem && (
+            <div className="space-y-2 text-sm">
+              <p><strong>Título:</strong> {selectedIsExternal ? (selectedItem.external_title || "Compromisso (Google)") : (selectedItem.patient?.full_name || "Sessão")}</p>
+              <p><strong>Horário:</strong> {new Date(selectedItem.scheduled_at).toLocaleString("pt-BR")}</p>
+              <p><strong>Duração:</strong> {selectedItem.duration_minutes ?? 50} min</p>
+              {selectedIsExternal ? (
+                <>
+                  <p><strong>Origem:</strong> Google Calendar</p>
+                  {selectedItem.external_location && <p><strong>Local:</strong> {selectedItem.external_location}</p>}
+                </>
+              ) : (
+                <>
+                  <p><strong>Status:</strong> {SESSION_STATUS[selectedItem.status as keyof typeof SESSION_STATUS]?.label ?? selectedItem.status}</p>
+                  <p><strong>Local:</strong> {selectedItem.location || "-"}</p>
+                </>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            {!selectedIsExternal && selectedItem?.status !== "cancelled" && (
+              <Button
+                variant="destructive"
+                onClick={handleCancelSession}
+                disabled={cancellingSession}
+              >
+                {cancellingSession ? "Cancelando..." : "Cancelar sessão"}
+              </Button>
+            )}
+            <Button onClick={() => schedule.setShowSessionDetails(false)} disabled={cancellingSession}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
