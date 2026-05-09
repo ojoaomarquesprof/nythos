@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  decryptGoogleTokenFields,
+  updateGoogleTokensEncrypted,
+} from "@/lib/google/calendar-tokens";
 
 export interface CreateSessionPayload {
   therapistId: string;
@@ -89,13 +93,11 @@ async function refreshGoogleToken(
     const expiresIn: number = data.expires_in || 3600;
     const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
-    await admin
-      .from("profiles")
-      .update({
-        google_access_token: newAccessToken,
-        google_token_expiry: expiresAt,
-      })
-      .eq("id", therapistId);
+    await updateGoogleTokensEncrypted(admin, therapistId, {
+      google_access_token: newAccessToken,
+      google_refresh_token: refreshToken,
+      google_token_expiry: expiresAt,
+    });
 
     return newAccessToken;
   } catch {
@@ -278,7 +280,10 @@ export async function createScheduleSessions(
       .maybeSingle();
 
     if (therapistProfile?.google_refresh_token) {
-      const profile = therapistProfile as TherapistGoogleProfile;
+      const profile = await decryptGoogleTokenFields(
+        admin,
+        therapistProfile as TherapistGoogleProfile
+      );
       const accessToken = await getValidAccessToken(admin, payload.therapistId, profile);
 
       if (!accessToken) {
@@ -411,16 +416,20 @@ export async function cancelScheduleSession(
       if (!therapistProfile?.google_refresh_token) {
         warning = "Sessão cancelada no Nythos, mas o Google Calendar não está conectado.";
       } else {
+        const profile = await decryptGoogleTokenFields(
+          admin,
+          therapistProfile as TherapistGoogleProfile
+        );
         const accessToken = await getValidAccessToken(
           admin,
           session.user_id,
-          therapistProfile as TherapistGoogleProfile
+          profile
         );
 
         if (!accessToken) {
           warning = "Sessão cancelada no Nythos, mas não foi possível autenticar no Google Calendar.";
         } else {
-          const calendarId = therapistProfile.google_calendar_id || "primary";
+          const calendarId = profile.google_calendar_id || "primary";
           try {
             const response = await fetch(
               `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(session.google_event_id)}`,

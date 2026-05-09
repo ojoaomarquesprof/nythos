@@ -7,6 +7,10 @@ import {
   GOOGLE_CALENDAR_OAUTH_NONCE_COOKIE,
   GOOGLE_CALENDAR_OAUTH_STATE_MAX_AGE_SECONDS,
 } from "@/lib/google/oauth-state";
+import {
+  decryptGoogleTokenFields,
+  updateGoogleTokensEncrypted,
+} from "@/lib/google/calendar-tokens";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import type { Database } from "@/types/database";
@@ -119,14 +123,11 @@ async function refreshGoogleToken(
     const expiresIn: number = data.expires_in || 3600;
     const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
-    // Persist the refreshed token
-    await supabaseAdmin
-      .from("profiles")
-      .update({
-        google_access_token: newAccessToken,
-        google_token_expiry: expiresAt,
-      })
-      .eq("id", userId);
+    await updateGoogleTokensEncrypted(supabaseAdmin, userId, {
+      google_access_token: newAccessToken,
+      google_refresh_token: refreshToken,
+      google_token_expiry: expiresAt,
+    });
 
     return newAccessToken;
   } catch (err) {
@@ -263,7 +264,9 @@ export async function syncGoogleCalendar(
     return { success: false, imported: 0, skipped: 0, error: "Perfil não encontrado." };
   }
 
-  if (!profile.google_refresh_token) {
+  const decryptedProfile = await decryptGoogleTokenFields(supabaseAdmin, profile);
+
+  if (!decryptedProfile.google_refresh_token) {
     return {
       success: false,
       imported: 0,
@@ -274,7 +277,7 @@ export async function syncGoogleCalendar(
   }
 
   // 2. Get valid access token (auto-refresh if needed)
-  const accessToken = await getValidAccessToken(user.id, profile);
+  const accessToken = await getValidAccessToken(user.id, decryptedProfile);
   if (!accessToken) {
     return {
       success: false,

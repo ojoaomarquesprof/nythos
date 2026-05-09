@@ -202,6 +202,10 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   role TEXT DEFAULT 'therapist' CHECK (role IN ('therapist', 'secretary', 'admin')),
   employer_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   email TEXT,
+  google_access_token TEXT DEFAULT NULL,
+  google_refresh_token TEXT DEFAULT NULL,
+  google_token_expiry TIMESTAMPTZ DEFAULT NULL,
+  google_calendar_id TEXT DEFAULT 'primary',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -219,6 +223,15 @@ CREATE POLICY "Users can update own profile"
 CREATE POLICY "Users can insert own profile"
   ON public.profiles FOR INSERT
   WITH CHECK (auth.uid() = id);
+
+COMMENT ON COLUMN public.profiles.google_access_token IS
+  'Encrypted Google OAuth access token. Decrypt only server-side immediately before Google API calls.';
+COMMENT ON COLUMN public.profiles.google_refresh_token IS
+  'Encrypted Google OAuth refresh token. Decrypt only server-side immediately before token refresh.';
+COMMENT ON COLUMN public.profiles.google_token_expiry IS
+  'Timestamp when the current Google access token expires. Not encrypted.';
+COMMENT ON COLUMN public.profiles.google_calendar_id IS
+  'Google Calendar ID used for sync. Not sensitive; defaults to primary.';
 
 -- ============================================================
 -- TABELA: patients (Pacientes)
@@ -1169,6 +1182,20 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
+CREATE OR REPLACE FUNCTION public.encrypt_google_token_if_needed(p_token TEXT)
+RETURNS TEXT AS $$
+BEGIN
+  RETURN public.encrypt_sensitive_text_if_needed(p_token);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
+CREATE OR REPLACE FUNCTION public.decrypt_google_token_if_needed(p_token TEXT)
+RETURNS TEXT AS $$
+BEGIN
+  RETURN public.decrypt_sensitive_text(p_token);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
 CREATE OR REPLACE FUNCTION public.encrypt_sensitive_jsonb_if_needed(value JSONB)
 RETURNS JSONB AS $$
 DECLARE
@@ -1881,6 +1908,55 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
+CREATE OR REPLACE FUNCTION public.encrypt_profiles_google_calendar_tokens()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.google_access_token := public.encrypt_google_token_if_needed(NEW.google_access_token);
+    NEW.google_refresh_token := public.encrypt_google_token_if_needed(NEW.google_refresh_token);
+  ELSIF TG_OP = 'UPDATE' THEN
+    IF NEW.google_access_token IS DISTINCT FROM OLD.google_access_token THEN
+      NEW.google_access_token := public.encrypt_google_token_if_needed(NEW.google_access_token);
+    END IF;
+
+    IF NEW.google_refresh_token IS DISTINCT FROM OLD.google_refresh_token THEN
+      NEW.google_refresh_token := public.encrypt_google_token_if_needed(NEW.google_refresh_token);
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
+DROP TRIGGER IF EXISTS encrypt_profiles_google_calendar_tokens ON public.profiles;
+CREATE TRIGGER encrypt_profiles_google_calendar_tokens
+  BEFORE INSERT OR UPDATE OF google_access_token, google_refresh_token ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.encrypt_profiles_google_calendar_tokens();
+
+CREATE OR REPLACE FUNCTION public.backfill_google_calendar_tokens_encryption()
+RETURNS TABLE(updated_profiles BIGINT) AS $$
+DECLARE
+  v_updated BIGINT;
+BEGIN
+  UPDATE public.profiles
+  SET
+    google_access_token = public.encrypt_google_token_if_needed(google_access_token),
+    google_refresh_token = public.encrypt_google_token_if_needed(google_refresh_token)
+  WHERE (
+      google_access_token IS NOT NULL
+      AND NOT public.is_db_encrypted_text(google_access_token)
+    )
+    OR (
+      google_refresh_token IS NOT NULL
+      AND NOT public.is_db_encrypted_text(google_refresh_token)
+    );
+
+  GET DIAGNOSTICS v_updated = ROW_COUNT;
+  updated_profiles := v_updated;
+  RETURN NEXT;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
 REVOKE ALL ON FUNCTION public.get_patient_decrypted(UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_patient_sessions_decrypted(UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_patient_evaluations_decrypted(UUID) FROM PUBLIC;
@@ -1900,6 +1976,8 @@ REVOKE EXECUTE ON FUNCTION public.encrypt_sensitive_text(TEXT, TEXT) FROM PUBLIC
 REVOKE EXECUTE ON FUNCTION public.decrypt_sensitive_text(TEXT, TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.is_db_encrypted_text(TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.encrypt_sensitive_text_if_needed(TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.encrypt_google_token_if_needed(TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.decrypt_google_token_if_needed(TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.encrypt_sensitive_jsonb_if_needed(JSONB) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.decrypt_sensitive_jsonb_if_needed(JSONB) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.current_professional_can_read_patient(UUID) FROM PUBLIC, anon, authenticated;
@@ -1910,15 +1988,20 @@ REVOKE EXECUTE ON FUNCTION public.encrypt_patient_evaluations_clinical_fields() 
 REVOKE EXECUTE ON FUNCTION public.encrypt_abc_records_clinical_fields() FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.encrypt_patient_neuro_profiles_clinical_fields() FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.encrypt_anamnesis_responses_clinical_fields() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.encrypt_profiles_google_calendar_tokens() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.backfill_google_calendar_tokens_encryption() FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.encrypt_sensitive_text(TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.decrypt_sensitive_text(TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.is_db_encrypted_text(TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.encrypt_sensitive_text_if_needed(TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.encrypt_google_token_if_needed(TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.decrypt_google_token_if_needed(TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.encrypt_sensitive_jsonb_if_needed(JSONB) TO service_role;
 GRANT EXECUTE ON FUNCTION public.decrypt_sensitive_jsonb_if_needed(JSONB) TO service_role;
 GRANT EXECUTE ON FUNCTION public.current_professional_can_read_patient(UUID) TO service_role;
 GRANT EXECUTE ON FUNCTION public.current_professional_can_write_clinical_patient(UUID) TO service_role;
+GRANT EXECUTE ON FUNCTION public.backfill_google_calendar_tokens_encryption() TO service_role;
 
 GRANT EXECUTE ON FUNCTION public.get_patient_decrypted(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_patient_sessions_decrypted(UUID) TO authenticated;

@@ -5,6 +5,7 @@ import {
   GOOGLE_CALENDAR_OAUTH_NONCE_COOKIE,
   validateGoogleCalendarOAuthState,
 } from "@/lib/google/oauth-state";
+import { buildEncryptedGoogleTokenUpdate } from "@/lib/google/calendar-tokens";
 
 // This route handles the OAuth 2.0 callback from Google after the user
 // authorizes Nythos to access their Google Calendar.
@@ -108,17 +109,18 @@ export async function GET(request: Request) {
     }
 
     const tokenExpiry = new Date(Date.now() + expires_in * 1000).toISOString();
+    const encryptedTokenUpdate = await buildEncryptedGoogleTokenUpdate(admin, {
+      google_access_token: access_token,
+      // Only overwrite refresh_token if Google actually returned one.
+      // Google only returns it on first authorization or after "prompt=consent".
+      ...(refresh_token ? { google_refresh_token: refresh_token } : {}),
+      google_token_expiry: tokenExpiry,
+    });
 
     // Persist tokens in the user's profile using the admin client (bypasses RLS)
     const { error: updateError } = await admin
       .from("profiles")
-      .update({
-        google_access_token: access_token,
-        // Only overwrite refresh_token if Google actually returned one.
-        // Google only returns it on first authorization or after "prompt=consent".
-        ...(refresh_token ? { google_refresh_token: refresh_token } : {}),
-        google_token_expiry: tokenExpiry,
-      })
+      .update(encryptedTokenUpdate)
       .eq("id", validatedState.payload.userId);
 
     if (updateError) {
