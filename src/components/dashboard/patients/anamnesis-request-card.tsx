@@ -66,10 +66,7 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
     const [templatesRes, requestsRes] = await Promise.all([
       supabase.from("anamnesis_templates").select("*").eq("user_id", user.id).order("title"),
       supabase
-        .from("anamnesis_responses")
-        .select("*, anamnesis_templates(*)")
-        .eq("patient_id", patientId)
-        .order("created_at", { ascending: false })
+        .rpc("get_anamnesis_responses_decrypted", { p_patient_id: patientId })
     ]);
 
     if (!templatesRes.error) setTemplates(templatesRes.data || []);
@@ -107,15 +104,10 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
     
     try {
       const { data, error } = await supabase
-        .from("anamnesis_responses")
-        .insert({
-          template_id: selectedTemplate,
-          patient_id: patientId,
-          status: "pending",
-          responses: {}
-        })
-        .select()
-        .single();
+        .rpc("create_anamnesis_request_secure", {
+          p_patient_id: patientId,
+          p_template_id: selectedTemplate,
+        });
 
       if (error) {
         console.error("Erro ao criar solicitação:", error);
@@ -147,12 +139,10 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
 
     try {
       const { error } = await supabase
-        .from("anamnesis_responses")
-        .insert({
-          template_id: manualEntryTemplate.id,
-          patient_id: patientId,
-          status: "completed",
-          responses: manualResponses
+        .rpc("create_manual_anamnesis_response_secure", {
+          p_patient_id: patientId,
+          p_template_id: manualEntryTemplate.id,
+          p_responses: manualResponses,
         });
 
       if (error) throw error;

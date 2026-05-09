@@ -2,16 +2,13 @@ import { createClient } from "@/lib/supabase/client";
 import type { Session, CashFlow } from "@/types/database";
 import type { ServiceResponse } from "./types";
 
-const supabase = createClient();
+const supabase = createClient() as any;
 
 export const BillingService = {
   async getSessionsByPatient(patientId: string): Promise<ServiceResponse<Session[]>> {
     try {
       const { data, error } = await supabase
-        .from("sessions")
-        .select("*")
-        .eq("patient_id", patientId)
-        .order("scheduled_at", { ascending: false });
+        .rpc("get_patient_sessions_decrypted", { p_patient_id: patientId });
 
       if (error) throw error;
       return { data: data || [], error: null };
@@ -75,28 +72,21 @@ export const BillingService = {
     notes: string,
     moodHappy: number,
     moodAnxious: number
-  ): Promise<ServiceResponse<boolean>> {
+  ): Promise<ServiceResponse<Session>> {
     try {
-      const evolutionData = {
-        notes,
-        mood_happy_sad: moodHappy,
-        mood_anxious_calm: moodAnxious,
-        updated_at: new Date().toISOString()
-      };
-
-      const { error } = await supabase
-        .from("sessions")
-        .update({
-          status: "completed",
-          session_notes_encrypted: JSON.stringify(evolutionData)
-        })
-        .eq("id", sessionId);
+      const { data, error } = await supabase
+        .rpc("update_session_evolution_secure", {
+          p_session_id: sessionId,
+          p_notes: notes,
+          p_mood_happy_sad: moodHappy,
+          p_mood_anxious_calm: moodAnxious,
+        });
 
       if (error) throw error;
-      return { data: true, error: null };
+      return { data, error: null };
     } catch (err: any) {
       console.error(`Error in BillingService.updateSessionEvolution(${sessionId}):`, err);
-      return { data: false, error: err.message || "Erro ao salvar evolução da sessão." };
+      return { data: null, error: err.message || "Erro ao salvar evolução da sessão." };
     }
   },
 

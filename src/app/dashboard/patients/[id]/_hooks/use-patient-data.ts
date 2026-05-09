@@ -145,14 +145,10 @@ export function usePatientData() {
     if (!newNote.trim() || !patient) return;
     setSavingNote(true);
 
-    const existingNotes = patient.notes_encrypted || "";
-    const timestamp = new Date().toLocaleString("pt-BR");
-    const updatedNotes = `[${timestamp}]\n${newNote}\n\n---\n\n${existingNotes}`;
+    const { data, error } = await PatientService.updatePatientNotes(patient.id, newNote.trim());
 
-    const { error } = await PatientService.updatePatientNotes(patient.id, updatedNotes);
-
-    if (!error) {
-      setPatient({ ...patient, notes_encrypted: updatedNotes });
+    if (!error && data) {
+      setPatient(data);
       setNewNote("");
     }
     setSavingNote(false);
@@ -194,14 +190,7 @@ export function usePatientData() {
     setIsSaving(true);
 
     try {
-      const evolutionData = {
-        notes: sessionEditForm.notes,
-        mood_happy_sad: sessionEditForm.mood_happy_sad,
-        mood_anxious_calm: sessionEditForm.mood_anxious_calm,
-        updated_at: new Date().toISOString()
-      };
-
-      const { error } = await BillingService.updateSessionEvolution(
+      const { data: updatedSession, error } = await BillingService.updateSessionEvolution(
         viewingSession.id,
         sessionEditForm.notes,
         sessionEditForm.mood_happy_sad,
@@ -209,18 +198,17 @@ export function usePatientData() {
       );
 
       if (error) throw new Error(error);
+      if (!updatedSession) {
+        throw new Error("Erro ao carregar a evoluÃ§Ã£o salva.");
+      }
 
       setSessions(prev => prev.map(s => 
         s.id === viewingSession.id 
-          ? { ...s, status: "completed" as any, session_notes_encrypted: JSON.stringify(evolutionData) } 
+          ? updatedSession
           : s
       ));
       
-      setViewingSession({ 
-        ...viewingSession, 
-        status: "completed" as any, 
-        session_notes_encrypted: JSON.stringify(evolutionData) 
-      });
+      setViewingSession(updatedSession);
       
       setIsEditingSession(false);
       window.dispatchEvent(new CustomEvent("notifications:refresh"));

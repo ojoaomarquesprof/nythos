@@ -125,14 +125,14 @@ export function useScheduleData() {
     const [sessionsRes, patientsRes, profileRes] = await Promise.all([
       supabase
         .from("sessions")
-        .select("*, patient:patients(*)")
+        .select("id, user_id, patient_id, scheduled_at, duration_minutes, status, session_type, session_price, location, is_recurring, recurrence_rule, reminder_sent, google_event_id, created_at, updated_at, patient:patients(id, full_name, email, phone, session_price, status)")
         .eq("user_id", therapistId)
         .gte("scheduled_at", start.toISOString())
         .lt("scheduled_at", end.toISOString())
         .order("scheduled_at", { ascending: true }),
       supabase
         .from("patients")
-        .select("*")
+        .select("id, user_id, full_name, email, phone, cpf, date_of_birth, status, session_price, created_at, updated_at, access_token, auth_user_id")
         .eq("user_id", therapistId),
       supabase
         .from("profiles")

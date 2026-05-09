@@ -2,16 +2,13 @@ import { createClient } from "@/lib/supabase/client";
 import type { Patient, PatientTask, PatientUpdate } from "@/types/database";
 import type { ServiceResponse } from "./types";
 
-const supabase = createClient();
+const supabase = createClient() as any;
 
 export const PatientService = {
   async getById(id: string): Promise<ServiceResponse<Patient>> {
     try {
       const { data, error } = await supabase
-        .from("patients")
-        .select("*")
-        .eq("id", id)
-        .single();
+        .rpc("get_patient_decrypted", { p_patient_id: id });
 
       if (error) throw error;
       return { data, error: null };
@@ -56,11 +53,10 @@ export const PatientService = {
   async updatePatientNotes(id: string, updatedNotes: string): Promise<ServiceResponse<Patient>> {
     try {
       const { data, error } = await supabase
-        .from("patients")
-        .update({ notes_encrypted: updatedNotes })
-        .eq("id", id)
-        .select()
-        .single();
+        .rpc("append_patient_clinical_note", {
+          p_patient_id: id,
+          p_note: updatedNotes,
+        });
 
       if (error) throw error;
       return { data, error: null };
@@ -72,14 +68,22 @@ export const PatientService = {
 
   async updatePatient(id: string, data: PatientUpdate): Promise<ServiceResponse<Patient>> {
     try {
-      const { data: updated, error } = await supabase
+      const {
+        notes_encrypted: _notesEncrypted,
+        diagnosis_encrypted: _diagnosisEncrypted,
+        ...safeData
+      } = data;
+
+      const { error } = await supabase
         .from("patients")
-        .update(data)
-        .eq("id", id)
-        .select()
-        .single();
+        .update(safeData)
+        .eq("id", id);
 
       if (error) throw error;
+      const { data: updated, error: readError } = await supabase
+        .rpc("get_patient_decrypted", { p_patient_id: id });
+
+      if (readError) throw readError;
       return { data: updated, error: null };
     } catch (err: any) {
       console.error(`Error in PatientService.updatePatient(${id}):`, err);
@@ -142,8 +146,8 @@ export const PatientService = {
     try {
       const [networkRes, protocolsRes, behaviorRes] = await Promise.all([
         supabase.from("care_network").select("*").eq("patient_id", patientId).order("created_at", { ascending: false }),
-        supabase.from("patient_evaluations").select("*").eq("patient_id", patientId).order("evaluation_date", { ascending: false }),
-        supabase.from("abc_records").select("*").eq("patient_id", patientId).order("occurrence_date", { ascending: false })
+        supabase.rpc("get_patient_evaluations_decrypted", { p_patient_id: patientId }),
+        supabase.rpc("get_abc_records_decrypted", { p_patient_id: patientId })
       ]);
 
       if (networkRes.error) throw networkRes.error;

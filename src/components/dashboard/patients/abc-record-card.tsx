@@ -81,10 +81,7 @@ export function AbcRecordCard({
   async function fetchAbcRecords() {
     setLoading(true);
     const { data, error } = await supabase
-      .from("abc_records")
-      .select("*")
-      .eq("patient_id", patientId)
-      .order("occurrence_date", { ascending: false });
+      .rpc("get_abc_records_decrypted", { p_patient_id: patientId });
 
     if (!error && data) {
       setRecords(data);
@@ -97,17 +94,20 @@ export function AbcRecordCard({
     setSaving(true);
 
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) {
+      setSaving(false);
+      return;
+    }
 
-    const { error } = await supabase.from("abc_records").insert({
-      patient_id: patientId,
-      user_id: user.id,
-      occurrence_date: formData.date,
-      antecedent: formData.antecedent,
-      behavior: formData.behavior,
-      consequence: formData.consequence,
-      intensity: formData.intensity,
-      duration_minutes: formData.duration ? parseInt(formData.duration) : null,
+    const { error } = await supabase.rpc("create_abc_record_secure", {
+      p_patient_id: patientId,
+      p_occurrence_date: formData.date,
+      p_antecedent: formData.antecedent,
+      p_behavior: formData.behavior,
+      p_consequence: formData.consequence,
+      p_intensity: formData.intensity,
+      p_duration_minutes: formData.duration ? parseInt(formData.duration) : null,
+      p_session_id: null,
     });
 
     if (!error) {

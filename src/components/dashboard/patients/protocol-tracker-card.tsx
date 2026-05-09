@@ -100,10 +100,7 @@ export function ProtocolTrackerCard({
   async function fetchEvaluations() {
     setLoading(true);
     const { data, error } = await supabase
-      .from("patient_evaluations")
-      .select("*")
-      .eq("patient_id", patientId)
-      .order("evaluation_date", { ascending: false });
+      .rpc("get_patient_evaluations_decrypted", { p_patient_id: patientId });
 
     if (!error && data) {
       setEvaluations(data);
@@ -116,15 +113,18 @@ export function ProtocolTrackerCard({
     setSaving(true);
 
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) {
+      setSaving(false);
+      return;
+    }
 
-    const { error } = await supabase.from("patient_evaluations").insert({
-      patient_id: patientId,
-      user_id: user.id,
-      protocol_name: formData.protocol,
-      evaluation_date: formData.date,
-      score: formData.score || null,
-      status: formData.status,
+    const { error } = await supabase.rpc("create_patient_evaluation_secure", {
+      p_patient_id: patientId,
+      p_protocol_name: formData.protocol,
+      p_evaluation_date: formData.date,
+      p_score: formData.score || null,
+      p_status: formData.status,
+      p_notes: null,
     });
 
     if (!error) {

@@ -3,11 +3,12 @@
 // AES-GCM with PBKDF2 key derivation.
 //
 // SECURITY MODEL:
+//  - Do NOT use this module for clinical records or other health data.
+//  - Clinical data is encrypted in PostgreSQL through Supabase Vault.
 //  - No default key fallback. Key MUST be provided by the caller.
 //  - Salt is random per-operation (16 bytes), stored in the payload.
 //  - Payload format: [salt 16B] + [iv 12B] + [ciphertext]
-//  - Key should come from NEXT_PUBLIC_ENCRYPTION_KEY env var.
-//    Generate with: openssl rand -base64 32
+//  - Keys for sensitive data must never use NEXT_PUBLIC_* variables.
 // ============================================================
 
 const ENCRYPTION_PREFIX = "ENC::v2:";
@@ -16,8 +17,7 @@ function requireKey(key: string | undefined): string {
   if (!key || key.trim() === "") {
     throw new Error(
       "[nythos/crypto] Encryption key is required but was not provided. " +
-      "Set NEXT_PUBLIC_ENCRYPTION_KEY in your environment variables. " +
-      "Generate one with: openssl rand -base64 32"
+      "Do not use NEXT_PUBLIC_* variables for sensitive clinical data."
     );
   }
   return key;
@@ -26,7 +26,7 @@ function requireKey(key: string | undefined): string {
 /**
  * Encrypt sensitive text using AES-GCM with a random salt and IV per operation.
  * @param plainText  Text to encrypt.
- * @param key        Passphrase — must be provided (use NEXT_PUBLIC_ENCRYPTION_KEY).
+ * @param key        Passphrase provided by the caller. Do not use for clinical data.
  */
 export async function encryptText(plainText: string, key: string): Promise<string> {
   if (!plainText) return plainText;
