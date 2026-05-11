@@ -28,10 +28,10 @@ export function useCalendarSync(onSyncSuccess?: () => void) {
     const authResult = params.get("google_auth");
     if (authResult === "success") {
       setGoogleConnected(true);
-      setSyncBanner({ type: 'success', message: 'Google Calendar conectado com sucesso! Clique em "Sincronizar" para importar seus eventos.' });
+      setSyncBanner({ type: 'success', message: 'Google Calendar conectado. Sincronize para trazer seus bloqueios para a agenda.' });
       window.history.replaceState({}, '', window.location.pathname);
     } else if (authResult === "error") {
-      setSyncBanner({ type: 'error', message: 'Falha ao conectar o Google Calendar. Tente novamente.' });
+      setSyncBanner({ type: 'error', message: 'Não foi possível conectar o Google Calendar. Tente novamente.' });
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
@@ -49,10 +49,10 @@ export function useCalendarSync(onSyncSuccess?: () => void) {
       if (result.url) {
         window.location.href = result.url;
       } else {
-        setSyncBanner({ type: 'error', message: result.error ?? 'Erro ao iniciar conexão.' });
+        setSyncBanner({ type: 'error', message: result.error ?? 'Não foi possível iniciar a conexão com o Google.' });
       }
     } catch (err) {
-      setSyncBanner({ type: 'error', message: 'Erro inesperado ao conectar o Google.' });
+      setSyncBanner({ type: 'error', message: 'Não foi possível conectar ao Google agora.' });
     } finally {
       setConnecting(false);
     }
@@ -66,22 +66,22 @@ export function useCalendarSync(onSyncSuccess?: () => void) {
       setSyncResult(result);
       if (result.needsAuth) {
         setGoogleConnected(false);
-        setSyncBanner({ type: 'error', message: 'Sua sessão com o Google expirou. Reconecte sua conta.' });
+        setSyncBanner({ type: 'error', message: 'Sua conexão com o Google expirou. Reconecte sua conta.' });
       } else if (result.success) {
         const externalImported = result.externalImported ?? 0;
         const totalImported = result.imported + externalImported;
         setSyncBanner({
           type: 'success',
           message: totalImported > 0
-            ? `✅ ${result.imported} sessão(ões) e ${externalImported} bloqueio(s) do Google sincronizados.`
-            : '✅ Agenda atualizada — nenhum evento novo encontrado.',
+            ? `${result.imported} sessão(ões) e ${externalImported} bloqueio(s) do Google sincronizados.`
+            : 'Agenda atualizada. Nenhum evento novo encontrado.',
         });
         if (onSyncSuccess) onSyncSuccess();
       } else {
-        setSyncBanner({ type: 'error', message: result.error ?? 'Erro ao sincronizar.' });
+        setSyncBanner({ type: 'error', message: result.error ?? 'Não foi possível sincronizar o Google Calendar.' });
       }
     } catch (err: unknown) {
-      setSyncBanner({ type: 'error', message: (err instanceof Error ? err.message : undefined) ?? 'Erro inesperado na sincronização.' });
+      setSyncBanner({ type: 'error', message: (err instanceof Error ? err.message : undefined) ?? 'Não foi possível sincronizar agora.' });
     } finally {
       setSyncing(false);
     }
@@ -92,9 +92,9 @@ export function useCalendarSync(onSyncSuccess?: () => void) {
     const result = await disconnectGoogleCalendar();
     if (result.success) {
       setGoogleConnected(false);
-      setSyncBanner({ type: 'info', message: 'Google Calendar desconectado.' });
+      setSyncBanner({ type: 'info', message: 'Google Calendar desconectado da agenda.' });
     } else {
-      setSyncBanner({ type: 'error', message: result.error ?? 'Erro ao desconectar.' });
+      setSyncBanner({ type: 'error', message: result.error ?? 'Não foi possível desconectar o Google Calendar.' });
     }
   };
 
