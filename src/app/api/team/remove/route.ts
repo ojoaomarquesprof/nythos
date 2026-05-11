@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isValidUuid } from "@/lib/validation/input";
+import { logSafeError } from "@/lib/errors/safe-error";
 
 export async function DELETE(req: Request) {
   try {
@@ -72,7 +73,7 @@ export async function DELETE(req: Request) {
     const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(secretaryId);
 
     if (deleteError) {
-      console.error("[api/team/remove] Erro ao remover usuario no Auth:", deleteError);
+      logSafeError("[api/team/remove] Erro ao remover usuario no Auth", deleteError);
       return NextResponse.json({ error: "Nao foi possivel remover o acesso." }, { status: 500 });
     }
 
@@ -81,7 +82,7 @@ export async function DELETE(req: Request) {
       message: "Acesso removido com sucesso!",
     });
   } catch (error: any) {
-    console.error("[api/team/remove] Erro interno:", error);
+    logSafeError("[api/team/remove] Erro interno", error);
     return NextResponse.json({ error: "Erro interno ao remover membro da equipe." }, { status: 500 });
   }
 }

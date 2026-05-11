@@ -17,6 +17,7 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import type { Database } from "@/types/database";
 import { toInteger } from "@/lib/validation/input";
+import { logSafeError } from "@/lib/errors/safe-error";
 
 type SessionInsert = Database['public']['Tables']['sessions']['Insert'];
 
@@ -117,7 +118,7 @@ async function refreshGoogleToken(
     });
 
     if (!response.ok) {
-      console.error("[calendar-sync] Token refresh failed:", await response.text());
+      logSafeError("[calendar-sync] Token refresh failed", await response.text());
       return null;
     }
 
@@ -135,7 +136,7 @@ async function refreshGoogleToken(
 
     return newAccessToken;
   } catch (err) {
-    console.error("[calendar-sync] Error refreshing token:", err);
+    logSafeError("[calendar-sync] Error refreshing token", err);
     return null;
   }
 }
@@ -153,7 +154,7 @@ async function getValidAccessToken(
     try {
       accessToken = await decryptGoogleTokenIfNeeded(supabaseAdmin, accessToken);
     } catch (err) {
-      console.error("[calendar-sync] Failed to decrypt access token before Google call.", err);
+      logSafeError("[calendar-sync] Failed to decrypt access token before Google call", err);
       accessToken = null;
     }
   }
@@ -162,7 +163,7 @@ async function getValidAccessToken(
     try {
       refreshToken = await decryptGoogleTokenIfNeeded(supabaseAdmin, refreshToken);
     } catch (err) {
-      console.error("[calendar-sync] Failed to decrypt refresh token before token refresh.", err);
+      logSafeError("[calendar-sync] Failed to decrypt refresh token before token refresh", err);
       refreshToken = null;
     }
   }
@@ -215,7 +216,7 @@ export async function linkGoogleCalendar(): Promise<{ url?: string; error?: stri
   try {
     oauthState = createGoogleCalendarOAuthState(user.id);
   } catch (err) {
-    console.error("[calendar-sync] Failed to create Google OAuth state:", err);
+    logSafeError("[calendar-sync] Failed to create Google OAuth state", err);
     return { error: "Configuração de segurança do Google Calendar indisponível." };
   }
 
@@ -263,7 +264,7 @@ export async function disconnectGoogleCalendar(): Promise<{ success: boolean; er
     .eq("id", user.id);
 
   if (error) {
-    console.error("[calendar-sync] Failed to disconnect Google Calendar:", error);
+    logSafeError("[calendar-sync] Failed to disconnect Google Calendar", error);
     return { success: false, error: "Não foi possível desconectar o Google Calendar." };
   }
 
@@ -348,7 +349,7 @@ export async function syncGoogleCalendar(
       headers: { Authorization: `Bearer ${accessToken}` },
     });
   } catch (err) {
-    console.error("[calendar-sync] Failed to call Google Calendar API.", err);
+    logSafeError("[calendar-sync] Failed to call Google Calendar API", err);
     return {
       success: false,
       imported: 0,
@@ -359,7 +360,7 @@ export async function syncGoogleCalendar(
 
   if (!gcalResponse.ok) {
     const errText = await gcalResponse.text();
-    console.error("[calendar-sync] Google Calendar API error:", errText);
+    logSafeError("[calendar-sync] Google Calendar API error", errText);
     return {
       success: false,
       imported: 0,
@@ -435,7 +436,7 @@ export async function syncGoogleCalendar(
           .eq("user_id", user.id)
           .eq("google_event_id", event.id);
       } catch (err) {
-        console.error("[calendar-sync] Failed to remove cancelled external event:", err, event.id);
+        logSafeError("[calendar-sync] Failed to remove cancelled external event", err, { eventId: event.id });
       }
       skipped++;
       continue;
@@ -452,7 +453,7 @@ export async function syncGoogleCalendar(
           .eq("user_id", user.id)
           .eq("google_event_id", event.id);
       } catch (err) {
-        console.error("[calendar-sync] Failed to remove ignored external event:", err, event.id);
+        logSafeError("[calendar-sync] Failed to remove ignored external event", err, { eventId: event.id });
       }
       skipped++;
       continue;
@@ -503,7 +504,7 @@ export async function syncGoogleCalendar(
         if (externalUpsertError) throw externalUpsertError;
         externalImported++;
       } catch (externalErr) {
-        console.error("[calendar-sync] Failed to upsert external calendar block:", externalErr, event.id);
+        logSafeError("[calendar-sync] Failed to upsert external calendar block", externalErr, { eventId: event.id });
       }
 
       // Count as skipped from clinical import perspective (no session created).
@@ -536,7 +537,7 @@ export async function syncGoogleCalendar(
       existingTimes.add(timeKey);
       imported++;
     } catch (insertErr) {
-      console.error("[calendar-sync] Failed to insert session:", insertErr, sessionRecord);
+      logSafeError("[calendar-sync] Failed to insert session", insertErr, { eventId: event.id });
       skipped++;
     }
   }

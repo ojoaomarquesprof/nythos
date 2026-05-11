@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth/patient-access";
 import { clearPatientSession, createPatientSession } from "@/lib/auth/patient-session";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logSafeError } from "@/lib/errors/safe-error";
 import { isValidIsoDate, isValidPublicToken } from "@/lib/validation/input";
 
 export interface VerifyTokenResult {
@@ -53,7 +54,7 @@ export async function getPatientByToken(token: string): Promise<VerifyTokenResul
     const firstName = String(data.full_name ?? "").trim().split(" ")[0];
     return { success: true, firstName: firstName || undefined };
   } catch (err: any) {
-    console.error("getPatientByToken:", err);
+    logSafeError("getPatientByToken", err);
     return { success: false, error: "Erro ao verificar link. Tente novamente." };
   }
 }
@@ -110,7 +111,7 @@ export async function verifyPatientToken(
 
     await createPatientSession(patient.id);
   } catch (err: any) {
-    console.error("verifyPatientToken:", err);
+    logSafeError("verifyPatientToken", err);
     return { success: false, error: "Erro interno. Tente novamente em instantes." };
   }
 

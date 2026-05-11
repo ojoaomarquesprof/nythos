@@ -84,7 +84,6 @@ export default function PublicAnamnesisPage() {
       );
 
       if (resError) {
-        console.error("Erro RPC get_public_anamnesis_response:", resError);
         setError(mapPublicAnamnesisError(resError.message));
         setLoading(false);
         return;

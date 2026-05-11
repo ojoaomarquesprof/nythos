@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { Database } from "@/types/database";
+import { logSafeError } from "@/lib/errors/safe-error";
 import {
   hasOnlyAllowedKeys,
   isLikelyPhoneOrCpf,
@@ -270,11 +271,10 @@ export async function POST(request: Request) {
     });
 
     if (createError) {
-      console.error("[api/patients/create] Erro ao criar auth user:", createError);
+      logSafeError("[api/patients/create] Erro ao criar auth user", createError);
       return NextResponse.json(
         {
           error: "Não foi possível criar a conta de acesso do paciente.",
-          hint: "Verifique se o email já está em uso na plataforma.",
         },
         { status: 409 }
       );
@@ -309,7 +309,7 @@ export async function POST(request: Request) {
     .single();
 
   if (insertError || !newPatient) {
-    console.error("[api/patients/create] Erro ao inserir paciente:", insertError);
+    logSafeError("[api/patients/create] Erro ao inserir paciente", insertError);
     // Rollback manual: se criamos um auth user novo mas o INSERT falhou, remover o auth user
     if (!authUserAlreadyExisted) {
       await supabaseAdmin.auth.admin.deleteUser(authUserId).catch(console.error);
@@ -338,13 +338,13 @@ export async function POST(request: Request) {
       });
 
     if (guardianError) {
-      console.error("[api/patients/create] Erro ao inserir responsavel:", guardianError);
+      logSafeError("[api/patients/create] Erro ao inserir responsavel", guardianError);
       // service_role rollback is required because secretaries cannot delete employer-owned patients via RLS.
       const { error: rollbackError } = await supabaseAdmin
         .from("patients")
         .delete()
         .eq("id", newPatient.id);
-      if (rollbackError) console.error("[api/patients/create] Erro no rollback do paciente:", rollbackError);
+      if (rollbackError) logSafeError("[api/patients/create] Erro no rollback do paciente", rollbackError);
       if (!authUserAlreadyExisted) {
         await supabaseAdmin.auth.admin.deleteUser(authUserId).catch(console.error);
       }

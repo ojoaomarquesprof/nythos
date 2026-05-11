@@ -1,24 +1,31 @@
 import { createClient } from "@/lib/supabase/client";
+import { logSafeError, safeClientError } from "@/lib/errors/safe-error";
 import type { Session, CashFlow } from "@/types/database";
 import type { ServiceResponse } from "./types";
 
 const supabase = createClient() as any;
+const GENERIC_SERVICE_ERROR = safeClientError("Nao foi possivel concluir a operacao.");
 
 export const BillingService = {
   async getSessionsByPatient(patientId: string): Promise<ServiceResponse<Session[]>> {
     try {
-      const { data, error } = await supabase
-        .rpc("get_patient_sessions_decrypted", { p_patient_id: patientId });
+      const { data, error } = await supabase.rpc("get_patient_sessions_decrypted", {
+        p_patient_id: patientId,
+      });
 
       if (error) throw error;
       return { data: data || [], error: null };
     } catch (err: any) {
-      console.error(`Error in BillingService.getSessionsByPatient(${patientId}):`, err);
-      return { data: null, error: err.message || "Erro ao carregar sessões." };
+      logSafeError(`Error in BillingService.getSessionsByPatient(${patientId})`, err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
 
-  async getTherapistSessionsInRange(userId: string, start: Date, end: Date): Promise<ServiceResponse<any[]>> {
+  async getTherapistSessionsInRange(
+    userId: string,
+    start: Date,
+    end: Date
+  ): Promise<ServiceResponse<any[]>> {
     try {
       const { data: sessionsData, error: sessionsError } = await supabase
         .from("sessions")
@@ -51,8 +58,8 @@ export const BillingService = {
 
       return { data: [...(sessionsData || []), ...externalAsSessions], error: null };
     } catch (err: any) {
-      console.error(`Error in BillingService.getTherapistSessionsInRange(${userId}):`, err);
-      return { data: null, error: err.message || "Erro ao carregar agenda do terapeuta." };
+      logSafeError(`Error in BillingService.getTherapistSessionsInRange(${userId})`, err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -67,8 +74,8 @@ export const BillingService = {
       if (error) throw error;
       return { data: data || [], error: null };
     } catch (err: any) {
-      console.error(`Error in BillingService.getCashFlowBySessions():`, err);
-      return { data: null, error: err.message || "Erro ao carregar transações financeiras." };
+      logSafeError("Error in BillingService.getCashFlowBySessions()", err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -82,8 +89,8 @@ export const BillingService = {
       if (error) throw error;
       return { data: true, error: null };
     } catch (err: any) {
-      console.error(`Error in BillingService.updateSessionStatus(${sessionId}):`, err);
-      return { data: false, error: err.message || "Erro ao atualizar status da sessão." };
+      logSafeError(`Error in BillingService.updateSessionStatus(${sessionId})`, err);
+      return { data: false, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -94,19 +101,18 @@ export const BillingService = {
     moodAnxious: number
   ): Promise<ServiceResponse<Session>> {
     try {
-      const { data, error } = await supabase
-        .rpc("update_session_evolution_secure", {
-          p_session_id: sessionId,
-          p_notes: notes,
-          p_mood_happy_sad: moodHappy,
-          p_mood_anxious_calm: moodAnxious,
-        });
+      const { data, error } = await supabase.rpc("update_session_evolution_secure", {
+        p_session_id: sessionId,
+        p_notes: notes,
+        p_mood_happy_sad: moodHappy,
+        p_mood_anxious_calm: moodAnxious,
+      });
 
       if (error) throw error;
       return { data, error: null };
     } catch (err: any) {
-      console.error(`Error in BillingService.updateSessionEvolution(${sessionId}):`, err);
-      return { data: null, error: err.message || "Erro ao salvar evolução da sessão." };
+      logSafeError(`Error in BillingService.updateSessionEvolution(${sessionId})`, err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -117,7 +123,6 @@ export const BillingService = {
     durationMinutes: number
   ): Promise<ServiceResponse<boolean>> {
     try {
-      // Fetch +/- 4 hours around scheduledAt
       const startRange = new Date(scheduledAt.getTime() - 4 * 60 * 60 * 1000).toISOString();
       const endRange = new Date(scheduledAt.getTime() + 4 * 60 * 60 * 1000).toISOString();
 
@@ -137,7 +142,7 @@ export const BillingService = {
         const end = new Date(start.getTime() + (s.duration_minutes ?? 50) * 60000);
         const newStart = scheduledAt;
         const newEnd = new Date(newStart.getTime() + durationMinutes * 60000);
-        return (newStart < end && newEnd > start);
+        return newStart < end && newEnd > start;
       });
 
       if (hasConflict) return { data: true, error: null };
@@ -152,11 +157,10 @@ export const BillingService = {
         .gt("ends_at", newStartIso);
 
       if (externalConflictError) throw externalConflictError;
-
       return { data: (externalConflicts?.length ?? 0) > 0, error: null };
     } catch (err: any) {
-      console.error(`Error in BillingService.checkRescheduleConflicts():`, err);
-      return { data: null, error: err.message || "Erro ao checar conflitos de horários." };
+      logSafeError("Error in BillingService.checkRescheduleConflicts()", err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -166,15 +170,15 @@ export const BillingService = {
         .from("sessions")
         .update({
           scheduled_at: scheduledAt.toISOString(),
-          status: "scheduled"
+          status: "scheduled",
         })
         .eq("id", sessionId);
 
       if (error) throw error;
       return { data: true, error: null };
     } catch (err: any) {
-      console.error(`Error in BillingService.rescheduleSession(${sessionId}):`, err);
-      return { data: false, error: err.message || "Erro ao reagendar sessão." };
+      logSafeError(`Error in BillingService.rescheduleSession(${sessionId})`, err);
+      return { data: false, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -188,9 +192,7 @@ export const BillingService = {
       let query = supabase.from("sessions").update({ status: "cancelled" });
 
       if (allFollowing && recurrenceRule && scheduledAt) {
-        query = query
-          .eq("recurrence_rule", recurrenceRule)
-          .gte("scheduled_at", scheduledAt);
+        query = query.eq("recurrence_rule", recurrenceRule).gte("scheduled_at", scheduledAt);
       } else {
         query = query.eq("id", sessionId);
       }
@@ -199,8 +201,8 @@ export const BillingService = {
       if (error) throw error;
       return { data: true, error: null };
     } catch (err: any) {
-      console.error(`Error in BillingService.cancelSession(${sessionId}):`, err);
-      return { data: false, error: err.message || "Erro ao cancelar sessão." };
+      logSafeError(`Error in BillingService.cancelSession(${sessionId})`, err);
+      return { data: false, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -215,8 +217,8 @@ export const BillingService = {
       if (error) throw error;
       return { data: data || [], error: null };
     } catch (err: any) {
-      console.error("Error in BillingService.getTransactions:", err);
-      return { data: null, error: err.message || "Erro ao carregar transações." };
+      logSafeError("Error in BillingService.getTransactions()", err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -234,8 +236,8 @@ export const BillingService = {
       if (error) throw error;
       return { data: true, error: null };
     } catch (err: any) {
-      console.error(`Error in BillingService.confirmPayment(${id}):`, err);
-      return { data: false, error: err.message || "Erro ao confirmar pagamento." };
+      logSafeError(`Error in BillingService.confirmPayment(${id})`, err);
+      return { data: false, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -257,8 +259,8 @@ export const BillingService = {
       if (error) throw error;
       return { data: true, error: null };
     } catch (err: any) {
-      console.error("Error in BillingService.addExpense:", err);
-      return { data: false, error: err.message || "Erro ao registrar despesa." };
+      logSafeError("Error in BillingService.addExpense()", err);
+      return { data: false, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -307,24 +309,19 @@ export const BillingService = {
 
       return { data: last6Months, error: null };
     } catch (err: any) {
-      console.error("Error in BillingService.getFinancialEvolution:", err);
-      return { data: null, error: err.message || "Erro ao carregar evolução financeira." };
+      logSafeError("Error in BillingService.getFinancialEvolution()", err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
 
   async deleteTransaction(id: string): Promise<ServiceResponse<boolean>> {
     try {
-      const { error } = await supabase
-        .from("cash_flow")
-        .delete()
-        .eq("id", id);
-
+      const { error } = await supabase.from("cash_flow").delete().eq("id", id);
       if (error) throw error;
       return { data: true, error: null };
     } catch (err: any) {
-      console.error(`Error in BillingService.deleteTransaction(${id}):`, err);
-      return { data: false, error: err.message || "Erro ao excluir transação." };
+      logSafeError(`Error in BillingService.deleteTransaction(${id})`, err);
+      return { data: false, error: GENERIC_SERVICE_ERROR };
     }
-  }
+  },
 };
-

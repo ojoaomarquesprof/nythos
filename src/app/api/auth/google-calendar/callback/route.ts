@@ -6,6 +6,7 @@ import {
   validateGoogleCalendarOAuthState,
 } from "@/lib/google/oauth-state";
 import { buildEncryptedGoogleTokenUpdate } from "@/lib/google/calendar-tokens";
+import { logSafeError } from "@/lib/errors/safe-error";
 
 // This route handles the OAuth 2.0 callback from Google after the user
 // authorizes Nythos to access their Google Calendar.
@@ -41,23 +42,23 @@ export async function GET(request: Request) {
   try {
     validatedState = validateGoogleCalendarOAuthState(state, nonceCookie);
   } catch (err) {
-    console.error("[google-calendar/callback] OAuth state validation failed:", err);
+    logSafeError("[google-calendar/callback] OAuth state validation failed", err);
     return redirectToSchedule("error", "invalid_state");
   }
 
   if (!validatedState.ok) {
-    console.error("[google-calendar/callback] Invalid OAuth state:", validatedState.reason);
+    logSafeError("[google-calendar/callback] Invalid OAuth state", validatedState.reason);
     return redirectToSchedule("error", validatedState.reason);
   }
 
   // Handle user denial
   if (error) {
-    console.error("[google-calendar/callback] OAuth error:", error);
+    logSafeError("[google-calendar/callback] OAuth error", error);
     return redirectToSchedule("error", "google_denied");
   }
 
   if (!code) {
-    console.error("[google-calendar/callback] OAuth error: Missing code");
+    logSafeError("[google-calendar/callback] OAuth error: Missing code", "missing_code");
     return redirectToSchedule("error", "missing_code");
   }
 
@@ -72,7 +73,7 @@ export async function GET(request: Request) {
       .maybeSingle();
 
     if (profileError || !profile) {
-      console.error("[google-calendar/callback] State user not found:", profileError);
+      logSafeError("[google-calendar/callback] State user not found", profileError);
       return redirectToSchedule("error", "invalid_user");
     }
 
@@ -90,7 +91,7 @@ export async function GET(request: Request) {
 
     if (!tokenResponse.ok) {
       const errText = await tokenResponse.text();
-      console.error("[google-calendar/callback] Token exchange failed:", errText);
+      logSafeError("[google-calendar/callback] Token exchange failed", errText);
       return redirectToSchedule("error", "token_exchange_failed");
     }
 
@@ -125,14 +126,14 @@ export async function GET(request: Request) {
       .eq("id", validatedState.payload.userId);
 
     if (updateError) {
-      console.error("[google-calendar/callback] Failed to save tokens:", updateError);
+      logSafeError("[google-calendar/callback] Failed to save tokens", updateError);
       return redirectToSchedule("error", "save_failed");
     }
 
     // Redirect back to schedule page with success flag
     return redirectToSchedule("success");
   } catch (err) {
-    console.error("[google-calendar/callback] Unexpected error:", err);
+    logSafeError("[google-calendar/callback] Unexpected error", err);
     return redirectToSchedule("error", "unexpected");
   }
 }

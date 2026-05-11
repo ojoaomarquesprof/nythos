@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isPlatformAdmin } from '@/lib/auth/admin-authorization';
+import { logSafeError, safeClientError } from '@/lib/errors/safe-error';
 
 export async function POST(
   request: Request,
@@ -86,7 +87,7 @@ export async function POST(
 
     return NextResponse.json({ success: true, subscription: result.data });
   } catch (error: any) {
-    console.error('Admin subscription API error:', error);
-    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+    logSafeError('Admin subscription API error', error);
+    return NextResponse.json({ error: safeClientError('Não foi possível concluir a operação.') }, { status: 500 });
   }
 }

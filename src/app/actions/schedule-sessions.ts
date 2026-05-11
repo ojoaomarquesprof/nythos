@@ -16,6 +16,7 @@ import {
   toFiniteNumber,
   toInteger,
 } from "@/lib/validation/input";
+import { logSafeError } from "@/lib/errors/safe-error";
 
 export interface CreateSessionPayload {
   therapistId: string;
@@ -261,7 +262,7 @@ async function getValidAccessToken(
     try {
       accessToken = await decryptGoogleTokenIfNeeded(admin, accessToken);
     } catch (err) {
-      console.error("[schedule-sessions] Failed to decrypt access token before Google call.", err);
+      logSafeError("[schedule-sessions] Failed to decrypt access token before Google call", err);
       accessToken = null;
     }
   }
@@ -270,7 +271,7 @@ async function getValidAccessToken(
     try {
       refreshToken = await decryptGoogleTokenIfNeeded(admin, refreshToken);
     } catch (err) {
-      console.error("[schedule-sessions] Failed to decrypt refresh token before token refresh.", err);
+      logSafeError("[schedule-sessions] Failed to decrypt refresh token before token refresh", err);
       refreshToken = null;
     }
   }
@@ -382,7 +383,7 @@ export async function createScheduleSessions(
       .lt("scheduled_at", maxEnd.toISOString());
 
     if (existingSessionsError) {
-      console.error("[createScheduleSessions] Failed to load existing sessions:", existingSessionsError);
+      logSafeError("[createScheduleSessions] Failed to load existing sessions", existingSessionsError);
       return { success: false, error: "Não foi possível validar conflitos de agenda." };
     }
 
@@ -400,7 +401,7 @@ export async function createScheduleSessions(
       .gt("ends_at", minStart.toISOString());
 
     if (externalEventsError) {
-      console.error("[createScheduleSessions] Failed to load external events:", externalEventsError);
+      logSafeError("[createScheduleSessions] Failed to load external events", externalEventsError);
       return { success: false, error: "Não foi possível validar bloqueios externos da agenda." };
     }
 
@@ -444,7 +445,7 @@ export async function createScheduleSessions(
       .select("id, scheduled_at, duration_minutes, location, google_event_id");
 
     if (error || !createdSessions) {
-      console.error("[createScheduleSessions] Failed to create sessions:", error);
+      logSafeError("[createScheduleSessions] Failed to create sessions", error);
       return { success: false, error: "Falha ao salvar sessão." };
     }
 
@@ -534,7 +535,7 @@ export async function createScheduleSessions(
     revalidatePath("/dashboard/schedule");
     return { success: true, createdCount: rows.length, googleCreatedCount, warning };
   } catch (err: any) {
-    console.error("[createScheduleSessions] Unexpected error:", err);
+    logSafeError("[createScheduleSessions] Unexpected error", err);
     return { success: false, error: "Erro ao criar sessão." };
   }
 }
@@ -573,7 +574,7 @@ export async function cancelScheduleSession(
       .maybeSingle();
 
     if (sessionError) {
-      console.error("[cancelScheduleSession] Failed to load session:", sessionError);
+      logSafeError("[cancelScheduleSession] Failed to load session", sessionError);
       return { success: false, error: "Não foi possível carregar a sessão." };
     }
     if (!session) return { success: false, error: "Sessão não encontrada." };
@@ -591,7 +592,7 @@ export async function cancelScheduleSession(
         .eq("id", session.id);
 
       if (cancelError) {
-        console.error("[cancelScheduleSession] Failed to cancel session:", cancelError);
+        logSafeError("[cancelScheduleSession] Failed to cancel session", cancelError);
         return { success: false, error: "Não foi possível cancelar a sessão." };
       }
     }
@@ -649,7 +650,7 @@ export async function cancelScheduleSession(
     revalidatePath("/dashboard/schedule");
     return { success: true, warning };
   } catch (err: any) {
-    console.error("[cancelScheduleSession] Unexpected error:", err);
+    logSafeError("[cancelScheduleSession] Unexpected error", err);
     return { success: false, error: "Erro ao cancelar sessão." };
   }
 }

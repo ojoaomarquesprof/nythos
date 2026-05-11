@@ -5,6 +5,7 @@ import { getPatientAccessErrorMessage, getPatientAccessState } from "@/lib/auth/
 import { clearPatientSession, getPatientSessionDetails } from "@/lib/auth/patient-session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { logSafeError } from "@/lib/errors/safe-error";
 import type { EmotionDiary, PatientTask } from "@/types/database";
 import {
   hasOnlyAllowedKeys,
@@ -191,7 +192,7 @@ async function requirePatientId(): Promise<string> {
   }
 
   if (!isValidUuid(session.patientId)) {
-    throw new Error(`INVALID_SESSION: patient_id invalido no cookie: "${session.patientId}"`);
+    throw new Error("INVALID_SESSION: patient_id invalido no cookie.");
   }
 
   // service_role is scoped by the signed patient HMAC cookie; no Supabase auth session exists here.
@@ -227,7 +228,7 @@ export async function saveDiaryEntry(formData: {
   try {
     patientId = await requirePatientId();
   } catch (authErr: any) {
-    console.error("[saveDiaryEntry] Auth error:", authErr.message);
+    logSafeError("[saveDiaryEntry] Auth error", authErr);
     return { success: false, error: "Sessao invalida. Abra seu link de acesso." };
   }
 
@@ -266,14 +267,14 @@ export async function saveDiaryEntry(formData: {
       .single();
 
     if (error) {
-      console.error("[saveDiaryEntry] Supabase error:", error);
+      logSafeError("[saveDiaryEntry] Supabase error", error);
       return { success: false, error: "Não foi possível salvar o diário agora." };
     }
 
     revalidatePath("/patient/dashboard");
     return { success: true, id: entry?.id };
   } catch (err: any) {
-    console.error("[saveDiaryEntry] Exception:", err);
+    logSafeError("[saveDiaryEntry] Exception", err);
     return { success: false, error: "Erro inesperado ao salvar." };
   }
 }
@@ -286,7 +287,7 @@ export async function toggleTaskStatus(
   try {
     patientId = await requirePatientId();
   } catch (authErr: any) {
-    console.error("[toggleTaskStatus] Auth error:", authErr.message);
+    logSafeError("[toggleTaskStatus] Auth error", authErr);
     return { success: false, error: "Sessao invalida. Abra seu link de acesso." };
   }
 
@@ -313,7 +314,7 @@ export async function toggleTaskStatus(
       .select("id");
 
     if (error) {
-      console.error("[toggleTaskStatus] Supabase error:", error);
+      logSafeError("[toggleTaskStatus] Supabase error", error);
       return { success: false, error: "Não foi possível atualizar a tarefa." };
     }
 
@@ -324,7 +325,7 @@ export async function toggleTaskStatus(
     revalidatePath("/patient/dashboard");
     return { success: true, newStatus };
   } catch (err: any) {
-    console.error("[toggleTaskStatus] Exception:", err);
+    logSafeError("[toggleTaskStatus] Exception", err);
     return { success: false, error: "Erro ao atualizar tarefa." };
   }
 }
@@ -378,7 +379,7 @@ export async function getPatientEngagement(patientId: string): Promise<Engagemen
       },
     };
   } catch (err: any) {
-    console.error("[getPatientEngagement] Exception:", err);
+    logSafeError("[getPatientEngagement] Exception", err);
     return { success: false, error: "Erro ao buscar dados." };
   }
 }

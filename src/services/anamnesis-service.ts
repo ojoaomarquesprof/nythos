@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { logSafeError } from "@/lib/errors/safe-error";
 import type { ServiceResponse } from "./types";
 import { isValidUuid } from "@/lib/validation/input";
 
@@ -18,7 +19,7 @@ export const AnamnesisService = {
       const completed = (data || []).filter((response: any) => response.status === "completed");
       return { data: completed, error: null };
     } catch (err: any) {
-      console.error(`Error in AnamnesisService.getResponsesByPatient(${patientId}):`, err);
+      logSafeError(`Error in AnamnesisService.getResponsesByPatient(${patientId})`, err);
       return { data: null, error: "Erro ao carregar anamneses completadas." };
     }
   },
@@ -36,7 +37,7 @@ export const AnamnesisService = {
       if (error) throw error;
       return { data, error: null };
     } catch (err: any) {
-      console.error(`Error in AnamnesisService.revokePublicLink(${responseId}):`, err);
+      logSafeError(`Error in AnamnesisService.revokePublicLink(${responseId})`, err);
       return { data: null, error: "Erro ao revogar o link da anamnese." };
     }
   },
@@ -54,7 +55,7 @@ export const AnamnesisService = {
       if (error) throw error;
       return { data, error: null };
     } catch (err: any) {
-      console.error(`Error in AnamnesisService.regeneratePublicLink(${responseId}):`, err);
+      logSafeError(`Error in AnamnesisService.regeneratePublicLink(${responseId})`, err);
       return { data: null, error: "Erro ao regenerar o link da anamnese." };
     }
   },

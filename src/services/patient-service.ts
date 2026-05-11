@@ -1,20 +1,21 @@
 import { createClient } from "@/lib/supabase/client";
+import { logSafeError, safeClientError } from "@/lib/errors/safe-error";
 import type { Patient, PatientTask, PatientUpdate } from "@/types/database";
 import type { ServiceResponse } from "./types";
 
 const supabase = createClient() as any;
 
+const GENERIC_SERVICE_ERROR = safeClientError("Nao foi possivel concluir a operacao.");
+
 export const PatientService = {
   async getById(id: string): Promise<ServiceResponse<Patient>> {
     try {
-      const { data, error } = await supabase
-        .rpc("get_patient_decrypted", { p_patient_id: id });
-
+      const { data, error } = await supabase.rpc("get_patient_decrypted", { p_patient_id: id });
       if (error) throw error;
       return { data, error: null };
     } catch (err: any) {
-      console.error(`Error in PatientService.getById(${id}):`, err);
-      return { data: null, error: err.message || "Erro ao carregar o paciente." };
+      logSafeError(`Error in PatientService.getById(${id})`, err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -29,8 +30,8 @@ export const PatientService = {
       if (error) throw error;
       return { data, error: null };
     } catch (err: any) {
-      console.error(`Error in PatientService.getGuardian(${patientId}):`, err);
-      return { data: null, error: err.message || "Erro ao carregar o responsável." };
+      logSafeError(`Error in PatientService.getGuardian(${patientId})`, err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -45,24 +46,23 @@ export const PatientService = {
       if (error) throw error;
       return { data, error: null };
     } catch (err: any) {
-      console.error(`Error in PatientService.getTasks(${patientId}):`, err);
-      return { data: null, error: err.message || "Erro ao carregar as tarefas." };
+      logSafeError(`Error in PatientService.getTasks(${patientId})`, err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
 
   async updatePatientNotes(id: string, updatedNotes: string): Promise<ServiceResponse<Patient>> {
     try {
-      const { data, error } = await supabase
-        .rpc("append_patient_clinical_note", {
-          p_patient_id: id,
-          p_note: updatedNotes,
-        });
+      const { data, error } = await supabase.rpc("append_patient_clinical_note", {
+        p_patient_id: id,
+        p_note: updatedNotes,
+      });
 
       if (error) throw error;
       return { data, error: null };
     } catch (err: any) {
-      console.error(`Error in PatientService.updatePatientNotes(${id}):`, err);
-      return { data: null, error: err.message || "Erro ao atualizar o prontuário." };
+      logSafeError(`Error in PatientService.updatePatientNotes(${id})`, err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -80,14 +80,16 @@ export const PatientService = {
         .eq("id", id);
 
       if (error) throw error;
-      const { data: updated, error: readError } = await supabase
-        .rpc("get_patient_decrypted", { p_patient_id: id });
+
+      const { data: updated, error: readError } = await supabase.rpc("get_patient_decrypted", {
+        p_patient_id: id,
+      });
 
       if (readError) throw readError;
       return { data: updated, error: null };
     } catch (err: any) {
-      console.error(`Error in PatientService.updatePatient(${id}):`, err);
-      return { data: null, error: err.message || "Erro ao salvar as alterações do paciente." };
+      logSafeError(`Error in PatientService.updatePatient(${id})`, err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -107,19 +109,19 @@ export const PatientService = {
 
         if (error) throw error;
         return { data, error: null };
-      } else {
-        const { data, error } = await supabase
-          .from("patient_guardians")
-          .insert({ ...guardianData, patient_id: patientId })
-          .select()
-          .single();
-
-        if (error) throw error;
-        return { data, error: null };
       }
+
+      const { data, error } = await supabase
+        .from("patient_guardians")
+        .insert({ ...guardianData, patient_id: patientId })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { data, error: null };
     } catch (err: any) {
-      console.error(`Error in PatientService.createOrUpdateGuardian(${patientId}):`, err);
-      return { data: null, error: err.message || "Erro ao salvar o responsável." };
+      logSafeError(`Error in PatientService.createOrUpdateGuardian(${patientId})`, err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -133,8 +135,8 @@ export const PatientService = {
       if (error) throw error;
       return { data: true, error: null };
     } catch (err: any) {
-      console.error(`Error in PatientService.archivePatient(${id}):`, err);
-      return { data: false, error: err.message || "Erro ao arquivar o paciente." };
+      logSafeError(`Error in PatientService.archivePatient(${id})`, err);
+      return { data: false, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -147,8 +149,8 @@ export const PatientService = {
       if (error) throw error;
       return { data, error: null };
     } catch (err: any) {
-      console.error(`Error in PatientService.revokeAccessLink(${id}):`, err);
-      return { data: null, error: err.message || "Erro ao revogar o link do paciente." };
+      logSafeError(`Error in PatientService.revokeAccessLink(${id})`, err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
 
@@ -161,11 +163,11 @@ export const PatientService = {
       if (error) throw error;
       return { data, error: null };
     } catch (err: any) {
-      console.error(`Error in PatientService.regenerateAccessLink(${id}):`, err);
-      return { data: null, error: err.message || "Erro ao regenerar o link do paciente." };
+      logSafeError(`Error in PatientService.regenerateAccessLink(${id})`, err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
-  
+
   async getFullRecordData(patientId: string): Promise<ServiceResponse<{
     network: any[];
     protocols: any[];
@@ -173,9 +175,13 @@ export const PatientService = {
   }>> {
     try {
       const [networkRes, protocolsRes, behaviorRes] = await Promise.all([
-        supabase.from("care_network").select("*").eq("patient_id", patientId).order("created_at", { ascending: false }),
+        supabase
+          .from("care_network")
+          .select("*")
+          .eq("patient_id", patientId)
+          .order("created_at", { ascending: false }),
         supabase.rpc("get_patient_evaluations_decrypted", { p_patient_id: patientId }),
-        supabase.rpc("get_abc_records_decrypted", { p_patient_id: patientId })
+        supabase.rpc("get_abc_records_decrypted", { p_patient_id: patientId }),
       ]);
 
       if (networkRes.error) throw networkRes.error;
@@ -188,11 +194,11 @@ export const PatientService = {
           protocols: protocolsRes.data || [],
           behavior: behaviorRes.data || [],
         },
-        error: null
+        error: null,
       };
     } catch (err: any) {
-      console.error(`Error in PatientService.getFullRecordData(${patientId}):`, err);
-      return { data: null, error: err.message || "Erro ao exportar os dados do prontuário." };
+      logSafeError(`Error in PatientService.getFullRecordData(${patientId})`, err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
     }
-  }
+  },
 };

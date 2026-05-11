@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { hasOnlyAllowedKeys, isPlainObject, isValidEmail } from "@/lib/validation/input";
+import { logSafeError } from "@/lib/errors/safe-error";
 
 const ALLOWED_INVITE_KEYS = ["email", "password", "full_name"] as const;
 
@@ -83,7 +84,7 @@ export async function POST(req: Request) {
     });
 
     if (authError) {
-      console.error("[api/team/invite] Erro ao criar usuario no Auth:", authError);
+      logSafeError("[api/team/invite] Erro ao criar usuario no Auth", authError);
       return NextResponse.json({ error: "Nao foi possivel criar o usuario convidado." }, { status: 500 });
     }
 
@@ -102,7 +103,7 @@ export async function POST(req: Request) {
       .eq("id", newUser.user.id);
 
     if (profileError) {
-      console.error("[api/team/invite] Erro ao atualizar perfil da secretaria:", profileError);
+      logSafeError("[api/team/invite] Erro ao atualizar perfil da secretaria", profileError);
       return NextResponse.json(
         { error: "Usuario criado, mas nao foi possivel concluir a configuracao do perfil." },
         { status: 500 }
@@ -119,7 +120,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (error: any) {
-    console.error("[api/team/invite] Erro interno:", error);
+    logSafeError("[api/team/invite] Erro interno", error);
     return NextResponse.json({ error: "Erro interno ao processar convite." }, { status: 500 });
   }
 }

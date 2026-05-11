@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { logSafeError } from "@/lib/errors/safe-error";
 
 const ASAAS_BASE_URL =
   process.env.NODE_ENV === "production"
@@ -164,7 +165,7 @@ export async function POST(request: Request) {
 
     if (!subResult.ok) {
       const raw = subResult.data?.errors?.[0]?.description || subResult.data?.errors?.[0]?.code || "Recusado.";
-      console.error("[checkout] Asaas error:", subResult.data);
+      logSafeError("[checkout] Asaas error", subResult.data);
       return NextResponse.json({ error: friendlyCardError(raw) }, { status: 422 });
     }
 
@@ -191,7 +192,7 @@ export async function POST(request: Request) {
       message: `Assinatura ${plan.label} ativada!`,
     });
   } catch (error: any) {
-    console.error("[checkout] Erro inesperado:", error);
+    logSafeError("[checkout] Erro inesperado", error);
     return NextResponse.json({ error: "Erro interno. Tente novamente." }, { status: 500 });
   }
 }

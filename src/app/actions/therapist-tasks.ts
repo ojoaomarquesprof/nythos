@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { logSafeError, safeClientError } from "@/lib/errors/safe-error";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,26 @@ export interface TaskActionResult {
   success: boolean;
   taskId?: string;
   error?: string;
+}
+
+function getExpectedTaskErrorMessage(err: unknown): string | null {
+  if (!err || typeof err !== "object" || !("message" in err)) {
+    return null;
+  }
+
+  const message = typeof (err as { message?: unknown }).message === "string"
+    ? (err as { message: string }).message
+    : "";
+
+  if (message.startsWith("UNAUTHORIZED: ")) {
+    return message.replace("UNAUTHORIZED: ", "");
+  }
+
+  if (message.startsWith("FORBIDDEN: ")) {
+    return message.replace("FORBIDDEN: ", "");
+  }
+
+  return null;
 }
 
 // ─── Helper: resolve terapeuta logado ────────────────────────────────────────
@@ -103,17 +124,17 @@ export async function createPatientTask(
       .single();
 
     if (insertErr) {
-      console.error("[createPatientTask] Supabase error:", insertErr);
-      return { success: false, error: insertErr.message };
+      logSafeError("[createPatientTask] Supabase error", insertErr);
+      return { success: false, error: safeClientError("Não foi possível concluir a operação.") };
     }
 
     revalidatePath(`/dashboard/patients/${payload.patient_id}`);
     return { success: true, taskId: task?.id };
   } catch (err: any) {
-    console.error("[createPatientTask] Exception:", err);
+    logSafeError("[createPatientTask] Exception", err);
     return {
       success: false,
-      error: err?.message?.replace(/^(UNAUTHORIZED|FORBIDDEN): /, "") || "Erro ao criar tarefa.",
+      error: getExpectedTaskErrorMessage(err) || safeClientError("Não foi possível concluir a operação."),
     };
   }
 }
@@ -151,17 +172,17 @@ export async function deletePatientTask(
       .eq("patient_id", patientId);
 
     if (deleteErr) {
-      console.error("[deletePatientTask] Supabase error:", deleteErr);
-      return { success: false, error: deleteErr.message };
+      logSafeError("[deletePatientTask] Supabase error", deleteErr);
+      return { success: false, error: safeClientError("Não foi possível concluir a operação.") };
     }
 
     revalidatePath(`/dashboard/patients/${patientId}`);
     return { success: true };
   } catch (err: any) {
-    console.error("[deletePatientTask] Exception:", err);
+    logSafeError("[deletePatientTask] Exception", err);
     return {
       success: false,
-      error: err?.message?.replace(/^(UNAUTHORIZED|FORBIDDEN): /, "") || "Erro ao excluir tarefa.",
+      error: getExpectedTaskErrorMessage(err) || safeClientError("Não foi possível concluir a operação."),
     };
   }
 }
