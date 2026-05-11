@@ -8,12 +8,15 @@ import {
   GOOGLE_CALENDAR_OAUTH_STATE_MAX_AGE_SECONDS,
 } from "@/lib/google/oauth-state";
 import {
+  decryptGoogleTokenIfNeeded,
   decryptGoogleTokenFields,
+  isEncryptedGoogleToken,
   updateGoogleTokensEncrypted,
 } from "@/lib/google/calendar-tokens";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import type { Database } from "@/types/database";
+import { toInteger } from "@/lib/validation/input";
 
 type SessionInsert = Database['public']['Tables']['sessions']['Insert'];
 
@@ -143,7 +146,28 @@ async function getValidAccessToken(
   userId: string,
   profile: { google_access_token: string | null; google_refresh_token: string | null; google_token_expiry: string | null }
 ): Promise<string | null> {
-  if (!profile.google_access_token || !profile.google_refresh_token) {
+  let accessToken = profile.google_access_token;
+  let refreshToken = profile.google_refresh_token;
+
+  if (isEncryptedGoogleToken(accessToken)) {
+    try {
+      accessToken = await decryptGoogleTokenIfNeeded(supabaseAdmin, accessToken);
+    } catch (err) {
+      console.error("[calendar-sync] Failed to decrypt access token before Google call.", err);
+      accessToken = null;
+    }
+  }
+
+  if (isEncryptedGoogleToken(refreshToken)) {
+    try {
+      refreshToken = await decryptGoogleTokenIfNeeded(supabaseAdmin, refreshToken);
+    } catch (err) {
+      console.error("[calendar-sync] Failed to decrypt refresh token before token refresh.", err);
+      refreshToken = null;
+    }
+  }
+
+  if (!accessToken || !refreshToken) {
     return null;
   }
 
@@ -152,12 +176,12 @@ async function getValidAccessToken(
     const expiry = new Date(profile.google_token_expiry).getTime();
     const bufferMs = 5 * 60 * 1000;
     if (Date.now() + bufferMs < expiry) {
-      return profile.google_access_token;
+      return isEncryptedGoogleToken(accessToken) ? null : accessToken;
     }
   }
 
   // Token expired or no expiry info — refresh it
-  return await refreshGoogleToken(userId, profile.google_refresh_token);
+  return await refreshGoogleToken(userId, refreshToken);
 }
 
 // ─── Action: Check if Google Calendar is connected ──────────────────────────
@@ -238,7 +262,10 @@ export async function disconnectGoogleCalendar(): Promise<{ success: boolean; er
     })
     .eq("id", user.id);
 
-  if (error) return { success: false, error: error.message };
+  if (error) {
+    console.error("[calendar-sync] Failed to disconnect Google Calendar:", error);
+    return { success: false, error: "Não foi possível desconectar o Google Calendar." };
+  }
 
   revalidatePath("/dashboard/schedule");
   return { success: true };
@@ -249,6 +276,16 @@ export async function disconnectGoogleCalendar(): Promise<{ success: boolean; er
 export async function syncGoogleCalendar(
   daysAhead: number = 30
 ): Promise<CalendarSyncResult> {
+  const safeDaysAhead = toInteger(daysAhead);
+  if (safeDaysAhead === null || safeDaysAhead < 1 || safeDaysAhead > 90) {
+    return {
+      success: false,
+      imported: 0,
+      skipped: 0,
+      error: "Janela de sincronização inválida.",
+    };
+  }
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -280,7 +317,7 @@ export async function syncGoogleCalendar(
 
   // 2. Get valid access token (auto-refresh if needed)
   const accessToken = await getValidAccessToken(user.id, decryptedProfile);
-  if (!accessToken) {
+  if (!accessToken || isEncryptedGoogleToken(accessToken)) {
     return {
       success: false,
       imported: 0,
@@ -293,7 +330,7 @@ export async function syncGoogleCalendar(
   // 3. Fetch events from Google Calendar
   const calendarId = profile.google_calendar_id ?? "primary";
   const timeMin = new Date().toISOString();
-  const timeMax = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000).toISOString();
+  const timeMax = new Date(Date.now() + safeDaysAhead * 24 * 60 * 60 * 1000).toISOString();
 
   const gcalUrl = new URL(
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`
@@ -305,9 +342,20 @@ export async function syncGoogleCalendar(
   gcalUrl.searchParams.set("maxResults", "250");
   gcalUrl.searchParams.set("showDeleted", "true");
 
-  const gcalResponse = await fetch(gcalUrl.toString(), {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  let gcalResponse: Response;
+  try {
+    gcalResponse = await fetch(gcalUrl.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  } catch (err) {
+    console.error("[calendar-sync] Failed to call Google Calendar API.", err);
+    return {
+      success: false,
+      imported: 0,
+      skipped: 0,
+      error: "Erro ao comunicar com o Google Calendar.",
+    };
+  }
 
   if (!gcalResponse.ok) {
     const errText = await gcalResponse.text();
@@ -316,7 +364,7 @@ export async function syncGoogleCalendar(
       success: false,
       imported: 0,
       skipped: 0,
-      error: `Erro ao buscar eventos do Google: ${gcalResponse.status} ${gcalResponse.statusText}`,
+      error: "Erro ao buscar eventos do Google Calendar.",
     };
   }
 

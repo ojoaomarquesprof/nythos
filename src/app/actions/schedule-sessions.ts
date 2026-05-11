@@ -4,9 +4,18 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  decryptGoogleTokenIfNeeded,
   decryptGoogleTokenFields,
+  isEncryptedGoogleToken,
   updateGoogleTokensEncrypted,
 } from "@/lib/google/calendar-tokens";
+import {
+  hasOnlyAllowedKeys,
+  isPlainObject,
+  isValidUuid,
+  toFiniteNumber,
+  toInteger,
+} from "@/lib/validation/input";
 
 export interface CreateSessionPayload {
   therapistId: string;
@@ -54,6 +63,141 @@ type TimeInterval = {
   start: Date;
   end: Date;
 };
+
+const ALLOWED_CREATE_SESSION_KEYS = [
+  "therapistId",
+  "patientId",
+  "scheduledDate",
+  "scheduledTime",
+  "durationMinutes",
+  "sessionType",
+  "sessionPrice",
+  "location",
+  "isRecurring",
+  "recurrencePeriod",
+  "recurrenceCount",
+  "isIndefinite",
+] as const;
+
+const ALLOWED_SESSION_TYPES = new Set([
+  "individual",
+  "couple",
+  "group",
+  "online",
+  "initial_assessment",
+]);
+
+const ALLOWED_CANCEL_SESSION_KEYS = ["sessionId"] as const;
+
+type ValidatedCreatePayload = {
+  therapistId: string;
+  patientId: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  duration: number;
+  sessionType: string;
+  sessionPrice: number | null;
+  location: string;
+  isRecurring: boolean;
+  recurrencePeriod: "weekly" | "monthly";
+  recurrenceCount: number;
+  isIndefinite: boolean;
+};
+
+function parseCreatePayload(payload: CreateSessionPayload): { ok: true; value: ValidatedCreatePayload } | { ok: false; error: string } {
+  if (!isPlainObject(payload) || !hasOnlyAllowedKeys(payload, ALLOWED_CREATE_SESSION_KEYS)) {
+    return { ok: false, error: "Payload inválido para criação de sessão." };
+  }
+
+  if (!isValidUuid(payload.therapistId) || !isValidUuid(payload.patientId)) {
+    return { ok: false, error: "Identificadores inválidos para criação de sessão." };
+  }
+
+  const dateRaw = String(payload.scheduledDate ?? "").trim();
+  const timeRaw = String(payload.scheduledTime ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateRaw) || !/^\d{2}:\d{2}$/.test(timeRaw)) {
+    return { ok: false, error: "Data/horário inválidos." };
+  }
+
+  const [year, month, day] = dateRaw.split("-").map(Number);
+  const [hours, minutes] = timeRaw.split(":").map(Number);
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day) ||
+    !Number.isInteger(hours) ||
+    !Number.isInteger(minutes) ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return { ok: false, error: "Data/horário inválidos." };
+  }
+
+  const probeDate = new Date(year, month - 1, day, hours, minutes, 0);
+  if (Number.isNaN(probeDate.getTime())) {
+    return { ok: false, error: "Data/horário inválidos." };
+  }
+
+  const duration = toInteger(payload.durationMinutes) ?? 50;
+  if (duration <= 0 || duration > 480) {
+    return { ok: false, error: "Duração inválida." };
+  }
+
+  const price = toFiniteNumber(payload.sessionPrice);
+  if (payload.sessionPrice !== undefined && payload.sessionPrice !== null && (price === null || price < 0)) {
+    return { ok: false, error: "Preço de sessão inválido." };
+  }
+
+  const sessionType = String(payload.sessionType ?? "individual").trim();
+  if (!ALLOWED_SESSION_TYPES.has(sessionType)) {
+    return { ok: false, error: "Tipo de sessão inválido." };
+  }
+
+  const location = String(payload.location ?? "office").trim();
+  if (!location || location.length > 80) {
+    return { ok: false, error: "Local da sessão inválido." };
+  }
+
+  const isRecurring = !!payload.isRecurring;
+  const recurrencePeriod = payload.recurrencePeriod === "monthly" ? "monthly" : "weekly";
+  const recurrenceCount = Math.max(1, Math.min(toInteger(payload.recurrenceCount) ?? 4, 24));
+
+  return {
+    ok: true,
+    value: {
+      therapistId: payload.therapistId.trim(),
+      patientId: payload.patientId.trim(),
+      scheduledDate: dateRaw,
+      scheduledTime: timeRaw,
+      duration,
+      sessionType,
+      sessionPrice: price,
+      location,
+      isRecurring,
+      recurrencePeriod,
+      recurrenceCount,
+      isIndefinite: !!payload.isIndefinite,
+    },
+  };
+}
+
+function parseCancelPayload(payload: CancelSessionPayload): { ok: true; sessionId: string } | { ok: false; error: string } {
+  if (!isPlainObject(payload) || !hasOnlyAllowedKeys(payload, ALLOWED_CANCEL_SESSION_KEYS)) {
+    return { ok: false, error: "Payload inválido para cancelamento." };
+  }
+
+  if (!isValidUuid(payload.sessionId)) {
+    return { ok: false, error: "Sessão inválida." };
+  }
+
+  return { ok: true, sessionId: payload.sessionId.trim() };
+}
 
 function addPeriod(date: Date, period: "weekly" | "monthly"): Date {
   const next = new Date(date);
@@ -110,22 +254,49 @@ async function getValidAccessToken(
   therapistId: string,
   profile: TherapistGoogleProfile
 ): Promise<string | null> {
-  if (!profile.google_access_token || !profile.google_refresh_token) return null;
+  let accessToken = profile.google_access_token;
+  let refreshToken = profile.google_refresh_token;
+
+  if (isEncryptedGoogleToken(accessToken)) {
+    try {
+      accessToken = await decryptGoogleTokenIfNeeded(admin, accessToken);
+    } catch (err) {
+      console.error("[schedule-sessions] Failed to decrypt access token before Google call.", err);
+      accessToken = null;
+    }
+  }
+
+  if (isEncryptedGoogleToken(refreshToken)) {
+    try {
+      refreshToken = await decryptGoogleTokenIfNeeded(admin, refreshToken);
+    } catch (err) {
+      console.error("[schedule-sessions] Failed to decrypt refresh token before token refresh.", err);
+      refreshToken = null;
+    }
+  }
+
+  if (!accessToken || !refreshToken) return null;
 
   if (profile.google_token_expiry) {
     const expiryMs = new Date(profile.google_token_expiry).getTime();
     if (Date.now() + 5 * 60 * 1000 < expiryMs) {
-      return profile.google_access_token;
+      return isEncryptedGoogleToken(accessToken) ? null : accessToken;
     }
   }
 
-  return refreshGoogleToken(admin, therapistId, profile.google_refresh_token);
+  return refreshGoogleToken(admin, therapistId, refreshToken);
 }
 
 export async function createScheduleSessions(
   payload: CreateSessionPayload
 ): Promise<CreateSessionResult> {
   try {
+    const parsedPayload = parseCreatePayload(payload);
+    if (!parsedPayload.ok) {
+      return { success: false, error: parsedPayload.error };
+    }
+    const input = parsedPayload.value;
+
     const supabase = await createClient();
     const {
       data: { user },
@@ -135,36 +306,40 @@ export async function createScheduleSessions(
 
     const { data: actorProfile } = await supabase
       .from("profiles")
-      .select("id, employer_id")
+      .select("id, employer_id, role")
       .eq("id", user.id)
       .maybeSingle();
 
     if (!actorProfile) return { success: false, error: "Perfil nÃ£o encontrado." };
+    if (!["therapist", "admin", "secretary"].includes(actorProfile.role ?? "")) {
+      return { success: false, error: "Perfil sem permissÃ£o para agendar sessÃµes." };
+    }
 
+    const effectiveTherapistId = actorProfile.employer_id ?? actorProfile.id;
     const canWriteForTherapist =
-      actorProfile.id === payload.therapistId ||
-      actorProfile.employer_id === payload.therapistId;
+      actorProfile.id === input.therapistId ||
+      actorProfile.employer_id === input.therapistId;
 
     if (!canWriteForTherapist) {
       return { success: false, error: "VocÃª nÃ£o tem permissÃ£o para agendar nesta agenda." };
     }
 
-    if (!payload.patientId || !payload.scheduledDate || !payload.scheduledTime) {
-      return { success: false, error: "Paciente, data e horÃ¡rio sÃ£o obrigatÃ³rios." };
+    if (input.therapistId !== effectiveTherapistId) {
+      return { success: false, error: "VocÃª nÃ£o tem permissÃ£o para agendar nesta agenda." };
     }
 
-    const [year, month, day] = payload.scheduledDate.split("-").map(Number);
-    const [hours, minutes] = payload.scheduledTime.split(":").map(Number);
+    const [year, month, day] = input.scheduledDate.split("-").map(Number);
+    const [hours, minutes] = input.scheduledTime.split(":").map(Number);
     const baseDate = new Date(year, month - 1, day, hours, minutes, 0);
     if (Number.isNaN(baseDate.getTime())) {
       return { success: false, error: "Data/horÃ¡rio invÃ¡lido." };
     }
 
-    const duration = payload.durationMinutes && payload.durationMinutes > 0 ? payload.durationMinutes : 50;
-    const period = payload.recurrencePeriod === "monthly" ? "monthly" : "weekly";
-    const requestedCount = payload.recurrenceCount && payload.recurrenceCount > 0 ? payload.recurrenceCount : 4;
-    const seriesCount = payload.isRecurring ? (payload.isIndefinite ? 12 : Math.min(requestedCount, 24)) : 1;
-    const recurrenceRule = payload.isRecurring
+    const duration = input.duration;
+    const period = input.recurrencePeriod;
+    const requestedCount = input.recurrenceCount;
+    const seriesCount = input.isRecurring ? (input.isIndefinite ? 12 : Math.min(requestedCount, 24)) : 1;
+    const recurrenceRule = input.isRecurring
       ? `RRULE:FREQ=${period === "monthly" ? "MONTHLY" : "WEEKLY"};COUNT=${seriesCount}`
       : null;
 
@@ -176,15 +351,15 @@ export async function createScheduleSessions(
       const end = new Date(start.getTime() + duration * 60 * 1000);
 
       rows.push({
-        user_id: payload.therapistId,
-        patient_id: payload.patientId,
+        user_id: effectiveTherapistId,
+        patient_id: input.patientId,
         scheduled_at: start.toISOString(),
         duration_minutes: duration,
-        session_type: payload.sessionType || "individual",
-        session_price: payload.sessionPrice ?? null,
-        location: payload.location || "office",
-        status: "scheduled",
-        is_recurring: payload.isRecurring ? true : false,
+        session_type: input.sessionType,
+        session_price: input.sessionPrice,
+        location: input.location,
+        status: "scheduled" as const,
+        is_recurring: input.isRecurring ? true : false,
         recurrence_rule: recurrenceRule,
       });
 
@@ -202,12 +377,13 @@ export async function createScheduleSessions(
     const { data: existingSessions, error: existingSessionsError } = await supabase
       .from("sessions")
       .select("id, scheduled_at, duration_minutes, status")
-      .eq("user_id", payload.therapistId)
+      .eq("user_id", effectiveTherapistId)
       .neq("status", "cancelled")
       .lt("scheduled_at", maxEnd.toISOString());
 
     if (existingSessionsError) {
-      return { success: false, error: existingSessionsError.message };
+      console.error("[createScheduleSessions] Failed to load existing sessions:", existingSessionsError);
+      return { success: false, error: "Não foi possível validar conflitos de agenda." };
     }
 
     const sessionIntervals: TimeInterval[] = (existingSessions || []).map((s: any) => {
@@ -219,12 +395,13 @@ export async function createScheduleSessions(
     const { data: externalEvents, error: externalEventsError } = await (supabase as any)
       .from("external_calendar_events")
       .select("id, starts_at, ends_at")
-      .eq("user_id", payload.therapistId)
+      .eq("user_id", effectiveTherapistId)
       .lt("starts_at", maxEnd.toISOString())
       .gt("ends_at", minStart.toISOString());
 
     if (externalEventsError) {
-      return { success: false, error: externalEventsError.message };
+      console.error("[createScheduleSessions] Failed to load external events:", externalEventsError);
+      return { success: false, error: "Não foi possível validar bloqueios externos da agenda." };
     }
 
     const externalIntervals: TimeInterval[] = (externalEvents || []).map((e: any) => ({
@@ -249,33 +426,36 @@ export async function createScheduleSessions(
     const { data: patient } = await supabase
       .from("patients")
       .select("full_name")
-      .eq("id", payload.patientId)
-      .eq("user_id", payload.therapistId)
+      .eq("id", input.patientId)
+      .eq("user_id", effectiveTherapistId)
       .maybeSingle();
 
     if (!patient) {
       return { success: false, error: "Paciente invÃ¡lido para esta agenda." };
     }
 
-    const { data: createdSessions, error } = await supabase
+    const admin = createAdminClient();
+
+    // service_role is required only for sessions INSERT because the table trigger
+    // invokes encryption helpers that are intentionally not executable by authenticated.
+    const { data: createdSessions, error } = await admin
       .from("sessions")
       .insert(rows)
       .select("id, scheduled_at, duration_minutes, location, google_event_id");
 
     if (error || !createdSessions) {
-      return { success: false, error: error?.message || "Falha ao salvar sessÃ£o." };
+      console.error("[createScheduleSessions] Failed to create sessions:", error);
+      return { success: false, error: "Falha ao salvar sessão." };
     }
 
     let googleCreatedCount = 0;
     let warning: string | undefined;
 
-    const admin = createAdminClient();
-
     // service_role is needed only for encrypted Google token reads/decryption.
     const { data: therapistProfile } = await admin
       .from("profiles")
       .select("google_access_token, google_refresh_token, google_token_expiry, google_calendar_id, timezone, full_name")
-      .eq("id", payload.therapistId)
+      .eq("id", effectiveTherapistId)
       .maybeSingle();
 
     if (therapistProfile?.google_refresh_token) {
@@ -283,7 +463,7 @@ export async function createScheduleSessions(
         admin,
         therapistProfile as TherapistGoogleProfile
       );
-      const accessToken = await getValidAccessToken(admin, payload.therapistId, profile);
+      const accessToken = await getValidAccessToken(admin, effectiveTherapistId, profile);
 
       if (!accessToken) {
         warning = "SessÃµes criadas no Nythos, mas nÃ£o foi possÃ­vel autenticar no Google Calendar.";
@@ -354,7 +534,8 @@ export async function createScheduleSessions(
     revalidatePath("/dashboard/schedule");
     return { success: true, createdCount: rows.length, googleCreatedCount, warning };
   } catch (err: any) {
-    return { success: false, error: err?.message || "Erro ao criar sessÃ£o." };
+    console.error("[createScheduleSessions] Unexpected error:", err);
+    return { success: false, error: "Erro ao criar sessão." };
   }
 }
 
@@ -362,29 +543,39 @@ export async function cancelScheduleSession(
   payload: CancelSessionPayload
 ): Promise<CancelSessionResult> {
   try {
+    const parsedPayload = parseCancelPayload(payload);
+    if (!parsedPayload.ok) {
+      return { success: false, error: parsedPayload.error };
+    }
+
     const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (!user) return { success: false, error: "Sessão inválida." };
-    if (!payload.sessionId) return { success: false, error: "Sessão inválida." };
 
     const { data: actorProfile } = await supabase
       .from("profiles")
-      .select("id, employer_id")
+      .select("id, employer_id, role")
       .eq("id", user.id)
       .maybeSingle();
 
     if (!actorProfile) return { success: false, error: "Perfil não encontrado." };
+    if (!["therapist", "admin", "secretary"].includes(actorProfile.role ?? "")) {
+      return { success: false, error: "Perfil sem permissão para alterar sessões." };
+    }
 
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
       .select("id, user_id, status, google_event_id")
-      .eq("id", payload.sessionId)
+      .eq("id", parsedPayload.sessionId)
       .maybeSingle();
 
-    if (sessionError) return { success: false, error: sessionError.message };
+    if (sessionError) {
+      console.error("[cancelScheduleSession] Failed to load session:", sessionError);
+      return { success: false, error: "Não foi possível carregar a sessão." };
+    }
     if (!session) return { success: false, error: "Sessão não encontrada." };
 
     const canWriteForTherapist =
@@ -399,7 +590,10 @@ export async function cancelScheduleSession(
         .update({ status: "cancelled" })
         .eq("id", session.id);
 
-      if (cancelError) return { success: false, error: cancelError.message };
+      if (cancelError) {
+        console.error("[cancelScheduleSession] Failed to cancel session:", cancelError);
+        return { success: false, error: "Não foi possível cancelar a sessão." };
+      }
     }
 
     let warning: string | undefined;
@@ -455,7 +649,8 @@ export async function cancelScheduleSession(
     revalidatePath("/dashboard/schedule");
     return { success: true, warning };
   } catch (err: any) {
-    return { success: false, error: err?.message || "Erro ao cancelar sessão." };
+    console.error("[cancelScheduleSession] Unexpected error:", err);
+    return { success: false, error: "Erro ao cancelar sessão." };
   }
 }
 

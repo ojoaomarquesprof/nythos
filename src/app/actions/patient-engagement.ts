@@ -6,6 +6,12 @@ import { clearPatientSession, getPatientSessionDetails } from "@/lib/auth/patien
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { EmotionDiary, PatientTask } from "@/types/database";
+import {
+  hasOnlyAllowedKeys,
+  isPlainObject,
+  isValidUuid,
+  toFiniteNumber,
+} from "@/lib/validation/input";
 
 export interface ToggleTaskResult {
   success: boolean;
@@ -149,6 +155,15 @@ const ALLOWED_EMOTIONS = [
   "other",
 ];
 
+const ALLOWED_DIARY_KEYS = [
+  "emotion",
+  "intensity",
+  "context",
+  "notes",
+  "triggers",
+  "coping_strategy",
+] as const;
+
 function normalizeEmotion(input: string): { emotion: string; notesPrefix: string | null } {
   const trimmed = input.trim();
   const normalized = trimmed
@@ -175,8 +190,7 @@ async function requirePatientId(): Promise<string> {
     throw new Error("UNAUTHORIZED: Cookie de sessao ausente ou invalido.");
   }
 
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(session.patientId)) {
+  if (!isValidUuid(session.patientId)) {
     throw new Error(`INVALID_SESSION: patient_id invalido no cookie: "${session.patientId}"`);
   }
 
@@ -205,6 +219,10 @@ export async function saveDiaryEntry(formData: {
   triggers?: string;
   coping_strategy?: string;
 }): Promise<SaveDiaryResult> {
+  if (!isPlainObject(formData) || !hasOnlyAllowedKeys(formData, ALLOWED_DIARY_KEYS)) {
+    return { success: false, error: "Payload inválido do diário." };
+  }
+
   let patientId: string;
   try {
     patientId = await requirePatientId();
@@ -213,11 +231,15 @@ export async function saveDiaryEntry(formData: {
     return { success: false, error: "Sessao invalida. Abra seu link de acesso." };
   }
 
-  const rawEmotion = formData.emotion?.trim();
+  const rawEmotion = String(formData.emotion ?? "").trim();
   if (!rawEmotion) return { success: false, error: "Informe a emocao." };
 
   const { emotion, notesPrefix } = normalizeEmotion(rawEmotion);
-  const intensity = Math.min(10, Math.max(1, Number(formData.intensity) || 5));
+  const intensityRaw = toFiniteNumber(formData.intensity);
+  if (intensityRaw === null || intensityRaw < 1 || intensityRaw > 10) {
+    return { success: false, error: "Intensidade inválida." };
+  }
+  const intensity = Math.round(intensityRaw);
 
   let notes = formData.notes?.trim() || null;
   if (notesPrefix) {
@@ -245,17 +267,14 @@ export async function saveDiaryEntry(formData: {
 
     if (error) {
       console.error("[saveDiaryEntry] Supabase error:", error);
-      return {
-        success: false,
-        error: `Erro ao salvar: ${error.message}${error.hint ? ` (${error.hint})` : ""}`,
-      };
+      return { success: false, error: "Não foi possível salvar o diário agora." };
     }
 
     revalidatePath("/patient/dashboard");
     return { success: true, id: entry?.id };
   } catch (err: any) {
     console.error("[saveDiaryEntry] Exception:", err);
-    return { success: false, error: err?.message || "Erro inesperado ao salvar." };
+    return { success: false, error: "Erro inesperado ao salvar." };
   }
 }
 
@@ -271,7 +290,10 @@ export async function toggleTaskStatus(
     return { success: false, error: "Sessao invalida. Abra seu link de acesso." };
   }
 
-  if (!taskId) return { success: false, error: "ID de tarefa invalido." };
+  if (!isValidUuid(taskId)) return { success: false, error: "ID de tarefa invalido." };
+  if (!["pending", "in_progress", "completed"].includes(currentStatus)) {
+    return { success: false, error: "Status atual inválido da tarefa." };
+  }
 
   const isNowCompleted = currentStatus !== "completed";
   const newStatus = isNowCompleted ? "completed" : "pending";
@@ -292,7 +314,7 @@ export async function toggleTaskStatus(
 
     if (error) {
       console.error("[toggleTaskStatus] Supabase error:", error);
-      return { success: false, error: error.message };
+      return { success: false, error: "Não foi possível atualizar a tarefa." };
     }
 
     if (!updatedRows || updatedRows.length === 0) {
@@ -303,11 +325,15 @@ export async function toggleTaskStatus(
     return { success: true, newStatus };
   } catch (err: any) {
     console.error("[toggleTaskStatus] Exception:", err);
-    return { success: false, error: err?.message || "Erro ao atualizar tarefa." };
+    return { success: false, error: "Erro ao atualizar tarefa." };
   }
 }
 
 export async function getPatientEngagement(patientId: string): Promise<EngagementResult> {
+  if (!isValidUuid(patientId)) {
+    return { success: false, error: "Paciente inválido." };
+  }
+
   try {
     const supabase = await createClient();
     const {
@@ -353,6 +379,6 @@ export async function getPatientEngagement(patientId: string): Promise<Engagemen
     };
   } catch (err: any) {
     console.error("[getPatientEngagement] Exception:", err);
-    return { success: false, error: err?.message || "Erro ao buscar dados." };
+    return { success: false, error: "Erro ao buscar dados." };
   }
 }

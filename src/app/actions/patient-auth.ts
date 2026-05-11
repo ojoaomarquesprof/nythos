@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth/patient-access";
 import { clearPatientSession, createPatientSession } from "@/lib/auth/patient-session";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isValidIsoDate, isValidPublicToken } from "@/lib/validation/input";
 
 export interface VerifyTokenResult {
   success: boolean;
@@ -27,7 +28,7 @@ const PATIENT_ACCESS_SELECT =
  * returns the patient's first name for the greeting on /p/[token].
  */
 export async function getPatientByToken(token: string): Promise<VerifyTokenResult> {
-  if (!token || token.length < 8) {
+  if (!isValidPublicToken(token)) {
     return { success: false, error: "Link de acesso invalido." };
   }
 
@@ -69,8 +70,8 @@ export async function verifyPatientToken(
     return { success: false, error: "Preencha todos os campos." };
   }
 
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
-    return { success: false, error: "Formato de data invalido." };
+  if (!isValidPublicToken(token) || !isValidIsoDate(dateOfBirth)) {
+    return { success: false, error: "Dados de acesso invalidos." };
   }
 
   try {
@@ -92,20 +93,14 @@ export async function verifyPatientToken(
     }
 
     if (!patient.date_of_birth) {
-      return {
-        success: false,
-        error: "Data de nascimento nao cadastrada. Contate seu terapeuta.",
-      };
+      return { success: false, error: "Dados de acesso invalidos." };
     }
 
     const stored = String(patient.date_of_birth).slice(0, 10);
     const provided = dateOfBirth.trim();
 
     if (stored !== provided) {
-      return {
-        success: false,
-        error: "Data de nascimento incorreta. Verifique e tente novamente.",
-      };
+      return { success: false, error: "Dados de acesso invalidos." };
     }
 
     await admin

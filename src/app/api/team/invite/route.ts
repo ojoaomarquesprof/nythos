@@ -1,17 +1,41 @@
-import { NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
-import { supabaseAdmin } from '@/lib/supabase/admin';
+import { NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import { hasOnlyAllowedKeys, isPlainObject, isValidEmail } from "@/lib/validation/input";
+
+const ALLOWED_INVITE_KEYS = ["email", "password", "full_name"] as const;
 
 export async function POST(req: Request) {
   try {
-    const { email, password, full_name } = await req.json();
-
-    if (!email || !password || !full_name) {
-      return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 });
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Payload inválido" }, { status: 400 });
     }
 
-    // 1. Verificar se o solicitante é um psicólogo logado
+    if (!isPlainObject(rawBody) || !hasOnlyAllowedKeys(rawBody, ALLOWED_INVITE_KEYS)) {
+      return NextResponse.json({ error: "Payload inválido" }, { status: 400 });
+    }
+
+    const email = String(rawBody.email ?? "").trim().toLowerCase();
+    const password = String(rawBody.password ?? "");
+    const fullName = String(rawBody.full_name ?? "").trim();
+
+    if (!email || !password || !fullName) {
+      return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
+    }
+    if (!isValidEmail(email)) {
+      return NextResponse.json({ error: "Email inválido" }, { status: 422 });
+    }
+    if (password.length < 8 || password.length > 128) {
+      return NextResponse.json({ error: "Senha inválida" }, { status: 422 });
+    }
+    if (fullName.length < 2 || fullName.length > 180) {
+      return NextResponse.json({ error: "Nome inválido" }, { status: 422 });
+    }
+
     const cookieStore = await cookies();
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -25,78 +49,77 @@ export async function POST(req: Request) {
       }
     );
 
-    const { data: { user: therapist } } = await supabase.auth.getUser();
+    const {
+      data: { user: therapist },
+    } = await supabase.auth.getUser();
 
     if (!therapist) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
     }
 
-    // Opcional: Verificar se o solicitante já é uma secretária (não pode convidar outros)
-    const { data: therapistProfile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', therapist.id)
+    const { data: therapistProfile, error: therapistProfileError } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", therapist.id)
       .single();
 
-    if (!therapistProfile || !['therapist', 'admin'].includes(therapistProfile.role)) {
-      return NextResponse.json({ error: 'Sem permissao para convidar membros' }, { status: 403 });
+    if (
+      therapistProfileError ||
+      !therapistProfile ||
+      !["therapist", "admin"].includes(therapistProfile.role)
+    ) {
+      return NextResponse.json({ error: "Sem permissao para convidar membros" }, { status: 403 });
     }
 
-    // 2. Criar o novo usuário no Auth via Admin. service_role is required for Auth Admin provisioning.
     const { data: newUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
       user_metadata: {
-        full_name: full_name,
-        role: 'secretary',
-        employer_id: therapist.id
-      }
+        full_name: fullName,
+        role: "secretary",
+        employer_id: therapist.id,
+      },
     });
 
     if (authError) {
-      console.error('Erro ao criar usuário Auth:', authError);
-      return NextResponse.json({ error: authError.message }, { status: 500 });
+      console.error("[api/team/invite] Erro ao criar usuario no Auth:", authError);
+      return NextResponse.json({ error: "Nao foi possivel criar o usuario convidado." }, { status: 500 });
     }
 
     if (!newUser.user) {
-      return NextResponse.json({ error: 'Falha ao criar usuário' }, { status: 500 });
+      return NextResponse.json({ error: "Falha ao criar usuario" }, { status: 500 });
     }
 
-    // 3. Atualizar o perfil da nova secretária
-    // Como a tabela profiles é populada automaticamente via trigger (provavelmente),
-    // vamos usar o admin para forçar o papel e o vínculo.
-    // service_role is required to bind the newly created Auth user to the inviter's team.
     const { error: profileError } = await supabaseAdmin
-      .from('profiles')
+      .from("profiles")
       .update({
-        full_name: full_name,
-        email: email,
-        role: 'secretary',
+        full_name: fullName,
+        email,
+        role: "secretary",
         employer_id: therapist.id,
       })
-      .eq('id', newUser.user.id);
+      .eq("id", newUser.user.id);
 
     if (profileError) {
-      console.error('Erro ao atualizar perfil da secretária:', profileError);
-      return NextResponse.json({ 
-        error: 'Usuário criado, mas erro ao configurar perfil: ' + profileError.message 
-      }, { status: 500 });
+      console.error("[api/team/invite] Erro ao atualizar perfil da secretaria:", profileError);
+      return NextResponse.json(
+        { error: "Usuario criado, mas nao foi possivel concluir a configuracao do perfil." },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Secretária cadastrada e vinculada com sucesso!',
+    return NextResponse.json({
+      success: true,
+      message: "Secretaria cadastrada e vinculada com sucesso!",
       user: {
         id: newUser.user.id,
         email: newUser.user.email,
-        full_name
-      }
+        full_name: fullName,
+      },
     });
-
   } catch (error: any) {
-    console.error('Erro no convite de equipe:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[api/team/invite] Erro interno:", error);
+    return NextResponse.json({ error: "Erro interno ao processar convite." }, { status: 500 });
   }
 }
-

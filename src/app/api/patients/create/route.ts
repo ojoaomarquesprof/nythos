@@ -3,6 +3,14 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { Database } from "@/types/database";
+import {
+  hasOnlyAllowedKeys,
+  isLikelyPhoneOrCpf,
+  isPlainObject,
+  isValidEmail,
+  isValidIsoDate,
+  toFiniteNumber,
+} from "@/lib/validation/input";
 
 // ============================================================
 // Tipos do request e response
@@ -40,6 +48,33 @@ interface CreatePatientResponse {
   auth_user_already_existed: boolean;
   guardian_saved: boolean;
 }
+
+const ALLOWED_GENDERS = new Set(["male", "female", "other", "prefer_not_to_say"]);
+const ALLOWED_GUARDIAN_RELATIONSHIPS = new Set(["mother", "father", "grandparent", "other"]);
+const ROOT_ALLOWED_KEYS = [
+  "full_name",
+  "email",
+  "phone",
+  "cpf",
+  "date_of_birth",
+  "gender",
+  "emergency_contact_name",
+  "emergency_contact_phone",
+  "address",
+  "session_price",
+  "insurance_provider",
+  "insurance_number",
+  "send_invite",
+  "guardian",
+] as const;
+const GUARDIAN_ALLOWED_KEYS = [
+  "full_name",
+  "email",
+  "phone",
+  "cpf",
+  "relationship",
+  "is_financial_responsible",
+] as const;
 
 // ============================================================
 // POST /api/patients/create
@@ -141,20 +176,67 @@ export async function POST(request: Request) {
   }
 
   // ── 2. Validar e parsear o body ──
-  let body: CreatePatientRequest;
+  let rawBody: unknown;
   try {
-    body = await request.json();
+    rawBody = await request.json();
   } catch {
     return NextResponse.json({ error: "Body inválido." }, { status: 400 });
   }
 
+  if (!isPlainObject(rawBody) || !hasOnlyAllowedKeys(rawBody, ROOT_ALLOWED_KEYS)) {
+    return NextResponse.json({ error: "Payload inválido." }, { status: 400 });
+  }
+
+  const body = rawBody as unknown as CreatePatientRequest;
   const { full_name, email, guardian, ...patientFields } = body;
 
-  if (!full_name?.trim()) {
+  if (!full_name?.trim() || full_name.trim().length > 180) {
     return NextResponse.json({ error: "Nome completo é obrigatório." }, { status: 422 });
   }
-  if (!email?.trim() || !email.includes("@")) {
+  if (!isValidEmail(email)) {
     return NextResponse.json({ error: "Email inválido." }, { status: 422 });
+  }
+  if (patientFields.phone && !isLikelyPhoneOrCpf(patientFields.phone)) {
+    return NextResponse.json({ error: "Telefone inválido." }, { status: 422 });
+  }
+  if (patientFields.cpf && !isLikelyPhoneOrCpf(patientFields.cpf)) {
+    return NextResponse.json({ error: "CPF inválido." }, { status: 422 });
+  }
+  if (patientFields.date_of_birth && !isValidIsoDate(patientFields.date_of_birth)) {
+    return NextResponse.json({ error: "Data de nascimento inválida." }, { status: 422 });
+  }
+  if (patientFields.gender && !ALLOWED_GENDERS.has(patientFields.gender)) {
+    return NextResponse.json({ error: "Gênero inválido." }, { status: 422 });
+  }
+  const sessionPrice = toFiniteNumber(patientFields.session_price);
+  if (patientFields.session_price !== undefined && (sessionPrice === null || sessionPrice < 0)) {
+    return NextResponse.json({ error: "Preço de sessão inválido." }, { status: 422 });
+  }
+
+  if (guardian !== undefined) {
+    if (!isPlainObject(guardian) || !hasOnlyAllowedKeys(guardian, GUARDIAN_ALLOWED_KEYS)) {
+      return NextResponse.json({ error: "Dados de responsável inválidos." }, { status: 422 });
+    }
+    const hasGuardianName = !!guardian.full_name?.trim();
+    const hasGuardianSideData = !!(guardian.email || guardian.phone || guardian.cpf || guardian.relationship);
+    if (!hasGuardianName && hasGuardianSideData) {
+      return NextResponse.json({ error: "Nome do responsável é obrigatório." }, { status: 422 });
+    }
+    if (hasGuardianName && guardian.full_name!.trim().length > 180) {
+      return NextResponse.json({ error: "Nome do responsável inválido." }, { status: 422 });
+    }
+    if (guardian.email && !isValidEmail(guardian.email)) {
+      return NextResponse.json({ error: "Email do responsável inválido." }, { status: 422 });
+    }
+    if (guardian.phone && !isLikelyPhoneOrCpf(guardian.phone)) {
+      return NextResponse.json({ error: "Telefone do responsável inválido." }, { status: 422 });
+    }
+    if (guardian.cpf && !isLikelyPhoneOrCpf(guardian.cpf)) {
+      return NextResponse.json({ error: "CPF do responsável inválido." }, { status: 422 });
+    }
+    if (guardian.relationship && !ALLOWED_GUARDIAN_RELATIONSHIPS.has(guardian.relationship)) {
+      return NextResponse.json({ error: "Parentesco inválido do responsável." }, { status: 422 });
+    }
   }
 
   const normalizedEmail = email.trim().toLowerCase();
@@ -191,8 +273,8 @@ export async function POST(request: Request) {
       console.error("[api/patients/create] Erro ao criar auth user:", createError);
       return NextResponse.json(
         {
-          error: `Não foi possível criar a conta de acesso para o paciente: ${createError.message}`,
-          hint: "Verifique se este email já está cadastrado como terapeuta na plataforma.",
+          error: "Não foi possível criar a conta de acesso do paciente.",
+          hint: "Verifique se o email já está em uso na plataforma.",
         },
         { status: 409 }
       );
@@ -218,7 +300,7 @@ export async function POST(request: Request) {
       emergency_contact_name:   patientFields.emergency_contact_name ?? null,
       emergency_contact_phone:  patientFields.emergency_contact_phone ?? null,
       address:                  patientFields.address ?? null,
-      session_price:            patientFields.session_price ?? null,
+      session_price:            sessionPrice,
       insurance_provider:       patientFields.insurance_provider ?? null,
       insurance_number:         patientFields.insurance_number ?? null,
       status: "active",
@@ -233,7 +315,7 @@ export async function POST(request: Request) {
       await supabaseAdmin.auth.admin.deleteUser(authUserId).catch(console.error);
     }
     return NextResponse.json(
-      { error: "Erro ao salvar o paciente no banco de dados.", detail: insertError?.message },
+      { error: "Erro ao salvar o paciente no banco de dados." },
       { status: 500 }
     );
   }
@@ -267,7 +349,7 @@ export async function POST(request: Request) {
         await supabaseAdmin.auth.admin.deleteUser(authUserId).catch(console.error);
       }
       return NextResponse.json(
-        { error: "Erro ao salvar o responsavel do paciente.", detail: guardianError.message },
+        { error: "Erro ao salvar o responsável do paciente." },
         { status: 500 }
       );
     }

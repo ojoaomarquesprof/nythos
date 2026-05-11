@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
+import { isValidPublicToken } from "@/lib/validation/input";
 
 interface TemplateField {
   id: string;
@@ -53,6 +54,12 @@ function mapPublicAnamnesisError(errorCode?: string | null): string {
 export default function PublicAnamnesisPage() {
   const { id } = useParams();
   const supabase = createClient() as any;
+  const publicToken =
+    typeof id === "string"
+      ? id.trim()
+      : Array.isArray(id)
+        ? String(id[0] ?? "").trim()
+        : "";
 
   const [responseRecord, setResponseRecord] = useState<any>(null);
   const [template, setTemplate] = useState<any>(null);
@@ -65,11 +72,15 @@ export default function PublicAnamnesisPage() {
 
   useEffect(() => {
     async function loadData() {
-      if (!id) return;
+      if (!publicToken || !isValidPublicToken(publicToken)) {
+        setError("Link de anamnese indisponivel.");
+        setLoading(false);
+        return;
+      }
 
       const { data: publicData, error: resError } = await supabase.rpc(
         "get_public_anamnesis_response",
-        { p_public_token: id }
+        { p_public_token: publicToken }
       );
 
       if (resError) {
@@ -112,7 +123,7 @@ export default function PublicAnamnesisPage() {
     }
 
     loadData();
-  }, [id, supabase]);
+  }, [publicToken, supabase]);
 
   const handleInputChange = (fieldId: string, value: string) => {
     setResponses((prev) => ({ ...prev, [fieldId]: value }));
@@ -123,6 +134,12 @@ export default function PublicAnamnesisPage() {
     setSubmitting(true);
     setError(null);
 
+    if (!publicToken || !isValidPublicToken(publicToken)) {
+      setError("Link de anamnese indisponivel.");
+      setSubmitting(false);
+      return;
+    }
+
     const fields = (template?.fields ?? []) as TemplateField[];
     const missingFields = fields.filter((field) => field.required && !responses[field.id]);
     if (missingFields.length > 0) {
@@ -131,11 +148,19 @@ export default function PublicAnamnesisPage() {
       return;
     }
 
+    const safeResponses = Object.fromEntries(
+      fields.map((field) => {
+        const raw = responses[field.id];
+        const value = typeof raw === "string" ? raw.trim().slice(0, 4000) : "";
+        return [field.id, value];
+      })
+    );
+
     const { data: submitResult, error: submitError } = await supabase.rpc(
       "submit_public_anamnesis_response",
       {
-        p_public_token: id,
-        p_responses: responses,
+        p_public_token: publicToken,
+        p_responses: safeResponses,
       }
     );
 

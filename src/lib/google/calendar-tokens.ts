@@ -17,6 +17,10 @@ export type GoogleTokenUpdate = {
   google_token_expiry?: string | null;
 };
 
+export function isEncryptedGoogleToken(token: string | null | undefined): boolean {
+  return typeof token === "string" && token.trim().startsWith("ENC::");
+}
+
 export async function encryptGoogleTokenIfNeeded(
   admin: AdminClient,
   token: string | null | undefined
