@@ -54,8 +54,8 @@ export default function AdminPage() {
       if (!res.ok) throw new Error('Falha ao carregar usuários');
       const data = await res.json();
       setUsers(data);
-    } catch (error) {
-      console.error(error);
+    } catch {
+      console.error("[admin/page] Failed to load users");
       alert("Erro ao carregar usuários. Verifique se você tem permissão.");
     } finally {
       setLoading(false);
@@ -80,8 +80,8 @@ export default function AdminPage() {
       
       await loadUsers();
       setModalOpen(false);
-    } catch (error) {
-      console.error(error);
+    } catch {
+      console.error("[admin/page] Failed to update subscription");
       alert("Erro ao atualizar assinatura.");
     } finally {
       setActionLoading(false);

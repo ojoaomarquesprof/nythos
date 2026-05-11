@@ -20,7 +20,7 @@ export function usePdfExport() {
       await generateClinicalPdf(options);
       toast.success(successMessage);
     } catch (err: any) {
-      console.error("Erro ao gerar PDF:", err);
+      console.error("[use-pdf-export] Failed to generate PDF");
       setError(err);
       toast.error("Falha ao gerar o arquivo PDF. Tente novamente.");
     } finally {

@@ -133,14 +133,14 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
       });
 
       if (error) {
-        console.error("Erro ao criar solicitacao:", error);
+        console.error("[anamnesis-request-card] Failed to create request");
         alert(`Erro ao criar solicitacao: ${error.message}`);
       } else {
         await loadData();
         setSelectedTemplate("");
       }
-    } catch (err) {
-      console.error("Erro inesperado:", err);
+    } catch {
+      console.error("[anamnesis-request-card] Unexpected error while creating request");
       alert("Ocorreu um erro inesperado ao gerar o link.");
     } finally {
       setCreating(false);

@@ -105,7 +105,7 @@ export default function NewPatientPage() {
       router.push("/dashboard/patients");
       router.refresh();
     } catch (err: unknown) {
-      console.error("Caught error:", err);
+      console.error("[patients/new] Failed to submit patient form");
       setError(err instanceof Error ? err.message : "Erro desconhecido ao salvar o paciente.");
       setIsLoading(false);
     }

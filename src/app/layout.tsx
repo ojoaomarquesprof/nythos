@@ -78,8 +78,8 @@ export default function RootLayout({
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
                   navigator.serviceWorker.register('/sw.js')
-                    .then(function(reg) { console.log('[Nythos] SW registered:', reg.scope); })
-                    .catch(function(err) { console.log('[Nythos] SW registration failed:', err); });
+                    .then(function() { console.log('[Nythos] SW registered'); })
+                    .catch(function() { console.log('[Nythos] SW registration failed'); });
                 });
               }
             `,

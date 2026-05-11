@@ -23,8 +23,8 @@ export function useAuth() {
 
           setUser(profile);
         }
-      } catch (error) {
-        console.error("Error fetching profile:", error);
+      } catch {
+        console.error("[use-auth] Failed to fetch profile");
       } finally {
         setLoading(false);
       }

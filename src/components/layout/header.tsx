@@ -79,8 +79,8 @@ export function Header() {
 
       setPendingPaymentsCount(paymentsData.length);
       setNewAnamnesis(anamnesisData);
-    } catch (err) {
-      console.error("Erro ao carregar notificações:", err);
+    } catch {
+      console.error("[header] Failed to load notifications");
     }
   }, [supabase, profile]);
 

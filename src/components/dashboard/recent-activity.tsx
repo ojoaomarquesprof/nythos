@@ -185,8 +185,8 @@ export function RecentActivity() {
       // Sort all events by date descending and take top 6
       events.sort((a, b) => b.date.getTime() - a.date.getTime());
       setActivities(events.slice(0, 6));
-    } catch (error) {
-      console.error("Failed to load activities", error);
+    } catch {
+      console.error("[recent-activity] Failed to load activities");
     } finally {
       setLoading(false);
     }

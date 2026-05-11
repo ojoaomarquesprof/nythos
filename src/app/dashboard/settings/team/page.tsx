@@ -85,8 +85,8 @@ export default function TeamPage() {
         .eq('role', 'secretary');
 
       if (teamMembers) setMembers(teamMembers);
-    } catch (error) {
-      console.error("Erro ao carregar equipe:", error);
+    } catch {
+      console.error("[team/settings] Failed to load team data");
     } finally {
       setLoading(false);
     }

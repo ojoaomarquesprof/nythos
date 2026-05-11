@@ -39,8 +39,8 @@ export function usePushNotifications() {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
       setState((prev) => ({ ...prev, subscription }));
-    } catch (error) {
-      console.error("Error getting push subscription:", error);
+    } catch {
+      console.error("[use-push-notifications] Failed to get push subscription");
     }
   };
 
@@ -87,8 +87,8 @@ export function usePushNotifications() {
 
       setState((prev) => ({ ...prev, subscription, isLoading: false }));
       return subscription;
-    } catch (error) {
-      console.error("Error subscribing to push:", error);
+    } catch {
+      console.error("[use-push-notifications] Failed to subscribe to push");
       setState((prev) => ({ ...prev, isLoading: false }));
       return null;
     }
@@ -100,8 +100,8 @@ export function usePushNotifications() {
     try {
       await state.subscription.unsubscribe();
       setState((prev) => ({ ...prev, subscription: null }));
-    } catch (error) {
-      console.error("Error unsubscribing:", error);
+    } catch {
+      console.error("[use-push-notifications] Failed to unsubscribe from push");
     }
   }, [state.subscription]);
 

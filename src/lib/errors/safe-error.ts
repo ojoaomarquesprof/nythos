@@ -3,7 +3,8 @@ const DEFAULT_CLIENT_ERROR = "Não foi possível concluir a operação.";
 const SENSITIVE_PATTERNS: RegExp[] = [
   /Bearer\s+[A-Za-z0-9._~+/-]+=*/gi,
   /\b(ENC::)[A-Za-z0-9+/=:_-]+/gi,
-  /\b(access_token|refresh_token|public_token|hmac|cookie|secret|authorization)\b\s*[:=]\s*["']?[^"',\s}]+/gi,
+  /["']?\b(access_token|refresh_token|public_token|hmac|cookie|set-cookie|secret|authorization|x-api-key|api_key)\b["']?\s*[:=]\s*["']?[^"',\s}]+/gi,
+  /([?&](access_token|refresh_token|token|public_token)=)[^&\s]+/gi,
 ];
 
 export function safeClientError(message: string = DEFAULT_CLIENT_ERROR): string {
@@ -15,6 +16,10 @@ export function redactSensitiveText(text: string): string {
     (acc, pattern) => acc.replace(pattern, (match) => {
       if (match.startsWith("ENC::")) return "ENC::[REDACTED]";
       if (match.toLowerCase().startsWith("bearer ")) return "Bearer [REDACTED]";
+      if (/^[?&](access_token|refresh_token|token|public_token)=/i.test(match)) {
+        const [prefix] = match.split("=", 1);
+        return `${prefix}=[REDACTED]`;
+      }
       const [key] = match.split(/[:=]/, 1);
       return `${key}=[REDACTED]`;
     }),

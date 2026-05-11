@@ -48,8 +48,8 @@ export async function generateClinicalPdf(options: PdfOptions): Promise<void> {
   if (profile.clinic_logo_url) {
     try {
       logoBase64 = await getBase64ImageFromUrl(profile.clinic_logo_url);
-    } catch (e) {
-      console.warn("Failed to load clinic logo for PDF", e);
+    } catch {
+      console.warn("[pdf-generator] Failed to load clinic logo for PDF");
     }
   }
 
@@ -134,8 +134,8 @@ export async function createPdfDocument(options: PdfHeaderOptions) {
     try {
       const logoBase64 = await getBase64ImageFromUrl(profile.clinic_logo_url);
       doc.addImage(logoBase64, "PNG", margin, yPos - 5, 30, 30);
-    } catch (e) {
-      console.warn("Failed to load clinic logo for PDF", e);
+    } catch {
+      console.warn("[pdf-generator] Failed to load clinic logo for PDF");
     }
   }
 

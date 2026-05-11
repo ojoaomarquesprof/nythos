@@ -228,8 +228,8 @@ export default function FinancesPage() {
         const { getBase64ImageFromUrl } = await import('@/lib/pdf-generator');
         const sigBase64 = await getBase64ImageFromUrl(profile.signature_url);
         sigImage = { image: sigBase64, width: 150, alignment: 'center', margin: [0, 20, 0, 5] };
-      } catch (e) {
-        console.error("Erro ao carregar imagem da assinatura:", e);
+      } catch {
+        console.error("[finances] Failed to load signature image for receipt export");
       }
     }
 

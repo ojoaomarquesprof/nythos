@@ -23,8 +23,7 @@ async function fetchTrialHours(supabase: ReturnType<typeof createClient>): Promi
     if (error || !data?.value) {
       console.warn(
         "[use-subscription] Não foi possível carregar trial_duration_hours do banco. " +
-        `Usando fallback local: ${TRIAL_HOURS_FALLBACK}h.`,
-        error
+        `Usando fallback local: ${TRIAL_HOURS_FALLBACK}h.`
       );
       return TRIAL_HOURS_FALLBACK;
     }
@@ -125,8 +124,8 @@ export function useSubscription() {
           setHasSubscription(false);
           setIsTrial(false);
         }
-      } catch (error) {
-        console.error("[use-subscription] Erro ao verificar assinatura:", error);
+      } catch {
+        console.error("[use-subscription] Falha ao verificar assinatura");
         setHasSubscription(false);
       } finally {
         setLoading(false);
