@@ -2,29 +2,42 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Clock, MapPin, Video, MoreVertical } from "lucide-react";
+import { CalendarDays, ChevronRight, Clock, Video } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { SESSION_STATUS, formatTime } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
 import { useSubscription } from "@/hooks/use-subscription";
-import type { Session, Patient } from "@/types/database";
+import type { Patient, Session } from "@/types/database";
 
 const avatarColors = [
-  "bg-teal- text-teal-",
-  "bg-emerald-100 text-emerald-700",
-  "bg-rose-100 text-rose-700",
-  "bg-amber-100 text-amber-700",
-  "bg-sky-100 text-sky-700",
-  "bg-fuchsia-100 text-fuchsia-700",
+  "bg-primary/10 text-primary",
+  "bg-emerald-50 text-emerald-700",
+  "bg-rose-50 text-rose-700",
+  "bg-amber-50 text-amber-700",
+  "bg-sky-50 text-sky-700",
+  "bg-fuchsia-50 text-fuchsia-700",
 ];
+
+function getInitials(name?: string | null) {
+  if (!name) return "??";
+  return name
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
 
 export function UpcomingSessions() {
   const { therapistId } = useSubscription();
   const supabase = createClient();
   const [sessions, setSessions] = useState<(Session & { patient?: Patient })[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     if (therapistId) {
@@ -33,125 +46,153 @@ export function UpcomingSessions() {
   }, [therapistId]);
 
   async function loadSessions() {
-    const now = new Date();
-    const endOfDay = new Date(now);
-    endOfDay.setHours(23, 59, 59, 999);
+    setLoading(true);
+    setHasError(false);
 
-    // Get today's remaining sessions
-    const { data: sessionsData } = await supabase
-      .from("sessions")
-      .select("*")
-      .gte("scheduled_at", now.toISOString())
-      .lte("scheduled_at", endOfDay.toISOString())
-      .eq("status", "scheduled")
-      .order("scheduled_at")
-      .limit(5);
+    try {
+      const now = new Date();
+      const endOfDay = new Date(now);
+      endOfDay.setHours(23, 59, 59, 999);
 
-    if (sessionsData && sessionsData.length > 0) {
-      const patientIds = [...new Set(sessionsData.map((s: Session) => s.patient_id))];
-      const { data: patientsData } = await supabase
+      const { data: sessionsData, error } = await supabase
+        .from("sessions")
+        .select("*")
+        .gte("scheduled_at", now.toISOString())
+        .lte("scheduled_at", endOfDay.toISOString())
+        .eq("status", "scheduled")
+        .order("scheduled_at")
+        .limit(5);
+
+      if (error) throw error;
+
+      if (!sessionsData || sessionsData.length === 0) {
+        setSessions([]);
+        return;
+      }
+
+      const patientIds = [...new Set(sessionsData.map((session) => session.patient_id))];
+      const { data: patientsData, error: patientsError } = await supabase
         .from("patients")
         .select("*")
         .in("id", patientIds);
 
-      const enriched = sessionsData.map((s: Session) => ({
-        ...s,
-        patient: patientsData?.find((p: Patient) => p.id === s.patient_id),
-      }));
-      setSessions(enriched);
+      if (patientsError) throw patientsError;
+
+      setSessions(
+        sessionsData.map((session) => ({
+          ...session,
+          patient: patientsData?.find((patient) => patient.id === session.patient_id),
+        }))
+      );
+    } catch {
+      console.error("[upcoming-sessions] Failed to load sessions");
+      setHasError(true);
+      setSessions([]);
+    } finally {
+      setLoading(false);
     }
   }
 
   return (
-    <Card className="border-0 shadow-xl shadow-slate-200/40 bg-white/80 backdrop-blur-md rounded-[32px] overflow-hidden animate-fade-in delay-300">
-      <CardHeader className="pb-4 px-8 pt-8 border-b border-teal-/50">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-[11px] font-black text-teal-/40 uppercase tracking-[0.2em]">
-            Próximas Sessões
-          </CardTitle>
+    <Card className="animate-fade-in border-border/70 bg-card/95 py-0 shadow-[0_16px_42px_rgba(41,31,67,0.08)]">
+      <CardHeader className="border-b border-border/60 px-5 py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <CardTitle className="text-base font-semibold text-foreground">
+              Próximas sessões
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">O restante da agenda de hoje.</p>
+          </div>
           <Link
             href="/dashboard/schedule"
-            className="text-[10px] font-black text-teal- hover:text-teal- transition-colors uppercase tracking-widest bg-teal- px-4 py-2 rounded-full border border-teal-/50 shadow-sm active:scale-95 transition-all"
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "rounded-xl bg-white/80")}
           >
-            Ver Agenda
+            Ver agenda
+            <ChevronRight className="size-3.5" />
           </Link>
         </div>
       </CardHeader>
-      <CardContent className="p-8">
-        {sessions.length === 0 ? (
-          <div className="py-12 text-center">
-            <div className="w-16 h-16 bg-teal- rounded-3xl flex items-center justify-center mx-auto mb-4 border border-teal-/50 shadow-inner">
-              <Clock className="w-8 h-8 text-teal-" />
+      <CardContent className="p-3 md:p-4">
+        {loading ? (
+          <div className="space-y-3 p-2">
+            {[1, 2, 3].map((item) => (
+              <div key={item} className="flex items-center gap-3 rounded-2xl border border-border/50 p-3">
+                <div className="size-11 animate-pulse rounded-2xl bg-muted" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+                  <div className="h-3 w-28 animate-pulse rounded bg-muted" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : hasError ? (
+          <div className="flex min-h-44 flex-col items-center justify-center rounded-2xl border border-border/60 bg-muted/30 p-6 text-center">
+            <CalendarDays className="mb-3 size-8 text-muted-foreground" />
+            <p className="text-sm font-medium text-foreground">Agenda indisponível agora</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Tente atualizar a página em instantes.
+            </p>
+          </div>
+        ) : sessions.length === 0 ? (
+          <div className="flex min-h-44 flex-col items-center justify-center rounded-2xl border border-dashed border-primary/20 bg-primary/[0.03] p-6 text-center">
+            <div className="mb-3 flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Clock className="size-5" />
             </div>
-            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">
-              Sem sessões hoje
+            <p className="text-sm font-medium text-foreground">Sem sessões restantes hoje</p>
+            <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+              A agenda do dia está livre para evolução de prontuários ou planejamento.
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-2">
             {sessions.map((session, index) => {
               const statusConfig =
                 SESSION_STATUS[session.status as keyof typeof SESSION_STATUS] || SESSION_STATUS.scheduled;
-              const initials = session.patient?.full_name
-                ? session.patient.full_name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")
-                    .slice(0, 2)
-                    .toUpperCase()
-                : "??";
               const isOnline = session.session_type === "online";
 
               return (
                 <Link
                   key={session.id}
                   href={`/dashboard/patients/${session.patient_id}`}
-                  className="group flex items-center gap-4 p-4 rounded-[28px] hover:bg-teal-/40 transition-all duration-300 border border-transparent hover:border-teal-/30"
+                  className="group flex items-center gap-3 rounded-2xl border border-transparent p-3 transition-all hover:border-primary/15 hover:bg-primary/[0.03]"
                 >
-                  <Avatar className="w-14 h-14 flex-shrink-0 shadow-md group-hover:scale-105 transition-transform rounded-2xl">
+                  <Avatar className="size-11 shrink-0 rounded-2xl">
                     <AvatarFallback
-                      className={cn(
-                        "text-sm font-black",
-                        avatarColors[index % avatarColors.length]
-                      )}
+                      className={cn("rounded-2xl text-sm font-semibold", avatarColors[index % avatarColors.length])}
                     >
-                      {initials}
+                      {getInitials(session.patient?.full_name)}
                     </AvatarFallback>
                   </Avatar>
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <p className="text-base font-bold text-[#1e1b4b] truncate group-hover:text-teal- transition-colors">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-foreground">
                         {session.patient?.full_name || "Paciente"}
                       </p>
                       {isOnline && (
-                        <div className="w-6 h-6 rounded-lg bg-sky-100 text-sky-600 flex items-center justify-center shadow-sm">
-                          <Video className="w-3.5 h-3.5" />
-                        </div>
+                        <span className="flex size-6 items-center justify-center rounded-lg bg-sky-50 text-sky-700">
+                          <Video className="size-3.5" />
+                        </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="flex items-center gap-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                        <Clock className="w-3.5 h-3.5 text-teal-" />
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="size-3.5 text-primary" />
                         {formatTime(session.scheduled_at)}
                       </span>
-                      <span className="w-1 h-1 rounded-full bg-slate-200" />
-                      <span className="text-[10px] font-black text-teal- uppercase tracking-widest">
-                        {session.duration_minutes} min
-                      </span>
+                      {session.duration_minutes && (
+                        <>
+                          <span className="size-1 rounded-full bg-border" />
+                          <span>{session.duration_minutes} min</span>
+                        </>
+                      )}
                     </div>
                   </div>
 
-                  <div className="flex-shrink-0">
-                    <Badge
-                      className={cn(
-                        "rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-widest border-0 shadow-sm",
-                        statusConfig.color
-                      )}
-                    >
-                      {statusConfig.label}
-                    </Badge>
-                  </div>
+                  <Badge className={cn("hidden rounded-full border-0 px-2.5 py-1 text-xs sm:inline-flex", statusConfig.color)}>
+                    {statusConfig.label}
+                  </Badge>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
                 </Link>
               );
             })}

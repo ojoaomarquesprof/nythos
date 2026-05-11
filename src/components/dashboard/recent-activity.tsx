@@ -1,20 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  CheckCircle2,
-  UserPlus,
-  CreditCard,
-  FileText,
-  Calendar,
-  Wallet,
-  Clock,
-} from "lucide-react";
+import { Calendar, CheckCircle2, Clock, CreditCard, UserPlus, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useSubscription } from "@/hooks/use-subscription";
-import { formatCurrency, formatTime, formatDate } from "@/lib/constants";
+import { formatCurrency, formatDate, formatTime } from "@/lib/constants";
 import type { Patient } from "@/types/database";
 
 interface Activity {
@@ -29,6 +21,7 @@ interface Activity {
   date: Date;
   highlight?: string;
 }
+
 type RecentPatientRow = Pick<Patient, "id" | "full_name" | "created_at">;
 type RecentCashFlowRow = {
   id: string;
@@ -49,43 +42,43 @@ type RecentSessionRow = {
 const activityConfig = {
   session_completed: {
     icon: CheckCircle2,
-    color: "text-green-600",
-    bg: "bg-green-100",
+    color: "text-emerald-700",
+    bg: "bg-emerald-50 ring-emerald-100",
   },
   patient_added: {
     icon: UserPlus,
-    color: "text-teal-",
-    bg: "bg-teal-",
+    color: "text-primary",
+    bg: "bg-primary/10 ring-primary/15",
   },
   payment_received: {
     icon: CreditCard,
-    color: "text-emerald-600",
-    bg: "bg-emerald-100",
+    color: "text-emerald-700",
+    bg: "bg-emerald-50 ring-emerald-100",
   },
   expense_added: {
     icon: Wallet,
-    color: "text-red-600",
-    bg: "bg-red-100",
+    color: "text-rose-700",
+    bg: "bg-rose-50 ring-rose-100",
   },
   session_scheduled: {
     icon: Calendar,
-    color: "text-sky-600",
-    bg: "bg-sky-100",
+    color: "text-sky-700",
+    bg: "bg-sky-50 ring-sky-100",
   },
 };
 
 function getTimeAgo(date: Date) {
   const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
   let interval = seconds / 31536000;
-  if (interval > 1) return Math.floor(interval) + " anos atrás";
+  if (interval > 1) return `${Math.floor(interval)} anos atrás`;
   interval = seconds / 2592000;
-  if (interval > 1) return Math.floor(interval) + " meses atrás";
+  if (interval > 1) return `${Math.floor(interval)} meses atrás`;
   interval = seconds / 86400;
-  if (interval >= 1) return Math.floor(interval) + " dias atrás";
+  if (interval >= 1) return `${Math.floor(interval)} dias atrás`;
   interval = seconds / 3600;
-  if (interval >= 1) return "Há " + Math.floor(interval) + "h";
+  if (interval >= 1) return `Há ${Math.floor(interval)}h`;
   interval = seconds / 60;
-  if (interval >= 1) return "Há " + Math.floor(interval) + " min";
+  if (interval >= 1) return `Há ${Math.floor(interval)} min`;
   return "Agora mesmo";
 }
 
@@ -94,6 +87,7 @@ export function RecentActivity() {
   const supabase = createClient();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     if (therapistId) {
@@ -103,8 +97,9 @@ export function RecentActivity() {
 
   async function loadActivities() {
     setLoading(true);
+    setHasError(false);
+
     try {
-      // Fetch data in parallel
       const [sessionsRes, patientsRes, cashFlowRes] = await Promise.all([
         supabase
           .from("sessions")
@@ -123,168 +118,158 @@ export function RecentActivity() {
           .limit(10),
       ]);
 
+      if (sessionsRes.error || patientsRes.error || cashFlowRes.error) {
+        throw new Error("Failed to load activity");
+      }
+
       const events: Activity[] = [];
 
-      // Add Patients
-      if (patientsRes.data) {
-        patientsRes.data.forEach((p: RecentPatientRow) => {
+      (patientsRes.data || []).forEach((patient: RecentPatientRow) => {
+        events.push({
+          id: `p_${patient.id}`,
+          type: "patient_added",
+          description: `Novo paciente cadastrado: ${patient.full_name}`,
+          date: new Date(patient.created_at ?? new Date().toISOString()),
+        });
+      });
+
+      (cashFlowRes.data || []).forEach((cashFlow: RecentCashFlowRow) => {
+        if (cashFlow.status === "confirmed") {
           events.push({
-            id: `p_${p.id}`,
-            type: "patient_added",
-            description: `Novo paciente cadastrado: ${p.full_name}`,
-            date: new Date(p.created_at ?? new Date().toISOString()),
+            id: `cf_${cashFlow.id}`,
+            type: cashFlow.type === "income" ? "payment_received" : "expense_added",
+            description:
+              cashFlow.type === "income"
+                ? `Pagamento recebido: ${cashFlow.description}`
+                : `Despesa registrada: ${cashFlow.description}`,
+            date: new Date(cashFlow.created_at ?? new Date().toISOString()),
+            highlight: formatCurrency(Number(cashFlow.amount)),
           });
-        });
-      }
+        }
+      });
 
-      // Add Cash Flow
-      if (cashFlowRes.data) {
-        cashFlowRes.data.forEach((cf: RecentCashFlowRow) => {
-          if (cf.status === "confirmed") {
-            events.push({
-              id: `cf_${cf.id}`,
-              type: cf.type === "income" ? "payment_received" : "expense_added",
-              description:
-                cf.type === "income"
-                  ? `Pagamento recebido: ${cf.description}`
-                  : `Despesa registrada: ${cf.description}`,
-              date: new Date(cf.created_at ?? new Date().toISOString()),
-              highlight: formatCurrency(Number(cf.amount)),
-            });
-          }
-        });
-      }
-
-      // We need patient names for sessions
       const sessionPatientIds = [
-        ...new Set((sessionsRes.data || []).map((s: RecentSessionRow) => s.patient_id)),
+        ...new Set((sessionsRes.data || []).map((session: RecentSessionRow) => session.patient_id)),
       ];
       let sessionPatients: Array<Pick<Patient, "id" | "full_name">> = [];
+
       if (sessionPatientIds.length > 0) {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("patients")
           .select("id, full_name")
           .in("id", sessionPatientIds);
+
+        if (error) throw error;
         sessionPatients = data || [];
       }
 
-      // Add Sessions
-      if (sessionsRes.data) {
-        sessionsRes.data.forEach((s: RecentSessionRow) => {
-          const patientName =
-            sessionPatients.find((p: { id: string; full_name: string }) => p.id === s.patient_id)?.full_name ||
-            "Paciente";
+      (sessionsRes.data || []).forEach((session: RecentSessionRow) => {
+        const patientName =
+          sessionPatients.find((patient) => patient.id === session.patient_id)?.full_name ||
+          "Paciente";
 
-          if (s.status === "completed") {
-            events.push({
-              id: `s_comp_${s.id}`,
-              type: "session_completed",
-              description: `Sessão com ${patientName} finalizada`,
-              date: new Date(s.updated_at ?? new Date().toISOString()),
-              highlight: "Realizada",
-            });
-          } else if (s.status === "scheduled") {
-            events.push({
-              id: `s_sch_${s.id}`,
-              type: "session_scheduled",
-              description: `Sessão agendada com ${patientName}`,
-              date: new Date(s.updated_at ?? new Date().toISOString()), // Using updated_at to show when it was created/updated
-              highlight: `${formatDate(s.scheduled_at, {
-                day: "2-digit",
-                month: "short",
-              })}, ${formatTime(s.scheduled_at)}`,
-            });
-          }
-        });
-      }
+        if (session.status === "completed") {
+          events.push({
+            id: `s_comp_${session.id}`,
+            type: "session_completed",
+            description: `Sessão com ${patientName} finalizada`,
+            date: new Date(session.updated_at ?? new Date().toISOString()),
+            highlight: "Realizada",
+          });
+        } else if (session.status === "scheduled") {
+          events.push({
+            id: `s_sch_${session.id}`,
+            type: "session_scheduled",
+            description: `Sessão agendada com ${patientName}`,
+            date: new Date(session.updated_at ?? new Date().toISOString()),
+            highlight: `${formatDate(session.scheduled_at, {
+              day: "2-digit",
+              month: "short",
+            })}, ${formatTime(session.scheduled_at)}`,
+          });
+        }
+      });
 
-      // Sort all events by date descending and take top 6
       events.sort((a, b) => b.date.getTime() - a.date.getTime());
       setActivities(events.slice(0, 6));
     } catch {
       console.error("[recent-activity] Failed to load activities");
+      setHasError(true);
+      setActivities([]);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <Card className="border-0 shadow-xl shadow-slate-200/40 bg-white/80 backdrop-blur-md rounded-[32px] overflow-hidden animate-fade-in delay-400">
-      <CardHeader className="pb-4 px-8 pt-8 border-b border-teal-/50">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-[11px] font-black text-teal-/40 uppercase tracking-[0.2em]">
-            Linha do Tempo
-          </CardTitle>
-          <div className="w-8 h-8 rounded-xl bg-teal- text-teal- flex items-center justify-center shadow-inner">
-            <Clock className="w-4 h-4" />
+    <Card className="animate-fade-in border-border/70 bg-card/95 py-0 shadow-[0_16px_42px_rgba(41,31,67,0.08)]">
+      <CardHeader className="border-b border-border/60 px-5 py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <CardTitle className="text-base font-semibold text-foreground">
+              Linha do tempo
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">Movimentos recentes da prática.</p>
+          </div>
+          <div className="flex size-9 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15">
+            <Clock className="size-4" />
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-8">
+      <CardContent className="p-4">
         {loading ? (
-          <div className="space-y-6">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="flex gap-4 animate-pulse">
-                <div className="w-12 h-12 rounded-2xl bg-teal- flex-shrink-0" />
-                <div className="flex-1 space-y-2 py-2">
-                  <div className="h-4 bg-teal- rounded w-3/4" />
-                  <div className="h-3 bg-teal- rounded w-1/4" />
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {[1, 2, 3, 4, 5, 6].map((item) => (
+              <div key={item} className="flex gap-3 rounded-2xl border border-border/50 p-3">
+                <div className="size-10 animate-pulse rounded-xl bg-muted" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+                  <div className="h-3 w-24 animate-pulse rounded bg-muted" />
                 </div>
               </div>
             ))}
           </div>
+        ) : hasError ? (
+          <div className="rounded-2xl border border-border/60 bg-muted/30 p-5 text-sm text-muted-foreground">
+            Não foi possível carregar a linha do tempo agora.
+          </div>
         ) : activities.length === 0 ? (
-          <div className="py-12 text-center">
-            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">
-              Nenhuma atividade recente
+          <div className="rounded-2xl border border-dashed border-primary/20 bg-primary/[0.03] p-6 text-center">
+            <p className="text-sm font-medium text-foreground">Nenhuma atividade recente</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Os eventos aparecem aqui conforme a rotina clínica acontece.
             </p>
           </div>
         ) : (
-          <div className="relative">
-            {/* Subtle Timeline line */}
-            <div className="absolute left-[23px] top-6 bottom-6 w-0.5 bg-teal-/80" />
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {activities.map((activity) => {
+              const config = activityConfig[activity.type];
+              const Icon = config.icon;
 
-            <div className="space-y-6">
-              {activities.map((activity) => {
-                const config = activityConfig[activity.type];
-                const Icon = config.icon;
+              return (
+                <div
+                  key={activity.id}
+                  className="flex min-w-0 items-start gap-3 rounded-2xl border border-border/50 bg-white/60 p-3"
+                >
+                  <div className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl ring-1", config.bg)}>
+                    <Icon className={cn("size-4", config.color)} />
+                  </div>
 
-                return (
-                  <div
-                    key={activity.id}
-                    className="relative flex items-center gap-5 group"
-                  >
-                    {/* Premium Icon Container */}
-                    <div
-                      className={cn(
-                        "w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 z-10 shadow-md transition-all group-hover:scale-110",
-                        config.bg
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-foreground">{activity.description}</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>{getTimeAgo(activity.date)}</span>
+                      {activity.highlight && (
+                        <>
+                          <span className="size-1 rounded-full bg-border" />
+                          <span className="font-medium text-primary">{activity.highlight}</span>
+                        </>
                       )}
-                    >
-                      <Icon className={cn("w-5 h-5", config.color)} />
-                    </div>
-
-                    {/* Content Section */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-[#1e1b4b] truncate group-hover:text-teal- transition-colors">
-                        {activity.description}
-                      </p>
-                      <div className="flex items-center gap-3 mt-1">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                          {getTimeAgo(activity.date)}
-                        </span>
-                        {activity.highlight && (
-                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-teal-/50 text-[9px] font-black text-teal- uppercase tracking-widest border border-teal-/50">
-                            <span className="w-1 h-1 rounded-full bg-teal-" />
-                            {activity.highlight}
-                          </div>
-                        )}
-                      </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </CardContent>

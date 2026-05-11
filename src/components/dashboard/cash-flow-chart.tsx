@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { ChevronRight, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
 import { useSubscription } from "@/hooks/use-subscription";
@@ -14,11 +16,19 @@ interface MonthData {
   expenses: number;
 }
 
+type CashFlowChartRow = {
+  type: string;
+  amount: number;
+  status: string;
+};
+
 export function CashFlowChart() {
   const { therapistId } = useSubscription();
-  const supabase = createClient() as any;
+  const supabase = createClient();
   const [monthlyData, setMonthlyData] = useState<MonthData[]>([]);
   const [currentMonth, setCurrentMonth] = useState({ income: 0, expenses: 0 });
+  const [loading, setLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     if (therapistId) {
@@ -27,148 +37,177 @@ export function CashFlowChart() {
   }, [therapistId]);
 
   async function loadData() {
-    const now = new Date();
-    const months: MonthData[] = [];
+    setLoading(true);
+    setHasError(false);
 
-    for (let i = 3; i >= 0; i--) {
-      const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
-      const monthName = start.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
+    try {
+      const now = new Date();
+      const months: MonthData[] = [];
 
-      const { data } = await supabase
-        .from("cash_flow")
-        .select("type, amount, status")
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString())
-        .in("status", ["confirmed", "pending"]);
+      for (let i = 3; i >= 0; i--) {
+        const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
+        const monthName = start.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
 
-      const income = (data || [])
-        .filter((t: { type: string; amount: number }) => t.type === "income")
-        .reduce((sum: number, t: { amount: number }) => sum + Number(t.amount), 0);
-      const expenses = (data || [])
-        .filter((t: { type: string; amount: number }) => t.type === "expense")
-        .reduce((sum: number, t: { amount: number }) => sum + Number(t.amount), 0);
+        const { data, error } = await supabase
+          .from("cash_flow")
+          .select("type, amount, status")
+          .gte("created_at", start.toISOString())
+          .lte("created_at", end.toISOString())
+          .in("status", ["confirmed", "pending"]);
 
-      months.push({ month: monthName.charAt(0).toUpperCase() + monthName.slice(1), income, expenses });
-    }
+        if (error) throw error;
 
-    setMonthlyData(months);
-    if (months.length > 0) {
+        const rows = (data || []) as CashFlowChartRow[];
+        const income = rows
+          .filter((transaction) => transaction.type === "income")
+          .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+        const expenses = rows
+          .filter((transaction) => transaction.type === "expense")
+          .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+
+        months.push({
+          month: monthName.charAt(0).toUpperCase() + monthName.slice(1),
+          income,
+          expenses,
+        });
+      }
+
+      setMonthlyData(months);
       const last = months[months.length - 1];
-      setCurrentMonth({ income: last.income, expenses: last.expenses });
+      setCurrentMonth(last ? { income: last.income, expenses: last.expenses } : { income: 0, expenses: 0 });
+    } catch {
+      console.error("[cash-flow-chart] Failed to load cash flow");
+      setHasError(true);
+      setMonthlyData([]);
+      setCurrentMonth({ income: 0, expenses: 0 });
+    } finally {
+      setLoading(false);
     }
   }
 
-  const maxValue = Math.max(
-    ...monthlyData.flatMap((d) => [d.income, d.expenses]),
-    1
-  );
-  const profit = currentMonth.income - currentMonth.expenses;
+  const maxValue = Math.max(...monthlyData.flatMap((data) => [data.income, data.expenses]), 1);
+  const balance = currentMonth.income - currentMonth.expenses;
+  const hasFinancialData = monthlyData.some((data) => data.income > 0 || data.expenses > 0);
 
   return (
-    <Card className="border-0 shadow-xl shadow-slate-200/40 bg-white/80 backdrop-blur-md rounded-[32px] overflow-hidden animate-fade-in delay-500">
-      <CardHeader className="pb-4 px-8 pt-8 border-b border-teal-/50">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-[11px] font-black text-teal-/40 uppercase tracking-[0.2em]">
-            Fluxo de Caixa
-          </CardTitle>
+    <Card className="animate-fade-in border-border/70 bg-card/95 py-0 shadow-[0_16px_42px_rgba(41,31,67,0.08)]">
+      <CardHeader className="border-b border-border/60 px-5 py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <CardTitle className="text-base font-semibold text-foreground">
+              Financeiro
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">Entradas e saídas dos últimos meses.</p>
+          </div>
           <Link
             href="/dashboard/finances"
-            className="text-[10px] font-black text-teal- hover:text-teal- transition-colors uppercase tracking-widest bg-teal- px-4 py-2 rounded-full border border-teal-/50 shadow-sm active:scale-95 transition-all"
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "rounded-xl bg-white/80")}
           >
-            Ver Detalhes
+            Detalhes
+            <ChevronRight className="size-3.5" />
           </Link>
         </div>
       </CardHeader>
-      <CardContent className="p-8">
-        {/* Summary */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          <div className="text-center p-4 rounded-[24px] bg-emerald-50 border border-emerald-100/50 shadow-sm">
-            <p className="text-[9px] text-emerald-600 font-black uppercase tracking-widest">
-              Receita
-            </p>
-            <p className="text-sm font-bold text-emerald-700 mt-1">
-              {formatCurrency(currentMonth.income)}
+      <CardContent className="p-5">
+        {loading ? (
+          <div className="space-y-5">
+            <div className="grid grid-cols-3 gap-3">
+              {[1, 2, 3].map((item) => (
+                <div key={item} className="h-16 animate-pulse rounded-2xl bg-muted" />
+              ))}
+            </div>
+            <div className="h-28 animate-pulse rounded-2xl bg-muted" />
+          </div>
+        ) : hasError ? (
+          <div className="flex min-h-40 flex-col items-center justify-center rounded-2xl border border-border/60 bg-muted/30 p-5 text-center">
+            <Wallet className="mb-3 size-8 text-muted-foreground" />
+            <p className="text-sm font-medium text-foreground">Resumo financeiro indisponível</p>
+            <p className="mt-1 text-sm text-muted-foreground">Tente novamente em instantes.</p>
+          </div>
+        ) : !hasFinancialData ? (
+          <div className="flex min-h-40 flex-col items-center justify-center rounded-2xl border border-dashed border-primary/20 bg-primary/[0.03] p-5 text-center">
+            <div className="mb-3 flex size-10 items-center justify-center rounded-2xl bg-white text-primary shadow-sm">
+              <Wallet className="size-5" />
+            </div>
+            <p className="text-sm font-medium text-foreground">Sem lançamentos financeiros</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Quando houver entradas ou saídas, o resumo aparece aqui.
             </p>
           </div>
-          <div className="text-center p-4 rounded-[24px] bg-rose-50 border border-rose-100/50 shadow-sm">
-            <p className="text-[9px] text-rose-600 font-black uppercase tracking-widest">
-              Despesas
-            </p>
-            <p className="text-sm font-bold text-rose-700 mt-1">
-              {formatCurrency(currentMonth.expenses)}
-            </p>
-          </div>
-          <div className="text-center p-4 rounded-[24px] bg-teal- border border-teal-/50 shadow-sm">
-            <p className="text-[9px] text-teal- font-black uppercase tracking-widest">
-              Lucro
-            </p>
-            <p className="text-sm font-bold text-teal- mt-1">
-              {formatCurrency(profit)}
-            </p>
-          </div>
-        </div>
-
-        {/* Bar chart */}
-        <div className="flex items-end gap-3 h-32">
-          {monthlyData.map((data, index) => {
-            const incomeHeight = (data.income / maxValue) * 100;
-            const expenseHeight = (data.expenses / maxValue) * 100;
-            const isLast = index === monthlyData.length - 1;
-
-            return (
-              <div
-                key={data.month}
-                className="flex-1 flex flex-col items-center gap-2 group"
-              >
-                <div className="flex items-end gap-1 w-full h-24">
-                  <div className="flex-1 flex flex-col justify-end h-full">
-                    <div
-                      className={cn(
-                        "w-full rounded-t-xl transition-all duration-500 ease-out cursor-default",
-                        isLast ? "bg-emerald-500 shadow-lg shadow-emerald-500/20" : "bg-emerald-200/60"
-                      )}
-                      style={{ height: `${Math.max(incomeHeight, 5)}%` }}
-                      title={`Receita: ${formatCurrency(data.income)}`}
-                    />
-                  </div>
-                  <div className="flex-1 flex flex-col justify-end h-full">
-                    <div
-                      className={cn(
-                        "w-full rounded-t-xl transition-all duration-500 ease-out cursor-default",
-                        isLast ? "bg-rose-400 shadow-lg shadow-rose-400/20" : "bg-rose-200/60"
-                      )}
-                      style={{ height: `${Math.max(expenseHeight, 5)}%` }}
-                      title={`Despesa: ${formatCurrency(data.expenses)}`}
-                    />
-                  </div>
-                </div>
-                <span
-                  className={cn(
-                    "text-[10px] font-black uppercase tracking-widest",
-                    isLast
-                      ? "text-teal-"
-                      : "text-slate-300"
-                  )}
-                >
-                  {data.month}
-                </span>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3">
+                <p className="text-xs font-medium text-emerald-700">Entradas</p>
+                <p className="mt-1 truncate text-sm font-semibold text-emerald-800">
+                  {formatCurrency(currentMonth.income)}
+                </p>
               </div>
-            );
-          })}
-        </div>
+              <div className="rounded-2xl border border-rose-100 bg-rose-50/70 p-3">
+                <p className="text-xs font-medium text-rose-700">Saídas</p>
+                <p className="mt-1 truncate text-sm font-semibold text-rose-800">
+                  {formatCurrency(currentMonth.expenses)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-primary/10 bg-primary/[0.06] p-3">
+                <p className="text-xs font-medium text-primary">Saldo</p>
+                <p className="mt-1 truncate text-sm font-semibold text-foreground">
+                  {formatCurrency(balance)}
+                </p>
+              </div>
+            </div>
 
-        {/* Legend */}
-        <div className="flex items-center justify-center gap-6 mt-6">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-400" />
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Receitas</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-rose-300" />
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Despesas</span>
-          </div>
-        </div>
+            <div className="mt-5 flex h-28 items-end gap-3">
+              {monthlyData.map((data, index) => {
+                const incomeHeight = (data.income / maxValue) * 100;
+                const expenseHeight = (data.expenses / maxValue) * 100;
+                const isLast = index === monthlyData.length - 1;
+
+                return (
+                  <div key={data.month} className="flex flex-1 flex-col items-center gap-2">
+                    <div className="flex h-20 w-full items-end gap-1">
+                      <div className="flex h-full flex-1 items-end">
+                        <div
+                          className={cn(
+                            "w-full rounded-t-lg transition-all duration-500",
+                            isLast ? "bg-emerald-500" : "bg-emerald-200"
+                          )}
+                          style={{ height: `${Math.max(incomeHeight, data.income > 0 ? 6 : 0)}%` }}
+                          title={`Entradas: ${formatCurrency(data.income)}`}
+                        />
+                      </div>
+                      <div className="flex h-full flex-1 items-end">
+                        <div
+                          className={cn(
+                            "w-full rounded-t-lg transition-all duration-500",
+                            isLast ? "bg-rose-400" : "bg-rose-200"
+                          )}
+                          style={{ height: `${Math.max(expenseHeight, data.expenses > 0 ? 6 : 0)}%` }}
+                          title={`Saídas: ${formatCurrency(data.expenses)}`}
+                        />
+                      </div>
+                    </div>
+                    <span className={cn("text-xs font-medium", isLast ? "text-foreground" : "text-muted-foreground")}>
+                      {data.month}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 flex items-center justify-center gap-5 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-2">
+                <span className="size-2 rounded-full bg-emerald-400" />
+                Entradas
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <span className="size-2 rounded-full bg-rose-300" />
+                Saídas
+              </span>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

@@ -2,6 +2,8 @@ import { StatsCards } from "@/components/dashboard/stats-cards";
 import { UpcomingSessions } from "@/components/dashboard/upcoming-sessions";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { CashFlowChart } from "@/components/dashboard/cash-flow-chart";
+import { DashboardWorklist } from "@/components/dashboard/dashboard-worklist";
+import { DashboardHero } from "@/components/dashboard/dashboard-hero";
 
 export const metadata = {
   title: "Dashboard",
@@ -9,30 +11,20 @@ export const metadata = {
 
 export default function DashboardPage() {
   return (
-    <div className="px-4 py-5 md:px-6 md:py-6 space-y-5 md:space-y-6 max-w-7xl mx-auto w-full">
-      {/* Quick date context */}
-      <div className="animate-fade-in">
-        <p className="text-sm text-muted-foreground">
-          {new Date().toLocaleDateString("pt-BR", {
-            weekday: "long",
-            day: "numeric",
-            month: "long",
-            year: "numeric",
-          })}
-        </p>
-      </div>
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 md:gap-5 md:px-6 md:py-5">
+      <DashboardHero />
 
-      {/* Stats Cards */}
       <StatsCards />
 
-      {/* Main grid: Sessions + Activity + Chart */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)] md:gap-5">
         <UpcomingSessions />
         <div className="space-y-4 md:space-y-5">
+          <DashboardWorklist />
           <CashFlowChart />
-          <RecentActivity />
         </div>
       </div>
+
+      <RecentActivity />
     </div>
   );
 }

@@ -1,15 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  CalendarDays,
-  Users,
-  Wallet,
-  Clock,
-  TrendingUp,
-  TrendingDown,
-  type LucideIcon,
-} from "lucide-react";
+import { CalendarDays, Clock, type LucideIcon, Users, Wallet } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -20,65 +12,54 @@ import type { Session } from "@/types/database";
 interface StatCardProps {
   title: string;
   value: string | number;
-  subtitle?: string;
+  subtitle: string;
   icon: LucideIcon;
-  trend?: { value: number; label: string };
-  gradientClass: string;
-  delay?: string;
+  tone: "violet" | "mint" | "amber" | "rose";
+  loading?: boolean;
 }
 
-function StatCard({
-  title,
-  value,
-  subtitle,
-  icon: Icon,
-  trend,
-  gradientClass,
-  delay = "",
-}: StatCardProps) {
-  const colorMap: Record<string, { bg: string, text: string, shadow: string, border: string }> = {
-    "gradient-primary": { bg: "bg-teal-500", text: "text-teal-600", shadow: "shadow-teal-500/20", border: "border-teal-500/20" },
-    "gradient-sage": { bg: "bg-emerald-500", text: "text-emerald-600", shadow: "shadow-emerald-500/20", border: "border-emerald-500/20" },
-    "gradient-warm": { bg: "bg-amber-500", text: "text-amber-600", shadow: "shadow-amber-500/20", border: "border-amber-500/20" },
-    "gradient-rose": { bg: "bg-rose-500", text: "text-rose-600", shadow: "shadow-rose-500/20", border: "border-rose-500/20" },
-  };
+const toneClasses = {
+  violet: {
+    icon: "bg-primary/10 text-primary ring-primary/15",
+    dot: "bg-primary",
+  },
+  mint: {
+    icon: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    dot: "bg-emerald-500",
+  },
+  amber: {
+    icon: "bg-amber-50 text-amber-700 ring-amber-200",
+    dot: "bg-amber-500",
+  },
+  rose: {
+    icon: "bg-rose-50 text-rose-700 ring-rose-200",
+    dot: "bg-rose-500",
+  },
+} satisfies Record<StatCardProps["tone"], { icon: string; dot: string }>;
 
-  const colors = colorMap[gradientClass] || colorMap["gradient-primary"];
+function StatCard({ title, value, subtitle, icon: Icon, tone, loading }: StatCardProps) {
+  const colors = toneClasses[tone];
 
   return (
-    <Card
-      className={cn(
-        "relative overflow-hidden border-0 shadow-lg shadow-slate-200/40 bg-white/80 backdrop-blur-md hover:shadow-xl transition-all duration-300 hover:-translate-y-1.5 animate-fade-in rounded-[32px] border-b-4 group",
-        colors.border,
-        delay
-      )}
-    >
-      <CardContent className="p-6">
-        <div className="flex flex-col gap-6">
-          <div className="flex items-start justify-between gap-3">
-            <div className={cn(
-              "w-12 h-12 shrink-0 rounded-2xl flex items-center justify-center shadow-lg transition-all group-hover:scale-110 group-hover:rotate-3",
-              colors.bg,
-              colors.shadow
-            )}>
-              <Icon className="w-6 h-6 text-white" />
-            </div>
-            <p className={cn("text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] text-right opacity-40 leading-tight", colors.text)}>
-              {title}
-            </p>
+    <Card className="animate-fade-in border-border/70 bg-card/95 py-0 shadow-[0_12px_34px_rgba(41,31,67,0.07)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_44px_rgba(41,31,67,0.1)]">
+      <CardContent className="p-4 md:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className={cn("flex size-11 items-center justify-center rounded-2xl ring-1", colors.icon)}>
+            <Icon className="size-5" />
           </div>
-          
-          <div className="space-y-1.5">
-            <p className="text-xl font-bold text-[#1e1b4b] tracking-tight leading-none group-hover:translate-x-1 transition-transform">
+          <span className={cn("mt-1 size-2 rounded-full", colors.dot)} />
+        </div>
+
+        <div className="mt-4 space-y-1">
+          <p className="text-xs font-medium text-muted-foreground">{title}</p>
+          {loading ? (
+            <div className="h-8 w-24 animate-pulse rounded-lg bg-muted" />
+          ) : (
+            <p className="truncate text-2xl font-semibold tracking-tight text-foreground">
               {value}
             </p>
-            {subtitle && (
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                <span className={cn("w-1 h-1 rounded-full", colors.bg)} />
-                {subtitle}
-              </p>
-            )}
-          </div>
+          )}
+          <p className="min-h-5 text-sm leading-5 text-muted-foreground">{subtitle}</p>
         </div>
       </CardContent>
     </Card>
@@ -88,6 +69,8 @@ function StatCard({
 export function StatsCards() {
   const { therapistId } = useSubscription();
   const supabase = createClient();
+  const [loading, setLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
   const [stats, setStats] = useState({
     sessionsToday: 0,
     nextSessionTime: "",
@@ -104,104 +87,121 @@ export function StatsCards() {
   }, [therapistId]);
 
   async function loadStats() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    setLoading(true);
+    setHasError(false);
 
-    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
-    const [sessionsRes, patientsRes, incomeRes, pendingRes] = await Promise.all([
-      supabase
-        .from("sessions")
-        .select("scheduled_at")
-        .gte("scheduled_at", today.toISOString())
-        .lt("scheduled_at", tomorrow.toISOString())
-        .order("scheduled_at"),
-      supabase
-        .from("patients")
-        .select("id", { count: "exact" })
-        .eq("status", "active"),
-      supabase
-        .from("cash_flow")
-        .select("amount")
-        .eq("type", "income")
-        .eq("status", "confirmed")
-        .gte("created_at", monthStart.toISOString()),
-      supabase
-        .from("cash_flow")
-        .select("amount")
-        .eq("type", "income")
-        .eq("status", "pending"),
-    ]);
+      const [sessionsRes, patientsRes, incomeRes, pendingRes] = await Promise.all([
+        supabase
+          .from("sessions")
+          .select("scheduled_at")
+          .gte("scheduled_at", today.toISOString())
+          .lt("scheduled_at", tomorrow.toISOString())
+          .order("scheduled_at"),
+        supabase
+          .from("patients")
+          .select("id", { count: "exact" })
+          .eq("status", "active"),
+        supabase
+          .from("cash_flow")
+          .select("amount")
+          .eq("type", "income")
+          .eq("status", "confirmed")
+          .gte("created_at", monthStart.toISOString()),
+        supabase
+          .from("cash_flow")
+          .select("amount")
+          .eq("type", "income")
+          .eq("status", "pending"),
+      ]);
 
-    const todaySessions = (sessionsRes.data || []) as Session[];
-    const nextSession = todaySessions.find(
-      (s: Session) => new Date(s.scheduled_at) > new Date()
-    );
+      if (sessionsRes.error || patientsRes.error || incomeRes.error || pendingRes.error) {
+        throw new Error("Failed to load dashboard stats");
+      }
 
-    setStats({
-      sessionsToday: todaySessions.length,
-      nextSessionTime: nextSession
-        ? new Date(nextSession.scheduled_at).toLocaleTimeString("pt-BR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-        : "",
-      activePatients: patientsRes.count || 0,
-      monthlyIncome: (incomeRes.data || []).reduce(
-        (sum: number, t: { amount: number }) => sum + Number(t.amount),
-        0
-      ),
-      pendingPayments: (pendingRes.data || []).length,
-      pendingAmount: (pendingRes.data || []).reduce(
-        (sum: number, t: { amount: number }) => sum + Number(t.amount),
-        0
-      ),
-    });
+      const todaySessions = (sessionsRes.data || []) as Pick<Session, "scheduled_at">[];
+      const nextSession = todaySessions.find(
+        (session) => new Date(session.scheduled_at) > new Date()
+      );
+
+      setStats({
+        sessionsToday: todaySessions.length,
+        nextSessionTime: nextSession
+          ? new Date(nextSession.scheduled_at).toLocaleTimeString("pt-BR", {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "",
+        activePatients: patientsRes.count || 0,
+        monthlyIncome: (incomeRes.data || []).reduce(
+          (sum: number, transaction: { amount: number }) => sum + Number(transaction.amount),
+          0
+        ),
+        pendingPayments: (pendingRes.data || []).length,
+        pendingAmount: (pendingRes.data || []).reduce(
+          (sum: number, transaction: { amount: number }) => sum + Number(transaction.amount),
+          0
+        ),
+      });
+    } catch {
+      console.error("[stats-cards] Failed to load stats");
+      setHasError(true);
+    } finally {
+      setLoading(false);
+    }
   }
+
+  const fallbackSubtitle = hasError
+    ? "Não foi possível atualizar agora"
+    : "Sem dados registrados";
 
   const cards = [
     {
-      title: "Sessões Hoje",
+      title: "Sessões hoje",
       value: stats.sessionsToday,
       subtitle: stats.nextSessionTime
         ? `Próxima às ${stats.nextSessionTime}`
-        : "Sem sessões hoje",
+        : stats.sessionsToday > 0
+          ? "Agenda do dia organizada"
+          : fallbackSubtitle,
       icon: CalendarDays,
-      gradientClass: "gradient-primary",
-      delay: "delay-100",
+      tone: "violet" as const,
     },
     {
-      title: "Pacientes Ativos",
+      title: "Pacientes ativos",
       value: stats.activePatients,
+      subtitle: stats.activePatients > 0 ? "Em acompanhamento" : fallbackSubtitle,
       icon: Users,
-      gradientClass: "gradient-sage",
-      delay: "delay-200",
+      tone: "mint" as const,
     },
     {
-      title: "Receita do Mês",
+      title: "Receita do mês",
       value: formatCurrency(stats.monthlyIncome),
+      subtitle: stats.monthlyIncome > 0 ? "Recebimentos confirmados" : fallbackSubtitle,
       icon: Wallet,
-      gradientClass: "gradient-warm",
-      delay: "delay-300",
+      tone: "amber" as const,
     },
     {
-      title: "Pgto. Pendentes",
+      title: "Pagamentos pendentes",
       value: stats.pendingPayments,
       subtitle: stats.pendingAmount
         ? `${formatCurrency(stats.pendingAmount)} a receber`
-        : undefined,
+        : fallbackSubtitle,
       icon: Clock,
-      gradientClass: "gradient-rose",
-      delay: "delay-400",
+      tone: "rose" as const,
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+    <div className="grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-4">
       {cards.map((stat) => (
-        <StatCard key={stat.title} {...stat} />
+        <StatCard key={stat.title} {...stat} loading={loading} />
       ))}
     </div>
   );
