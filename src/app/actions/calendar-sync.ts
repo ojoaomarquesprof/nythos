@@ -20,6 +20,8 @@ import { toInteger } from "@/lib/validation/input";
 import { logSafeError } from "@/lib/errors/safe-error";
 
 type SessionInsert = Database['public']['Tables']['sessions']['Insert'];
+type SessionSyncRow = Pick<Database["public"]["Tables"]["sessions"]["Row"], "scheduled_at" | "google_event_id">;
+type ExternalEventUpsert = Database["public"]["Tables"]["external_calendar_events"]["Insert"];
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -396,13 +398,13 @@ export async function syncGoogleCalendar(
   // Build a set of already-synced Google event IDs for quick lookup
   const syncedEventIds = new Set<string>(
     (existingSessions ?? [])
-      .map((s: any) => s.google_event_id)
-      .filter(Boolean)
+      .map((s: SessionSyncRow) => s.google_event_id)
+      .filter((eventId): eventId is string => typeof eventId === "string" && eventId.length > 0)
   );
 
   // Also track existing scheduled_at times (in minutes) to avoid exact time duplicates
   const existingTimes = new Set<string>(
-    (existingSessions ?? []).map((s: any) =>
+    (existingSessions ?? []).map((s: SessionSyncRow) =>
       new Date(s.scheduled_at).toISOString().slice(0, 16) // "YYYY-MM-DDTHH:MM"
     )
   );
@@ -430,7 +432,7 @@ export async function syncGoogleCalendar(
           .eq("google_event_id", event.id)
           .neq("status", "cancelled");
 
-        await (supabase as any)
+        await supabase
           .from("external_calendar_events")
           .delete()
           .eq("user_id", user.id)
@@ -447,7 +449,7 @@ export async function syncGoogleCalendar(
     const isTransparent = event.transparency === "transparent";
     if (isAllDayEvent || isTransparent) {
       try {
-        await (supabase as any)
+        await supabase
           .from("external_calendar_events")
           .delete()
           .eq("user_id", user.id)
@@ -484,7 +486,7 @@ export async function syncGoogleCalendar(
     // If no patient matched, store as external availability block (not a clinical session).
     if (!matchedPatient) {
       try {
-        const externalEventRecord = {
+        const externalEventRecord: ExternalEventUpsert = {
           user_id: user.id,
           google_event_id: event.id,
           calendar_id: calendarId,
@@ -497,7 +499,7 @@ export async function syncGoogleCalendar(
           html_link: event.htmlLink ?? null,
         };
 
-        const { error: externalUpsertError } = await (supabase as any)
+        const { error: externalUpsertError } = await supabase
           .from("external_calendar_events")
           .upsert(externalEventRecord, { onConflict: "user_id,google_event_id" });
 
@@ -513,7 +515,7 @@ export async function syncGoogleCalendar(
     }
 
     // Matched a patient: this should be a session, not an external block.
-    await (supabase as any)
+    await supabase
       .from("external_calendar_events")
       .delete()
       .eq("user_id", user.id)

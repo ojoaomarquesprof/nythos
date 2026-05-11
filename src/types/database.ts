@@ -237,6 +237,53 @@ export type Database = {
         Relationships: never[];
       };
 
+      external_calendar_events: {
+        Row: {
+          id: string;
+          user_id: string;
+          google_event_id: string;
+          calendar_id: string;
+          title: string | null;
+          description: string | null;
+          location: string | null;
+          starts_at: string;
+          ends_at: string;
+          is_all_day: boolean;
+          html_link: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          google_event_id: string;
+          calendar_id?: string;
+          title?: string | null;
+          description?: string | null;
+          location?: string | null;
+          starts_at: string;
+          ends_at: string;
+          is_all_day?: boolean;
+          html_link?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          google_event_id?: string;
+          calendar_id?: string;
+          title?: string | null;
+          description?: string | null;
+          location?: string | null;
+          starts_at?: string;
+          ends_at?: string;
+          is_all_day?: boolean;
+          html_link?: string | null;
+          updated_at?: string;
+        };
+        Relationships: never[];
+      };
+
       subscriptions: {
         Row: {
           id: string;
@@ -525,7 +572,44 @@ export type Database = {
       };
     };
 
-    Functions: Record<string, never>;
+    Functions: {
+      encrypt_google_token_if_needed: {
+        Args: { p_token: string };
+        Returns: string;
+      };
+      decrypt_google_token_if_needed: {
+        Args: { p_token: string };
+        Returns: string;
+      };
+      revoke_patient_access_link_secure: {
+        Args: { p_patient_id: string };
+        Returns: Json;
+      };
+      regenerate_patient_access_link_secure: {
+        Args: { p_patient_id: string };
+        Returns: Json;
+      };
+      get_public_anamnesis_response: {
+        Args: { p_public_token: string };
+        Returns: Json;
+      };
+      submit_public_anamnesis_response: {
+        Args: { p_public_token: string; p_responses: Json };
+        Returns: Json;
+      };
+      revoke_public_anamnesis_link_secure: {
+        Args: { p_response_id: string };
+        Returns: Json;
+      };
+      regenerate_public_anamnesis_link_secure: {
+        Args: { p_response_id: string };
+        Returns: Json;
+      };
+      create_anamnesis_request_secure: {
+        Args: { p_patient_id: string; p_template_id: string };
+        Returns: Json;
+      };
+    };
   };
 };
 
@@ -533,6 +617,7 @@ export type Database = {
 export type Profile            = Database['public']['Tables']['profiles']['Row'];
 export type Patient            = Database['public']['Tables']['patients']['Row'];
 export type Session            = Database['public']['Tables']['sessions']['Row'];
+export type ExternalCalendarEvent = Database['public']['Tables']['external_calendar_events']['Row'];
 export type Subscription       = Database['public']['Tables']['subscriptions']['Row'];
 export type CashFlow           = Database['public']['Tables']['cash_flow']['Row'];
 export type PatientTask        = Database['public']['Tables']['patient_tasks']['Row'];
@@ -548,6 +633,8 @@ export type PatientInsert  = Database['public']['Tables']['patients']['Insert'];
 export type PatientUpdate  = Database['public']['Tables']['patients']['Update'];
 export type SessionInsert  = Database['public']['Tables']['sessions']['Insert'];
 export type SessionUpdate  = Database['public']['Tables']['sessions']['Update'];
+export type ExternalCalendarEventInsert = Database['public']['Tables']['external_calendar_events']['Insert'];
+export type ExternalCalendarEventUpdate = Database['public']['Tables']['external_calendar_events']['Update'];
 export type SubscriptionInsert = Database['public']['Tables']['subscriptions']['Insert'];
 export type SubscriptionUpdate = Database['public']['Tables']['subscriptions']['Update'];
 export type CashFlowInsert  = Database['public']['Tables']['cash_flow']['Insert'];

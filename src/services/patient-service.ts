@@ -1,11 +1,16 @@
 import { createClient } from "@/lib/supabase/client";
 import { logSafeError, safeClientError } from "@/lib/errors/safe-error";
-import type { Patient, PatientTask, PatientUpdate } from "@/types/database";
+import type { Database, Patient, PatientTask, PatientUpdate } from "@/types/database";
 import type { ServiceResponse } from "./types";
 
 const supabase = createClient() as any;
 
 const GENERIC_SERVICE_ERROR = safeClientError("Nao foi possivel concluir a operacao.");
+type GuardianRow = Database["public"]["Tables"]["patient_guardians"]["Row"];
+type GuardianUpdate = Database["public"]["Tables"]["patient_guardians"]["Update"];
+type CareNetworkRow = Database["public"]["Tables"]["care_network"]["Row"];
+type PatientEvaluationRow = Database["public"]["Tables"]["patient_evaluations"]["Row"];
+type AbcRecordRow = Database["public"]["Tables"]["abc_records"]["Row"];
 
 export const PatientService = {
   async getById(id: string): Promise<ServiceResponse<Patient>> {
@@ -13,13 +18,13 @@ export const PatientService = {
       const { data, error } = await supabase.rpc("get_patient_decrypted", { p_patient_id: id });
       if (error) throw error;
       return { data, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in PatientService.getById(${id})`, err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
 
-  async getGuardian(patientId: string): Promise<ServiceResponse<any>> {
+  async getGuardian(patientId: string): Promise<ServiceResponse<GuardianRow | null>> {
     try {
       const { data, error } = await supabase
         .from("patient_guardians")
@@ -29,7 +34,7 @@ export const PatientService = {
 
       if (error) throw error;
       return { data, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in PatientService.getGuardian(${patientId})`, err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }
@@ -45,7 +50,7 @@ export const PatientService = {
 
       if (error) throw error;
       return { data, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in PatientService.getTasks(${patientId})`, err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }
@@ -60,7 +65,7 @@ export const PatientService = {
 
       if (error) throw error;
       return { data, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in PatientService.updatePatientNotes(${id})`, err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }
@@ -87,7 +92,7 @@ export const PatientService = {
 
       if (readError) throw readError;
       return { data: updated, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in PatientService.updatePatient(${id})`, err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }
@@ -96,8 +101,8 @@ export const PatientService = {
   async createOrUpdateGuardian(
     patientId: string,
     guardianId: string | undefined,
-    guardianData: any
-  ): Promise<ServiceResponse<any>> {
+    guardianData: GuardianUpdate
+  ): Promise<ServiceResponse<GuardianRow>> {
     try {
       if (guardianId) {
         const { data, error } = await supabase
@@ -119,7 +124,7 @@ export const PatientService = {
 
       if (error) throw error;
       return { data, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in PatientService.createOrUpdateGuardian(${patientId})`, err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }
@@ -134,7 +139,7 @@ export const PatientService = {
 
       if (error) throw error;
       return { data: true, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in PatientService.archivePatient(${id})`, err);
       return { data: false, error: GENERIC_SERVICE_ERROR };
     }
@@ -148,7 +153,7 @@ export const PatientService = {
 
       if (error) throw error;
       return { data, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in PatientService.revokeAccessLink(${id})`, err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }
@@ -162,16 +167,16 @@ export const PatientService = {
 
       if (error) throw error;
       return { data, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in PatientService.regenerateAccessLink(${id})`, err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },
 
   async getFullRecordData(patientId: string): Promise<ServiceResponse<{
-    network: any[];
-    protocols: any[];
-    behavior: any[];
+    network: CareNetworkRow[];
+    protocols: PatientEvaluationRow[];
+    behavior: AbcRecordRow[];
   }>> {
     try {
       const [networkRes, protocolsRes, behaviorRes] = await Promise.all([
@@ -196,7 +201,7 @@ export const PatientService = {
         },
         error: null,
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in PatientService.getFullRecordData(${patientId})`, err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }

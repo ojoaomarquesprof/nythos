@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useSubscription } from "@/hooks/use-subscription";
 import { formatCurrency, formatTime, formatDate } from "@/lib/constants";
-import type { Patient, Session, CashFlow } from "@/types/database";
+import type { Patient } from "@/types/database";
 
 interface Activity {
   id: string;
@@ -29,6 +29,22 @@ interface Activity {
   date: Date;
   highlight?: string;
 }
+type RecentPatientRow = Pick<Patient, "id" | "full_name" | "created_at">;
+type RecentCashFlowRow = {
+  id: string;
+  type: string;
+  amount: number;
+  description: string;
+  created_at: string | null;
+  status: string;
+};
+type RecentSessionRow = {
+  id: string;
+  status: string;
+  scheduled_at: string;
+  updated_at: string | null;
+  patient_id: string;
+};
 
 const activityConfig = {
   session_completed: {
@@ -75,7 +91,7 @@ function getTimeAgo(date: Date) {
 
 export function RecentActivity() {
   const { therapistId } = useSubscription();
-  const supabase = createClient() as any;
+  const supabase = createClient();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -111,7 +127,7 @@ export function RecentActivity() {
 
       // Add Patients
       if (patientsRes.data) {
-        patientsRes.data.forEach((p: Patient) => {
+        patientsRes.data.forEach((p: RecentPatientRow) => {
           events.push({
             id: `p_${p.id}`,
             type: "patient_added",
@@ -123,7 +139,7 @@ export function RecentActivity() {
 
       // Add Cash Flow
       if (cashFlowRes.data) {
-        cashFlowRes.data.forEach((cf: CashFlow) => {
+        cashFlowRes.data.forEach((cf: RecentCashFlowRow) => {
           if (cf.status === "confirmed") {
             events.push({
               id: `cf_${cf.id}`,
@@ -141,9 +157,9 @@ export function RecentActivity() {
 
       // We need patient names for sessions
       const sessionPatientIds = [
-        ...new Set((sessionsRes.data || []).map((s: Session) => s.patient_id)),
+        ...new Set((sessionsRes.data || []).map((s: RecentSessionRow) => s.patient_id)),
       ];
-      let sessionPatients: any[] = [];
+      let sessionPatients: Array<Pick<Patient, "id" | "full_name">> = [];
       if (sessionPatientIds.length > 0) {
         const { data } = await supabase
           .from("patients")
@@ -154,7 +170,7 @@ export function RecentActivity() {
 
       // Add Sessions
       if (sessionsRes.data) {
-        sessionsRes.data.forEach((s: Session) => {
+        sessionsRes.data.forEach((s: RecentSessionRow) => {
           const patientName =
             sessionPatients.find((p: { id: string; full_name: string }) => p.id === s.patient_id)?.full_name ||
             "Paciente";

@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import { PatientService } from "@/services/patient-service";
 import { AnamnesisService } from "@/services/anamnesis-service";
 import { BillingService } from "@/services/billing-service";
+import type { TherapistSessionInRange } from "@/services/billing-service";
 import { useSubscription } from "@/hooks/use-subscription";
 import { usePdfExport } from "@/hooks/use-pdf-export";
 import { SESSION_STATUS, formatDate, formatTime } from "@/lib/constants";
@@ -52,7 +53,7 @@ export function usePatientData() {
   const [rescheduleTime, setRescheduleTime] = useState("");
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   const [rescheduleWeekOffset, setRescheduleWeekOffset] = useState(0);
-  const [therapistSessions, setTherapistSessions] = useState<Session[]>([]);
+  const [therapistSessions, setTherapistSessions] = useState<TherapistSessionInRange[]>([]);
   const [showCancelSeriesModal, setShowCancelSeriesModal] = useState(false);
   const [cancellingSession, setCancellingSession] = useState<Session | null>(null);
 

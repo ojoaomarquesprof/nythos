@@ -27,7 +27,7 @@ export async function encryptGoogleTokenIfNeeded(
 ): Promise<string | null> {
   if (token == null) return null;
 
-  const { data, error } = await (admin as any).rpc("encrypt_google_token_if_needed", {
+  const { data, error } = await admin.rpc("encrypt_google_token_if_needed", {
     p_token: token,
   });
 
@@ -35,7 +35,7 @@ export async function encryptGoogleTokenIfNeeded(
     throw new Error(`Failed to encrypt Google Calendar token: ${error.message}`);
   }
 
-  return (data as string | null) ?? null;
+  return data ?? null;
 }
 
 export async function decryptGoogleTokenIfNeeded(
@@ -44,7 +44,7 @@ export async function decryptGoogleTokenIfNeeded(
 ): Promise<string | null> {
   if (token == null) return null;
 
-  const { data, error } = await (admin as any).rpc("decrypt_google_token_if_needed", {
+  const { data, error } = await admin.rpc("decrypt_google_token_if_needed", {
     p_token: token,
   });
 
@@ -52,7 +52,7 @@ export async function decryptGoogleTokenIfNeeded(
     throw new Error(`Failed to decrypt Google Calendar token: ${error.message}`);
   }
 
-  return (data as string | null) ?? null;
+  return data ?? null;
 }
 
 export async function decryptGoogleTokenFields<T extends GoogleTokenFields>(

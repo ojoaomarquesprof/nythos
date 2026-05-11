@@ -130,7 +130,7 @@ export async function createPatientTask(
 
     revalidatePath(`/dashboard/patients/${payload.patient_id}`);
     return { success: true, taskId: task?.id };
-  } catch (err: any) {
+  } catch (err: unknown) {
     logSafeError("[createPatientTask] Exception", err);
     return {
       success: false,
@@ -178,7 +178,7 @@ export async function deletePatientTask(
 
     revalidatePath(`/dashboard/patients/${patientId}`);
     return { success: true };
-  } catch (err: any) {
+  } catch (err: unknown) {
     logSafeError("[deletePatientTask] Exception", err);
     return {
       success: false,

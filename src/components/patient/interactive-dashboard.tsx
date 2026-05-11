@@ -64,7 +64,7 @@ function DiaryForm({ patientId, onClose, onSaved }: { patientId: string; onClose
     startTransition(async () => {
       const r = await saveDiaryEntry({ emotion: form.emotion, intensity: form.intensity, context: form.context || undefined, notes: form.notes || undefined });
       if (r.success) {
-        onSaved({ id: r.id ?? crypto.randomUUID(), patient_id: patientId, emotion: form.emotion, intensity: form.intensity, notes: form.notes || null, triggers: null, coping_strategy: null, context: form.context as any || null, created_at: new Date().toISOString() });
+        onSaved({ id: r.id ?? crypto.randomUUID(), patient_id: patientId, emotion: form.emotion, intensity: form.intensity, notes: form.notes || null, triggers: null, coping_strategy: null, context: form.context || null, created_at: new Date().toISOString() });
         onClose();
       } else { setError(r.error ?? "Erro ao salvar."); }
     });

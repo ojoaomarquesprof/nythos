@@ -53,7 +53,7 @@ export async function getPatientByToken(token: string): Promise<VerifyTokenResul
 
     const firstName = String(data.full_name ?? "").trim().split(" ")[0];
     return { success: true, firstName: firstName || undefined };
-  } catch (err: any) {
+  } catch (err: unknown) {
     logSafeError("getPatientByToken", err);
     return { success: false, error: "Erro ao verificar link. Tente novamente." };
   }
@@ -110,7 +110,7 @@ export async function verifyPatientToken(
       .eq("id", patient.id);
 
     await createPatientSession(patient.id);
-  } catch (err: any) {
+  } catch (err: unknown) {
     logSafeError("verifyPatientToken", err);
     return { success: false, error: "Erro interno. Tente novamente em instantes." };
   }

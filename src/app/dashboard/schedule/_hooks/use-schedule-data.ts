@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useSubscription } from "@/hooks/use-subscription";
 import { SESSION_STATUS } from "@/lib/constants";
-import type { Session, Patient } from "@/types/database";
+import type { ExternalCalendarEvent, Patient, Profile, Session } from "@/types/database";
 
 type ScheduleItem = (Session & { patient?: Patient }) & {
   is_external_google?: boolean;
@@ -12,6 +12,11 @@ type ScheduleItem = (Session & { patient?: Patient }) & {
   external_ends_at?: string | null;
   external_is_all_day?: boolean;
 };
+type ExternalCalendarRangeEvent = Pick<ExternalCalendarEvent, "id" | "starts_at" | "ends_at">;
+type ExternalCalendarScheduleEvent = Pick<
+  ExternalCalendarEvent,
+  "id" | "user_id" | "google_event_id" | "title" | "description" | "location" | "starts_at" | "ends_at" | "is_all_day" | "created_at" | "updated_at"
+>;
 
 const getWeekStart = (date: Date) => {
   const d = new Date(date);
@@ -38,7 +43,7 @@ export function useScheduleData() {
   const [showNewSession, setShowNewSession] = useState(false);
   const [showSessionDetails, setShowSessionDetails] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
 
   const [newSession, setNewSession] = useState({
     patient_id: "",
@@ -115,7 +120,7 @@ export function useScheduleData() {
 
       if (externalError) return;
 
-      const externalAsSessions = (externalData ?? []).map((event: any) => ({
+      const externalAsSessions = (externalData ?? []).map((event: ExternalCalendarRangeEvent) => ({
         id: `external:${event.id}`,
         scheduled_at: event.starts_at,
         duration_minutes: Math.max(
@@ -181,7 +186,7 @@ export function useScheduleData() {
 
     if (!sessionsRes.error && !externalEventsRes.error) {
       const sessionItems: ScheduleItem[] = (sessionsRes.data ?? []) as ScheduleItem[];
-      const externalItems: ScheduleItem[] = (externalEventsRes.data ?? []).map((event: any) => {
+      const externalItems: ScheduleItem[] = (externalEventsRes.data ?? []).map((event: ExternalCalendarScheduleEvent) => {
         const start = new Date(event.starts_at);
         const end = new Date(event.ends_at);
         const durationMinutes = Math.max(

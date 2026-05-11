@@ -17,6 +17,7 @@ import {
   toInteger,
 } from "@/lib/validation/input";
 import { logSafeError } from "@/lib/errors/safe-error";
+import type { ExternalCalendarEvent, Session } from "@/types/database";
 
 export interface CreateSessionPayload {
   therapistId: string;
@@ -64,6 +65,9 @@ type TimeInterval = {
   start: Date;
   end: Date;
 };
+
+type SessionConflictRow = Pick<Session, "scheduled_at" | "duration_minutes">;
+type ExternalEventConflictRow = Pick<ExternalCalendarEvent, "starts_at" | "ends_at">;
 
 const ALLOWED_CREATE_SESSION_KEYS = [
   "therapistId",
@@ -387,13 +391,13 @@ export async function createScheduleSessions(
       return { success: false, error: "Não foi possível validar conflitos de agenda." };
     }
 
-    const sessionIntervals: TimeInterval[] = (existingSessions || []).map((s: any) => {
+    const sessionIntervals: TimeInterval[] = (existingSessions || []).map((s: SessionConflictRow) => {
       const start = new Date(s.scheduled_at);
       const end = new Date(start.getTime() + (s.duration_minutes ?? 50) * 60 * 1000);
       return { start, end };
     });
 
-    const { data: externalEvents, error: externalEventsError } = await (supabase as any)
+    const { data: externalEvents, error: externalEventsError } = await supabase
       .from("external_calendar_events")
       .select("id, starts_at, ends_at")
       .eq("user_id", effectiveTherapistId)
@@ -405,7 +409,7 @@ export async function createScheduleSessions(
       return { success: false, error: "Não foi possível validar bloqueios externos da agenda." };
     }
 
-    const externalIntervals: TimeInterval[] = (externalEvents || []).map((e: any) => ({
+    const externalIntervals: TimeInterval[] = (externalEvents || []).map((e: ExternalEventConflictRow) => ({
       start: new Date(e.starts_at),
       end: new Date(e.ends_at),
     }));
@@ -534,7 +538,7 @@ export async function createScheduleSessions(
 
     revalidatePath("/dashboard/schedule");
     return { success: true, createdCount: rows.length, googleCreatedCount, warning };
-  } catch (err: any) {
+  } catch (err: unknown) {
     logSafeError("[createScheduleSessions] Unexpected error", err);
     return { success: false, error: "Erro ao criar sessão." };
   }
@@ -649,7 +653,7 @@ export async function cancelScheduleSession(
 
     revalidatePath("/dashboard/schedule");
     return { success: true, warning };
-  } catch (err: any) {
+  } catch (err: unknown) {
     logSafeError("[cancelScheduleSession] Unexpected error", err);
     return { success: false, error: "Erro ao cancelar sessão." };
   }

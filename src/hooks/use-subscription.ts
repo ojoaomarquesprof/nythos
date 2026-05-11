@@ -14,7 +14,7 @@ const TRIAL_HOURS_FALLBACK = 336; // 14 dias
  */
 async function fetchTrialHours(supabase: ReturnType<typeof createClient>): Promise<number> {
   try {
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from("system_settings")
       .select("value")
       .eq("key", "trial_duration_hours")
@@ -51,7 +51,7 @@ export function useSubscription() {
   const [therapistId, setTherapistId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const supabase = createClient() as any;
+  const supabase = createClient();
   const router = useRouter();
 
   useEffect(() => {
@@ -90,7 +90,9 @@ export function useSubscription() {
             .select("created_at")
             .eq("id", employerId)
             .maybeSingle();
-          if (employerProfile) referenceCreatedAt = employerProfile.created_at;
+          if (employerProfile?.created_at) {
+            referenceCreatedAt = employerProfile.created_at;
+          }
         }
 
         // 3. Verificar assinatura no banco para o targetUserId

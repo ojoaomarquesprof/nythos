@@ -87,7 +87,7 @@ function StatCard({
 
 export function StatsCards() {
   const { therapistId } = useSubscription();
-  const supabase = createClient() as any;
+  const supabase = createClient();
   const [stats, setStats] = useState({
     sessionsToday: 0,
     nextSessionTime: "",

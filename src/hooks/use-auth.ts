@@ -7,7 +7,7 @@ import type { Profile } from "@/types/database";
 export function useAuth() {
   const [user, setUser] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const supabase = createClient() as any;
+  const supabase = createClient();
 
   useEffect(() => {
     async function getProfile() {

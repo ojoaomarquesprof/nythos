@@ -227,7 +227,7 @@ export async function saveDiaryEntry(formData: {
   let patientId: string;
   try {
     patientId = await requirePatientId();
-  } catch (authErr: any) {
+  } catch (authErr: unknown) {
     logSafeError("[saveDiaryEntry] Auth error", authErr);
     return { success: false, error: "Sessao invalida. Abra seu link de acesso." };
   }
@@ -273,7 +273,7 @@ export async function saveDiaryEntry(formData: {
 
     revalidatePath("/patient/dashboard");
     return { success: true, id: entry?.id };
-  } catch (err: any) {
+  } catch (err: unknown) {
     logSafeError("[saveDiaryEntry] Exception", err);
     return { success: false, error: "Erro inesperado ao salvar." };
   }
@@ -286,7 +286,7 @@ export async function toggleTaskStatus(
   let patientId: string;
   try {
     patientId = await requirePatientId();
-  } catch (authErr: any) {
+  } catch (authErr: unknown) {
     logSafeError("[toggleTaskStatus] Auth error", authErr);
     return { success: false, error: "Sessao invalida. Abra seu link de acesso." };
   }
@@ -324,7 +324,7 @@ export async function toggleTaskStatus(
 
     revalidatePath("/patient/dashboard");
     return { success: true, newStatus };
-  } catch (err: any) {
+  } catch (err: unknown) {
     logSafeError("[toggleTaskStatus] Exception", err);
     return { success: false, error: "Erro ao atualizar tarefa." };
   }
@@ -362,7 +362,7 @@ export async function getPatientEngagement(patientId: string): Promise<Engagemen
     const tasks = tasksRes.data || [];
     const diary = diaryRes.data || [];
     const lastEntry = diary[0] ?? null;
-    const completedTasks = tasks.filter((task: any) => task.status === "completed").length;
+    const completedTasks = tasks.filter((task: PatientTask) => task.status === "completed").length;
 
     return {
       success: true,
@@ -378,7 +378,7 @@ export async function getPatientEngagement(patientId: string): Promise<Engagemen
         diaryList: diary,
       },
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     logSafeError("[getPatientEngagement] Exception", err);
     return { success: false, error: "Erro ao buscar dados." };
   }

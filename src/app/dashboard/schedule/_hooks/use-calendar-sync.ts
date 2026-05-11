@@ -80,8 +80,8 @@ export function useCalendarSync(onSyncSuccess?: () => void) {
       } else {
         setSyncBanner({ type: 'error', message: result.error ?? 'Erro ao sincronizar.' });
       }
-    } catch (err: any) {
-      setSyncBanner({ type: 'error', message: err.message ?? 'Erro inesperado na sincronização.' });
+    } catch (err: unknown) {
+      setSyncBanner({ type: 'error', message: (err instanceof Error ? err.message : undefined) ?? 'Erro inesperado na sincronização.' });
     } finally {
       setSyncing(false);
     }

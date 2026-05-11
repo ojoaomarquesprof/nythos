@@ -1,10 +1,24 @@
 import { createClient } from "@/lib/supabase/client";
 import { logSafeError, safeClientError } from "@/lib/errors/safe-error";
-import type { Session, CashFlow } from "@/types/database";
+import type { CashFlow, ExternalCalendarEvent, Session } from "@/types/database";
 import type { ServiceResponse } from "./types";
 
 const supabase = createClient() as any;
 const GENERIC_SERVICE_ERROR = safeClientError("Nao foi possivel concluir a operacao.");
+export type TherapistSessionInRange = {
+  id: string;
+  scheduled_at: string;
+  duration_minutes: number | null;
+  patient: { full_name?: string } | null;
+};
+type ExternalCalendarRangeEvent = Pick<ExternalCalendarEvent, "id" | "starts_at" | "ends_at">;
+type FinancialEvolutionPoint = {
+  month: string;
+  monthIndex: number;
+  year: number;
+  income: number;
+  expense: number;
+};
 
 export const BillingService = {
   async getSessionsByPatient(patientId: string): Promise<ServiceResponse<Session[]>> {
@@ -15,7 +29,7 @@ export const BillingService = {
 
       if (error) throw error;
       return { data: data || [], error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in BillingService.getSessionsByPatient(${patientId})`, err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }
@@ -25,7 +39,7 @@ export const BillingService = {
     userId: string,
     start: Date,
     end: Date
-  ): Promise<ServiceResponse<any[]>> {
+  ): Promise<ServiceResponse<TherapistSessionInRange[]>> {
     try {
       const { data: sessionsData, error: sessionsError } = await supabase
         .from("sessions")
@@ -46,7 +60,7 @@ export const BillingService = {
 
       if (externalError) throw externalError;
 
-      const externalAsSessions = (externalData || []).map((event: any) => ({
+      const externalAsSessions = (externalData || []).map((event: ExternalCalendarRangeEvent) => ({
         id: `external:${event.id}`,
         scheduled_at: event.starts_at,
         duration_minutes: Math.max(
@@ -57,7 +71,7 @@ export const BillingService = {
       }));
 
       return { data: [...(sessionsData || []), ...externalAsSessions], error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in BillingService.getTherapistSessionsInRange(${userId})`, err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }
@@ -73,7 +87,7 @@ export const BillingService = {
 
       if (error) throw error;
       return { data: data || [], error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError("Error in BillingService.getCashFlowBySessions()", err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }
@@ -88,7 +102,7 @@ export const BillingService = {
 
       if (error) throw error;
       return { data: true, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in BillingService.updateSessionStatus(${sessionId})`, err);
       return { data: false, error: GENERIC_SERVICE_ERROR };
     }
@@ -110,7 +124,7 @@ export const BillingService = {
 
       if (error) throw error;
       return { data, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in BillingService.updateSessionEvolution(${sessionId})`, err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }
@@ -158,7 +172,7 @@ export const BillingService = {
 
       if (externalConflictError) throw externalConflictError;
       return { data: (externalConflicts?.length ?? 0) > 0, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError("Error in BillingService.checkRescheduleConflicts()", err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }
@@ -176,7 +190,7 @@ export const BillingService = {
 
       if (error) throw error;
       return { data: true, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in BillingService.rescheduleSession(${sessionId})`, err);
       return { data: false, error: GENERIC_SERVICE_ERROR };
     }
@@ -200,7 +214,7 @@ export const BillingService = {
       const { error } = await query;
       if (error) throw error;
       return { data: true, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in BillingService.cancelSession(${sessionId})`, err);
       return { data: false, error: GENERIC_SERVICE_ERROR };
     }
@@ -216,7 +230,7 @@ export const BillingService = {
 
       if (error) throw error;
       return { data: data || [], error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError("Error in BillingService.getTransactions()", err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }
@@ -235,7 +249,7 @@ export const BillingService = {
 
       if (error) throw error;
       return { data: true, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in BillingService.confirmPayment(${id})`, err);
       return { data: false, error: GENERIC_SERVICE_ERROR };
     }
@@ -258,13 +272,13 @@ export const BillingService = {
 
       if (error) throw error;
       return { data: true, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError("Error in BillingService.addExpense()", err);
       return { data: false, error: GENERIC_SERVICE_ERROR };
     }
   },
 
-  async getFinancialEvolution(userId: string): Promise<ServiceResponse<any[]>> {
+  async getFinancialEvolution(userId: string): Promise<ServiceResponse<FinancialEvolutionPoint[]>> {
     try {
       const { data, error } = await supabase
         .from("cash_flow")
@@ -274,7 +288,7 @@ export const BillingService = {
 
       if (error) throw error;
 
-      const last6Months: any[] = [];
+      const last6Months: FinancialEvolutionPoint[] = [];
       const now = new Date();
 
       for (let i = 5; i >= 0; i--) {
@@ -291,8 +305,8 @@ export const BillingService = {
         });
       }
 
-      data?.forEach((tx: any) => {
-        const txDate = new Date(tx.due_date || tx.paid_at || tx.created_at);
+      data?.forEach((tx: CashFlow) => {
+        const txDate = new Date(tx.due_date || tx.paid_at || tx.created_at || new Date().toISOString());
         const txMonth = txDate.getMonth();
         const txYear = txDate.getFullYear();
 
@@ -308,7 +322,7 @@ export const BillingService = {
       });
 
       return { data: last6Months, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError("Error in BillingService.getFinancialEvolution()", err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }
@@ -319,7 +333,7 @@ export const BillingService = {
       const { error } = await supabase.from("cash_flow").delete().eq("id", id);
       if (error) throw error;
       return { data: true, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logSafeError(`Error in BillingService.deleteTransaction(${id})`, err);
       return { data: false, error: GENERIC_SERVICE_ERROR };
     }
