@@ -3,7 +3,9 @@ import { InteractivePatientDashboard } from "@/components/patient/interactive-da
 import { getPatientAccessState } from "@/lib/auth/patient-access";
 import { getPatientSessionDetails } from "@/lib/auth/patient-session";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { EmotionDiary, PatientTask } from "@/types/database";
+import type { EmotionDiary, Patient, PatientTask } from "@/types/database";
+
+type PatientDashboardProfile = Pick<Patient, "id" | "full_name">;
 
 export default async function PatientDashboardPage() {
   const session = await getPatientSessionDetails();
@@ -14,7 +16,7 @@ export default async function PatientDashboardPage() {
 
   const { data: patient, error: patientErr } = await admin
     .from("patients")
-    .select("*")
+    .select("id, full_name, status, access_token_issued_at, access_token_expires_at, access_token_revoked_at")
     .eq("id", session.patientId)
     .single();
 
@@ -26,21 +28,26 @@ export default async function PatientDashboardPage() {
   const [{ data: tasksRaw }, { data: diaryRaw }] = await Promise.all([
     admin
       .from("patient_tasks")
-      .select("*")
+      .select("id, patient_id, title, description, category, due_date, status, completed_at, created_at, updated_at")
       .eq("patient_id", session.patientId)
       .neq("status", "cancelled")
       .order("due_date", { ascending: true, nullsFirst: false }),
     admin
       .from("emotion_diary")
-      .select("*")
+      .select("id, patient_id, emotion, intensity, notes, context, created_at")
       .eq("patient_id", session.patientId)
       .order("created_at", { ascending: false })
       .limit(5),
   ]);
 
+  const patientProfile: PatientDashboardProfile = {
+    id: patient.id,
+    full_name: patient.full_name,
+  };
+
   return (
     <InteractivePatientDashboard
-      patient={patient}
+      patient={patientProfile}
       initialTasks={tasksRaw ?? []}
       initialDiary={diaryRaw ?? []}
     />

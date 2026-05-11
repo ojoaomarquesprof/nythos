@@ -70,7 +70,7 @@ export default function PatientsPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from("patients")
-      .select("id, user_id, full_name, email, phone, cpf, date_of_birth, status, session_price, created_at, updated_at, access_token, auth_user_id")
+      .select("id, user_id, full_name, email, phone, cpf, date_of_birth, status, session_price, created_at, updated_at, auth_user_id")
       .order("created_at", { ascending: false });
 
     if (!error && data) {

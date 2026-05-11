@@ -10,6 +10,16 @@ import type { Patient, PatientTask, EmotionDiary } from "@/types/database";
 import { toggleTaskStatus, saveDiaryEntry } from "@/app/actions/patient-engagement";
 import { logoutPatient } from "@/app/actions/patient-auth";
 
+type PatientPortalTask = Pick<
+  PatientTask,
+  "id" | "patient_id" | "title" | "description" | "category" | "due_date" | "status" | "completed_at" | "created_at" | "updated_at"
+>;
+
+type PatientPortalDiary = Pick<
+  EmotionDiary,
+  "id" | "patient_id" | "emotion" | "intensity" | "notes" | "context" | "created_at"
+>;
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const CATEGORY_META: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
@@ -52,7 +62,7 @@ function dueDateLabel(iso: string | null) {
 
 // ─── Diary Form ───────────────────────────────────────────────────────────────
 
-function DiaryForm({ patientId, onClose, onSaved }: { patientId: string; onClose: () => void; onSaved: (e: EmotionDiary) => void }) {
+function DiaryForm({ patientId, onClose, onSaved }: { patientId: string; onClose: () => void; onSaved: (e: PatientPortalDiary) => void }) {
   const [form, setForm] = useState({ emotion: "", intensity: 5, context: "", notes: "" });
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState("");
@@ -64,7 +74,7 @@ function DiaryForm({ patientId, onClose, onSaved }: { patientId: string; onClose
     startTransition(async () => {
       const r = await saveDiaryEntry({ emotion: form.emotion, intensity: form.intensity, context: form.context || undefined, notes: form.notes || undefined });
       if (r.success) {
-        onSaved({ id: r.id ?? crypto.randomUUID(), patient_id: patientId, emotion: form.emotion, intensity: form.intensity, notes: form.notes || null, triggers: null, coping_strategy: null, context: form.context || null, created_at: new Date().toISOString() });
+        onSaved({ id: r.id ?? crypto.randomUUID(), patient_id: patientId, emotion: form.emotion, intensity: form.intensity, notes: form.notes || null, context: form.context || null, created_at: new Date().toISOString() });
         onClose();
       } else { setError(r.error ?? "Erro ao salvar."); }
     });
@@ -127,11 +137,11 @@ function DiaryForm({ patientId, onClose, onSaved }: { patientId: string; onClose
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-interface Props { patient: Patient; initialTasks: PatientTask[]; initialDiary: EmotionDiary[]; }
+interface Props { patient: Pick<Patient, "id" | "full_name">; initialTasks: PatientPortalTask[]; initialDiary: PatientPortalDiary[]; }
 
 export function InteractivePatientDashboard({ patient, initialTasks, initialDiary }: Props) {
-  const [tasks, setTasks] = useState<PatientTask[]>(initialTasks);
-  const [diary, setDiary] = useState<EmotionDiary[]>(initialDiary);
+  const [tasks, setTasks] = useState<PatientPortalTask[]>(initialTasks);
+  const [diary, setDiary] = useState<PatientPortalDiary[]>(initialDiary);
   const [showDiaryForm, setShowDiaryForm] = useState(false);
   const [togglingPending, startTransition] = useTransition();
   const [logoutPending, setLogoutPending] = useState(false);
@@ -147,7 +157,7 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
     await logoutPatient(); // server action: apaga cookie e redireciona
   }
 
-  function handleToggle(task: PatientTask) {
+  function handleToggle(task: PatientPortalTask) {
     if (togglingPending) return;
     const newStatus = task.status === "completed" ? "pending" : "completed";
     startTransition(async () => {

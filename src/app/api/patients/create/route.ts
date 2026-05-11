@@ -312,7 +312,11 @@ export async function POST(request: Request) {
     logSafeError("[api/patients/create] Erro ao inserir paciente", insertError);
     // Rollback manual: se criamos um auth user novo mas o INSERT falhou, remover o auth user
     if (!authUserAlreadyExisted) {
-      await supabaseAdmin.auth.admin.deleteUser(authUserId).catch(console.error);
+      await supabaseAdmin.auth.admin
+        .deleteUser(authUserId)
+        .catch((rollbackError) =>
+          logSafeError("[api/patients/create] Erro ao remover auth user no rollback", rollbackError)
+        );
     }
     return NextResponse.json(
       { error: "Erro ao salvar o paciente no banco de dados." },
@@ -346,7 +350,11 @@ export async function POST(request: Request) {
         .eq("id", newPatient.id);
       if (rollbackError) logSafeError("[api/patients/create] Erro no rollback do paciente", rollbackError);
       if (!authUserAlreadyExisted) {
-        await supabaseAdmin.auth.admin.deleteUser(authUserId).catch(console.error);
+        await supabaseAdmin.auth.admin
+          .deleteUser(authUserId)
+          .catch((rollbackError) =>
+            logSafeError("[api/patients/create] Erro ao remover auth user no rollback", rollbackError)
+          );
       }
       return NextResponse.json(
         { error: "Erro ao salvar o responsável do paciente." },

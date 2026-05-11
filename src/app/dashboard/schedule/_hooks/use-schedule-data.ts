@@ -175,7 +175,7 @@ export function useScheduleData() {
         .order("starts_at", { ascending: true }),
       supabase
         .from("patients")
-        .select("id, user_id, full_name, email, phone, cpf, date_of_birth, status, session_price, created_at, updated_at, access_token, auth_user_id")
+        .select("id, user_id, full_name, email, phone, cpf, date_of_birth, status, session_price, created_at, updated_at, auth_user_id")
         .eq("user_id", therapistId),
       supabase
         .from("profiles")
