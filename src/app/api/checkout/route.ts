@@ -96,7 +96,7 @@ export async function POST(request: Request) {
     const plan = PLAN_CONFIG[planType];
 
     // 3. Buscar perfil
-    const { data: profileData } = await supabaseAdmin
+    const { data: profileData } = await supabase
       .from("profiles").select("full_name, cpf, phone").eq("id", user.id).maybeSingle();
       
     const profile = profileData as { full_name: string | null; cpf: string | null; phone: string | null } | null;
@@ -169,6 +169,7 @@ export async function POST(request: Request) {
     }
 
     // 6. Persistir apenas metadados (sem dados do cartão) no Supabase
+    // service_role is required because subscriptions are writable only by backend billing flows.
     await supabaseAdmin.from("subscriptions").upsert(
       {
         user_id: user.id,

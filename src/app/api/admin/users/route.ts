@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { isPlatformAdmin } from '@/lib/auth/admin-authorization';
 
 export async function GET() {
   try {
@@ -11,18 +12,11 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { data } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-      
-    const profile = data as { role: string } | null;
-
-    if (profile?.role !== 'admin') {
+    if (!isPlatformAdmin(user)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    // service_role is required here because platform admins list all tenant profiles/subscriptions.
     const adminClient = createAdminClient();
 
     // Fetch all profiles

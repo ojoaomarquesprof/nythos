@@ -59,8 +59,8 @@ interface CreatePatientResponse {
  * SEGURANÇA:
  *  • Usa supabaseAdmin (service_role) APENAS no lado do servidor.
  *  • A chave service_role NUNCA é exposta ao browser.
- *  • O RLS de patients verifica auth.uid() = user_id para garantir
- *    que o terapeuta só cria pacientes sob seu próprio user_id.
+ *  • Antes de qualquer operação com service_role, valida sessão + perfil
+ *    profissional e calcula o owner (effectiveTherapistId) no servidor.
  */
 export async function POST(request: Request) {
   // ── 1. Autenticar o terapeuta que está fazendo a chamada ──
@@ -91,7 +91,7 @@ export async function POST(request: Request) {
   }
 
   // Garantir que quem chama é terapeuta ou admin
-  const { data: profileData } = await supabaseAdmin
+  const { data: profileData, error: profileError } = await supabase
     .from("profiles")
     .select("role, employer_id")
     .eq("id", therapist.id)
@@ -102,19 +102,43 @@ export async function POST(request: Request) {
     employer_id: string | null;
   } | null;
 
-  const callerRole = profile?.role ?? "therapist";
-  const effectiveTherapistId =
-    callerRole === "secretary" && profile?.employer_id
-      ? profile.employer_id
-      : therapist.id;
-
-  if (!["therapist", "admin", "secretary"].includes(callerRole)) {
+  if (profileError || !profile || !["therapist", "admin", "secretary"].includes(profile.role)) {
     return NextResponse.json(
-      { error: "Apenas terapeutas podem cadastrar pacientes." },
+      { error: "Apenas profissionais autorizados podem cadastrar pacientes." },
       { status: 403 }
     );
   }
 
+  const callerRole = profile.role;
+  let effectiveTherapistId = therapist.id;
+
+  if (callerRole === "secretary") {
+    if (!profile.employer_id) {
+      return NextResponse.json(
+        { error: "Secretária sem terapeuta responsável vinculado." },
+        { status: 403 }
+      );
+    }
+
+    const { data: employerProfile, error: employerProfileError } = await supabase
+      .from("profiles")
+      .select("id, role")
+      .eq("id", profile.employer_id)
+      .maybeSingle();
+
+    if (
+      employerProfileError ||
+      !employerProfile ||
+      !["therapist", "admin"].includes(employerProfile.role ?? "")
+    ) {
+      return NextResponse.json(
+        { error: "Vínculo profissional inválido para cadastro de paciente." },
+        { status: 403 }
+      );
+    }
+
+    effectiveTherapistId = employerProfile.id;
+  }
 
   // ── 2. Validar e parsear o body ──
   let body: CreatePatientRequest;
@@ -139,6 +163,7 @@ export async function POST(request: Request) {
   let authUserId: string;
   let authUserAlreadyExisted = false;
 
+  // service_role is needed here to reuse an existing patient auth account by email across records.
   const { data: existingPatientWithAuth } = await supabaseAdmin
     .from("patients")
     .select("auth_user_id")
@@ -177,6 +202,8 @@ export async function POST(request: Request) {
   }
 
   // ── 4. Inserir paciente em public.patients com auth_user_id já definido ──
+  // service_role is required here because patients INSERT triggers call
+  // encryption helpers that are intentionally not executable by authenticated.
   const { data: newPatient, error: insertError } = await supabaseAdmin
     .from("patients")
     .insert({
@@ -215,6 +242,7 @@ export async function POST(request: Request) {
   let guardianSaved = false;
 
   if (guardian?.full_name?.trim()) {
+    // service_role is required because guardian RLS currently permits only direct therapist ownership.
     const { error: guardianError } = await supabaseAdmin
       .from("patient_guardians")
       .insert({
@@ -229,6 +257,7 @@ export async function POST(request: Request) {
 
     if (guardianError) {
       console.error("[api/patients/create] Erro ao inserir responsavel:", guardianError);
+      // service_role rollback is required because secretaries cannot delete employer-owned patients via RLS.
       const { error: rollbackError } = await supabaseAdmin
         .from("patients")
         .delete()

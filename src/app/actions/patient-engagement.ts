@@ -180,6 +180,7 @@ async function requirePatientId(): Promise<string> {
     throw new Error(`INVALID_SESSION: patient_id invalido no cookie: "${session.patientId}"`);
   }
 
+  // service_role is scoped by the signed patient HMAC cookie; no Supabase auth session exists here.
   const admin = createAdminClient();
   const { data: patient, error } = await admin
     .from("patients")
@@ -226,6 +227,7 @@ export async function saveDiaryEntry(formData: {
   }
 
   try {
+    // service_role write is constrained to the patient_id from the signed HMAC cookie.
     const admin = createAdminClient();
     const { data: entry, error } = await admin
       .from("emotion_diary")
@@ -275,6 +277,7 @@ export async function toggleTaskStatus(
   const newStatus = isNowCompleted ? "completed" : "pending";
 
   try {
+    // service_role update is constrained by both task_id and the signed-cookie patient_id.
     const admin = createAdminClient();
     const { data: updatedRows, error } = await admin
       .from("patient_tasks")

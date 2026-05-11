@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { supabaseAdmin, createAdminClient } from "@/lib/supabase/admin";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   createGoogleCalendarOAuthState,
   GOOGLE_CALENDAR_OAUTH_NONCE_COOKIE,
@@ -123,6 +123,7 @@ async function refreshGoogleToken(
     const expiresIn: number = data.expires_in || 3600;
     const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
+    // service_role is required to encrypt and persist Google tokens via Vault-backed RPCs.
     await updateGoogleTokensEncrypted(supabaseAdmin, userId, {
       google_access_token: newAccessToken,
       google_refresh_token: refreshToken,
@@ -264,6 +265,7 @@ export async function syncGoogleCalendar(
     return { success: false, imported: 0, skipped: 0, error: "Perfil não encontrado." };
   }
 
+  // service_role is required to decrypt Google tokens via Vault-backed RPCs.
   const decryptedProfile = await decryptGoogleTokenFields(supabaseAdmin, profile);
 
   if (!decryptedProfile.google_refresh_token) {
@@ -372,14 +374,14 @@ export async function syncGoogleCalendar(
     // If a Google event was cancelled, cancel linked clinical sessions and remove external blocks.
     if (event.status === "cancelled") {
       try {
-        await createAdminClient()
+        await supabase
           .from("sessions")
           .update({ status: "cancelled" })
           .eq("user_id", user.id)
           .eq("google_event_id", event.id)
           .neq("status", "cancelled");
 
-        await (createAdminClient() as any)
+        await (supabase as any)
           .from("external_calendar_events")
           .delete()
           .eq("user_id", user.id)
@@ -396,7 +398,7 @@ export async function syncGoogleCalendar(
     const isTransparent = event.transparency === "transparent";
     if (isAllDayEvent || isTransparent) {
       try {
-        await (createAdminClient() as any)
+        await (supabase as any)
           .from("external_calendar_events")
           .delete()
           .eq("user_id", user.id)
@@ -446,7 +448,7 @@ export async function syncGoogleCalendar(
           html_link: event.htmlLink ?? null,
         };
 
-        const { error: externalUpsertError } = await (createAdminClient() as any)
+        const { error: externalUpsertError } = await (supabase as any)
           .from("external_calendar_events")
           .upsert(externalEventRecord, { onConflict: "user_id,google_event_id" });
 
@@ -462,7 +464,7 @@ export async function syncGoogleCalendar(
     }
 
     // Matched a patient: this should be a session, not an external block.
-    await (createAdminClient() as any)
+    await (supabase as any)
       .from("external_calendar_events")
       .delete()
       .eq("user_id", user.id)
@@ -481,9 +483,7 @@ export async function syncGoogleCalendar(
     };
 
     try {
-      // Use createAdminClient() directly here — the singleton supabaseAdmin has a known
-      // TypeScript inference issue with .insert() overloads in this version of supabase-js.
-      const { error: insertError } = await createAdminClient().from("sessions").insert(sessionRecord);
+      const { error: insertError } = await supabase.from("sessions").insert(sessionRecord);
       if (insertError) throw insertError;
       existingTimes.add(timeKey);
       imported++;

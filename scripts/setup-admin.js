@@ -64,6 +64,9 @@ async function setupAdmin() {
       email: adminEmail,
       password: adminPassword,
       email_confirm: true,
+      app_metadata: {
+        role: 'admin',
+      },
       user_metadata: {
         full_name: 'Super Admin',
       },
@@ -79,6 +82,10 @@ async function setupAdmin() {
     console.log('Admin user already exists. Updating password to ensure access...');
     const { error: updateError } = await supabase.auth.admin.updateUserById(user.id, {
       password: adminPassword,
+      app_metadata: {
+        ...(user.app_metadata || {}),
+        role: 'admin',
+      },
     });
     if (updateError) {
       console.error('Failed to update password:', updateError);

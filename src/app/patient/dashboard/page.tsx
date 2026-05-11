@@ -9,6 +9,7 @@ export default async function PatientDashboardPage() {
   const session = await getPatientSessionDetails();
   if (!session) redirect("/patient/login");
 
+  // service_role is scoped by the signed patient HMAC cookie; no Supabase auth session exists here.
   const admin = createAdminClient() as any;
 
   const { data: patient, error: patientErr } = await admin

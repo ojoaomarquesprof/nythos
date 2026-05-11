@@ -12,6 +12,10 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: 'ID da secretária não fornecido' }, { status: 400 });
     }
 
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(secretaryId)) {
+      return NextResponse.json({ error: 'ID da secretaria invalido' }, { status: 400 });
+    }
+
     // 1. Verificar se o solicitante é o psicólogo dono (employer_id)
     const cookieStore = await cookies();
     const supabase = createServerClient(
@@ -45,6 +49,7 @@ export async function DELETE(req: Request) {
 
     // 3. Remover o usuário do Auth (isso deleta o profile também se tiver cascade, 
     // mas por segurança vamos remover o vínculo primeiro ou deletar o usuário direto)
+    // service_role is required for Auth Admin deletion after ownership is verified through RLS.
     const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(secretaryId);
 
     if (deleteError) {

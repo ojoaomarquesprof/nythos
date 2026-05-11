@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -17,7 +19,11 @@ export async function POST(req: Request) {
 
     if (event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED') {
       const userId = payment.externalReference;
+      if (!UUID_RE.test(userId ?? '')) {
+        return NextResponse.json({ error: 'Invalid external reference' }, { status: 400 });
+      }
 
+      // service_role is required for trusted Asaas server-to-server subscription updates.
       const { error } = await supabaseAdmin
         .from('subscriptions')
         .upsert({
@@ -35,6 +41,11 @@ export async function POST(req: Request) {
     }
 
     if (event === 'PAYMENT_OVERDUE') {
+      if (!UUID_RE.test(payment.externalReference ?? '')) {
+        return NextResponse.json({ error: 'Invalid external reference' }, { status: 400 });
+      }
+
+      // service_role is required for trusted Asaas server-to-server subscription updates.
       await supabaseAdmin
         .from('subscriptions')
         .update({ status: 'past_due' })

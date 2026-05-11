@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { isPlatformAdmin } from '@/lib/auth/admin-authorization';
 
 export async function POST(
   request: Request,
@@ -19,18 +20,19 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { data } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-      
-    const profile = data as { role: string } | null;
-
-    if (profile?.role !== 'admin') {
+    if (!isPlatformAdmin(user)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      return NextResponse.json({ error: 'Invalid user id' }, { status: 400 });
+    }
+
+    if (!["active", "trialing", "past_due", "canceled", "unpaid"].includes(status)) {
+      return NextResponse.json({ error: 'Invalid subscription status' }, { status: 400 });
+    }
+
+    // service_role is required because subscriptions are writable only by backend/admin flows.
     const adminClient = createAdminClient();
 
     // Calculate dates if providing trial or active

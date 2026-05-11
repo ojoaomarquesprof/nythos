@@ -192,8 +192,6 @@ export async function createScheduleSessions(
       cursor = addPeriod(cursor, period);
     }
 
-    const admin = createAdminClient();
-
     const minStart = new Date(
       Math.min(...candidateIntervals.map((i) => i.start.getTime()))
     );
@@ -201,7 +199,7 @@ export async function createScheduleSessions(
       Math.max(...candidateIntervals.map((i) => i.end.getTime()))
     );
 
-    const { data: existingSessions, error: existingSessionsError } = await admin
+    const { data: existingSessions, error: existingSessionsError } = await supabase
       .from("sessions")
       .select("id, scheduled_at, duration_minutes, status")
       .eq("user_id", payload.therapistId)
@@ -218,9 +216,7 @@ export async function createScheduleSessions(
       return { start, end };
     });
 
-    const adminAny = admin as any;
-
-    const { data: externalEvents, error: externalEventsError } = await adminAny
+    const { data: externalEvents, error: externalEventsError } = await (supabase as any)
       .from("external_calendar_events")
       .select("id, starts_at, ends_at")
       .eq("user_id", payload.therapistId)
@@ -250,7 +246,7 @@ export async function createScheduleSessions(
       };
     }
 
-    const { data: patient } = await admin
+    const { data: patient } = await supabase
       .from("patients")
       .select("full_name")
       .eq("id", payload.patientId)
@@ -261,7 +257,7 @@ export async function createScheduleSessions(
       return { success: false, error: "Paciente invÃ¡lido para esta agenda." };
     }
 
-    const { data: createdSessions, error } = await admin
+    const { data: createdSessions, error } = await supabase
       .from("sessions")
       .insert(rows)
       .select("id, scheduled_at, duration_minutes, location, google_event_id");
@@ -273,6 +269,9 @@ export async function createScheduleSessions(
     let googleCreatedCount = 0;
     let warning: string | undefined;
 
+    const admin = createAdminClient();
+
+    // service_role is needed only for encrypted Google token reads/decryption.
     const { data: therapistProfile } = await admin
       .from("profiles")
       .select("google_access_token, google_refresh_token, google_token_expiry, google_calendar_id, timezone, full_name")
@@ -338,7 +337,7 @@ export async function createScheduleSessions(
               continue;
             }
 
-            await admin
+            await supabase
               .from("sessions")
               .update({ google_event_id: eventId })
               .eq("id", created.id)
@@ -379,8 +378,7 @@ export async function cancelScheduleSession(
 
     if (!actorProfile) return { success: false, error: "Perfil não encontrado." };
 
-    const admin = createAdminClient();
-    const { data: session, error: sessionError } = await admin
+    const { data: session, error: sessionError } = await supabase
       .from("sessions")
       .select("id, user_id, status, google_event_id")
       .eq("id", payload.sessionId)
@@ -396,7 +394,7 @@ export async function cancelScheduleSession(
     }
 
     if (session.status !== "cancelled") {
-      const { error: cancelError } = await admin
+      const { error: cancelError } = await supabase
         .from("sessions")
         .update({ status: "cancelled" })
         .eq("id", session.id);
@@ -407,6 +405,9 @@ export async function cancelScheduleSession(
     let warning: string | undefined;
 
     if (session.google_event_id) {
+      const admin = createAdminClient();
+
+      // service_role is needed only for encrypted Google token reads/decryption.
       const { data: therapistProfile } = await admin
         .from("profiles")
         .select("google_access_token, google_refresh_token, google_token_expiry, google_calendar_id")

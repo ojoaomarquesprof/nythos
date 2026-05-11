@@ -32,6 +32,7 @@ export async function getPatientByToken(token: string): Promise<VerifyTokenResul
   }
 
   try {
+    // service_role is needed for public token lookup before a Supabase auth session exists.
     const admin = createAdminClient();
     const { data, error } = await admin
       .from("patients")
@@ -73,6 +74,7 @@ export async function verifyPatientToken(
   }
 
   try {
+    // service_role is needed for public token + DOB verification before a Supabase auth session exists.
     const admin = createAdminClient();
     const { data: patient, error } = await admin
       .from("patients")

@@ -63,6 +63,7 @@ export async function GET(request: Request) {
 
   // Exchange authorization code for access + refresh tokens
   try {
+    // service_role is used only after signed state + nonce validation, for token encryption/persistence.
     const admin = createAdminClient();
     const { data: profile, error: profileError } = await admin
       .from("profiles")

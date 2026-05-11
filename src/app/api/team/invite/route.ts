@@ -38,11 +38,11 @@ export async function POST(req: Request) {
       .eq('id', therapist.id)
       .single();
 
-    if (therapistProfile?.role === 'secretary') {
-      return NextResponse.json({ error: 'Secretárias não podem convidar outros membros' }, { status: 403 });
+    if (!therapistProfile || !['therapist', 'admin'].includes(therapistProfile.role)) {
+      return NextResponse.json({ error: 'Sem permissao para convidar membros' }, { status: 403 });
     }
 
-    // 2. Criar o novo usuário no Auth via Admin
+    // 2. Criar o novo usuário no Auth via Admin. service_role is required for Auth Admin provisioning.
     const { data: newUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
@@ -66,6 +66,7 @@ export async function POST(req: Request) {
     // 3. Atualizar o perfil da nova secretária
     // Como a tabela profiles é populada automaticamente via trigger (provavelmente),
     // vamos usar o admin para forçar o papel e o vínculo.
+    // service_role is required to bind the newly created Auth user to the inviter's team.
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .update({
