@@ -361,6 +361,7 @@ export default function PatientDetailPage() {
     abcSummaries,
     treatmentPlan,
     setTreatmentPlan,
+    moodCheckins,
     profile,
     loading,
     newNote,
@@ -515,6 +516,16 @@ export default function PatientDetailPage() {
   const completedAnamnesis = anamnesisSummaries.find((item) => item.status === "completed") ?? null;
   const pendingAnamnesis = anamnesisSummaries.find((item) => item.status !== "completed") ?? null;
   const hasAnsweredAnamnesis = !!completedAnamnesis;
+  const latestMoodCheckin = moodCheckins[0] ?? null;
+  const previousMoodCheckin = moodCheckins[1] ?? null;
+  const moodTrend =
+    latestMoodCheckin && previousMoodCheckin && latestMoodCheckin.mood_score && previousMoodCheckin.mood_score
+      ? latestMoodCheckin.mood_score > previousMoodCheckin.mood_score
+        ? "Humor relatado maior que o registro anterior"
+        : latestMoodCheckin.mood_score < previousMoodCheckin.mood_score
+          ? "Humor relatado menor que o registro anterior"
+          : "Humor relatado estável"
+      : "Tendência disponível com pelo menos 2 registros";
   const anamnesisState =
     completedAnamnesis
       ? `Respondida em ${formatDate(completedAnamnesis.completed_at || completedAnamnesis.created_at || new Date().toISOString())}`
@@ -633,6 +644,7 @@ export default function PatientDetailPage() {
     }),
     ...patientTasks.flatMap((task): ClinicalTimelineEvent[] => {
       const created = toDate(task.created_at);
+      const responded = toDate((task as any).responded_at);
       const completed = toDate(task.completed_at);
       const events: ClinicalTimelineEvent[] = [];
 
@@ -646,6 +658,21 @@ export default function PatientDetailPage() {
           description: task.due_date ? `Prazo: ${formatDate(task.due_date)}` : "Tarefa criada para o paciente.",
           badge: task.status === "completed" ? "Concluída" : "Pendente",
           tone: task.status === "completed" ? "emerald" : "amber",
+          onAction: () => setActiveTab("tasks"),
+          actionLabel: "Abrir",
+        });
+      }
+
+      if (responded) {
+        events.push({
+          id: `task-responded-${task.id}`,
+          date: responded,
+          icon: Bell,
+          type: "Tarefa respondida",
+          title: task.title,
+          description: "Paciente enviou uma resposta pelo portal.",
+          badge: "Respondida",
+          tone: "sky",
           onAction: () => setActiveTab("tasks"),
           actionLabel: "Abrir",
         });
@@ -718,6 +745,22 @@ export default function PatientDetailPage() {
         tone: isConfirmed ? "emerald" : "amber",
         includeTime,
         onAction: () => setActiveTab("finance"),
+        actionLabel: "Ver",
+      }];
+    }),
+    ...moodCheckins.flatMap((item): ClinicalTimelineEvent[] => {
+      const date = toDate(item.created_at);
+      if (!date) return [];
+      return [{
+        id: `mood-checkin-${item.id}`,
+        date,
+        icon: Activity,
+        type: "Check-in realizado",
+        title: "Humor/sintomas relatados",
+        description: `Humor ${item.mood_score ?? "—"}/5 · Ansiedade ${item.anxiety_score ?? "—"}/5 · Sono ${item.sleep_quality ?? "—"}/5.`,
+        badge: "Relatado pelo paciente",
+        tone: "sky",
+        onAction: () => setActiveTab("tasks"),
         actionLabel: "Ver",
       }];
     }),
@@ -1307,6 +1350,31 @@ export default function PatientDetailPage() {
                     </Button>
                   </OverviewPanel>
 
+                  <OverviewPanel title="Humor e sintomas" icon={Activity}>
+                    {latestMoodCheckin ? (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <DetailRow label="Humor" value={`${latestMoodCheckin.mood_score ?? "—"}/5`} />
+                          <DetailRow label="Ansiedade" value={`${latestMoodCheckin.anxiety_score ?? "—"}/5`} />
+                          <DetailRow label="Sono" value={`${latestMoodCheckin.sleep_quality ?? "—"}/5`} />
+                          <DetailRow label="Energia" value={`${latestMoodCheckin.energy_score ?? "—"}/5`} />
+                        </div>
+                        <p className="rounded-2xl bg-slate-50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                          {moodTrend}
+                        </p>
+                        <Button variant="outline" className="h-9 w-full rounded-2xl bg-white" onClick={() => setActiveTab("tasks")}>
+                          Ver registros
+                        </Button>
+                      </div>
+                    ) : (
+                      <EmptyState
+                        icon={Activity}
+                        title="Nenhum check-in registrado ainda."
+                        description="Quando o paciente registrar humor, ansiedade, sono ou energia, o resumo aparecerá aqui."
+                      />
+                    )}
+                  </OverviewPanel>
+
                   <OverviewPanel title="Dados essenciais" icon={User}>
                     <div className="space-y-1">
                       <DetailRow label="Telefone" value={patient.phone || "Não informado"} />
@@ -1445,6 +1513,40 @@ export default function PatientDetailPage() {
             </TabsContent>
 
             <TabsContent value="tasks" className="mt-0 space-y-6 w-full animate-fade-in">
+              <Card className="rounded-[28px] border border-border/70 bg-white/85 shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Activity className="size-4 text-primary" />
+                    Humor e sintomas
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {moodCheckins.length > 0 ? (
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {moodCheckins.slice(0, 3).map((entry) => (
+                        <div key={entry.id} className="rounded-2xl border border-border/70 bg-slate-50/70 p-3">
+                          <p className="mb-2 text-xs font-semibold text-muted-foreground">
+                            {formatDate(entry.created_at, { day: "2-digit", month: "short" })}
+                          </p>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <span>Humor: <strong>{entry.mood_score ?? "—"}/5</strong></span>
+                            <span>Ansiedade: <strong>{entry.anxiety_score ?? "—"}/5</strong></span>
+                            <span>Sono: <strong>{entry.sleep_quality ?? "—"}/5</strong></span>
+                            <span>Energia: <strong>{entry.energy_score ?? "—"}/5</strong></span>
+                          </div>
+                          {entry.notes && <p className="mt-2 line-clamp-2 text-xs italic text-muted-foreground">{entry.notes}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState
+                      icon={Activity}
+                      title="Nenhum check-in registrado ainda."
+                      description="O paciente poderá registrar humor, ansiedade, sono e energia pelo portal."
+                    />
+                  )}
+                </CardContent>
+              </Card>
               <PatientEngagementCard
                 patientId={patient.id}
                 patientEmail={patient.email}

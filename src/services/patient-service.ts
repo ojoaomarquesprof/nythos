@@ -42,11 +42,9 @@ export const PatientService = {
 
   async getTasks(patientId: string): Promise<ServiceResponse<PatientTask[]>> {
     try {
-      const { data, error } = await supabase
-        .from("patient_tasks")
-        .select("*")
-        .eq("patient_id", patientId)
-        .order("created_at", { ascending: false });
+      const { data, error } = await supabase.rpc("get_patient_tasks_decrypted", {
+        p_patient_id: patientId,
+      });
 
       if (error) throw error;
       return { data, error: null };

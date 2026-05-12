@@ -5,7 +5,8 @@ import { useState, useOptimistic, useTransition, useRef, useEffect } from "react
 import {
   Plus, Trash2, CheckSquare, Square, BookOpen, Brain,
   Dumbbell, ListChecks, TrendingUp, AlertCircle, Clock,
-  Calendar, Loader2, ChevronDown, ChevronUp, X, Flag,
+  Calendar, Loader2, ChevronDown, ChevronUp, Wind, Route,
+  MessageSquare, CheckCircle2, Ban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +17,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { createPatientTask, deletePatientTask } from "@/app/actions/therapist-tasks";
+import { createPatientTask, deletePatientTask, updatePatientTaskStatus } from "@/app/actions/therapist-tasks";
 import type { PatientTask } from "@/types/database";
 import type { TaskCategory, TaskPriority } from "@/app/actions/therapist-tasks";
 
@@ -29,6 +30,10 @@ const CATEGORY_META: Record<TaskCategory, { label: string; icon: React.ReactNode
   exercise:          { label: "Exercício",         icon: <Dumbbell className="w-3.5 h-3.5" />, color: "text-emerald-600", bg: "bg-emerald-50" },
   reflection:        { label: "Reflexão",          icon: <Brain className="w-3.5 h-3.5" />, color: "text-pink-600", bg: "bg-pink-50" },
   behavior_tracking: { label: "Automonitoramento", icon: <TrendingUp className="w-3.5 h-3.5" />, color: "text-orange-600", bg: "bg-orange-50" },
+  thought_record:    { label: "Registro",          icon: <Brain className="w-3.5 h-3.5" />, color: "text-indigo-600", bg: "bg-indigo-50" },
+  breathing:         { label: "RespiraÃ§Ã£o",        icon: <Wind className="w-3.5 h-3.5" />, color: "text-sky-600", bg: "bg-sky-50" },
+  exposure:          { label: "ExposiÃ§Ã£o",         icon: <Route className="w-3.5 h-3.5" />, color: "text-amber-700", bg: "bg-amber-50" },
+  other:             { label: "Outro",             icon: <ListChecks className="w-3.5 h-3.5" />, color: "text-slate-600", bg: "bg-slate-100" },
 };
 
 const PRIORITY_META: Record<TaskPriority, { label: string; color: string; bg: string; dot: string }> = {
@@ -110,6 +115,8 @@ export function PatientTasksManager({ patientId, initialTasks }: Props) {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       completed_at: null,
+      responded_at: null,
+      viewed_at: null,
       therapist_notes: null,
       patient_feedback: null,
     };
@@ -160,6 +167,28 @@ export function PatientTasksManager({ patientId, initialTasks }: Props) {
 
   // ── Task Card ─────────────────────────────────────────────────────────────
 
+  function handleStatus(task: PatientTask, status: "pending" | "in_progress" | "completed" | "cancelled") {
+    startTransition(async () => {
+      const previous = tasks;
+      setTasks(prev => prev.map(t => t.id === task.id ? {
+        ...t,
+        status,
+        completed_at: status === "completed" ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      } : t));
+
+      const result = await updatePatientTaskStatus({
+        task_id: task.id,
+        patient_id: patientId,
+        status,
+      });
+
+      if (!result.success) {
+        setTasks(previous);
+      }
+    });
+  }
+
   function TaskCard({ task, showDelete = true }: { task: PatientTask; showDelete?: boolean }) {
     const cat = CATEGORY_META[task.category as TaskCategory] ?? CATEGORY_META.general;
     const pri = PRIORITY_META[task.priority as TaskPriority] ?? PRIORITY_META.medium;
@@ -188,6 +217,22 @@ export function PatientTasksManager({ patientId, initialTasks }: Props) {
               {task.description}
             </p>
           )}
+          {task.patient_feedback && (
+            <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3">
+              <p className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                <MessageSquare className="w-3.5 h-3.5" />
+                Resposta do paciente
+              </p>
+              <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-emerald-950/80">
+                {task.patient_feedback}
+              </p>
+              {task.responded_at && (
+                <p className="mt-1 text-[10px] font-medium text-emerald-700/70">
+                  Respondida em {new Date(task.responded_at).toLocaleDateString("pt-BR")}
+                </p>
+              )}
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2 mt-2">
             {/* Category */}
             <span className={cn("inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider", cat.color)}>
@@ -210,14 +255,36 @@ export function PatientTasksManager({ patientId, initialTasks }: Props) {
 
         {/* Delete */}
         {showDelete && (
-          <button
-            onClick={() => handleDelete(task.id)}
-            disabled={isDeleting || isPending}
-            className="shrink-0 w-7 h-7 rounded-xl flex items-center justify-center text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-600 transition-all disabled:opacity-50"
-            title="Excluir tarefa"
-          >
-            {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-          </button>
+          <div className="flex shrink-0 items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+            {task.status !== "completed" && task.status !== "cancelled" && (
+              <button
+                onClick={() => handleStatus(task, "completed")}
+                disabled={isPending}
+                className="w-7 h-7 rounded-xl flex items-center justify-center text-muted-foreground hover:bg-emerald-50 hover:text-emerald-600 transition-all disabled:opacity-50"
+                title="Marcar como concluÃ­da"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {task.status !== "cancelled" && (
+              <button
+                onClick={() => handleStatus(task, "cancelled")}
+                disabled={isPending}
+                className="w-7 h-7 rounded-xl flex items-center justify-center text-muted-foreground hover:bg-amber-50 hover:text-amber-700 transition-all disabled:opacity-50"
+                title="Cancelar tarefa"
+              >
+                <Ban className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              onClick={() => handleDelete(task.id)}
+              disabled={isDeleting || isPending}
+              className="w-7 h-7 rounded-xl flex items-center justify-center text-muted-foreground hover:bg-rose-50 hover:text-rose-600 transition-all disabled:opacity-50"
+              title="Excluir tarefa"
+            >
+              {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            </button>
+          </div>
         )}
       </div>
     );

@@ -12,9 +12,14 @@ export type TaskCategory =
   | "reading"
   | "exercise"
   | "reflection"
-  | "behavior_tracking";
+  | "behavior_tracking"
+  | "thought_record"
+  | "breathing"
+  | "exposure"
+  | "other";
 
 export type TaskPriority = "low" | "medium" | "high";
+export type TherapistTaskStatus = "pending" | "in_progress" | "completed" | "cancelled";
 
 export interface CreateTaskPayload {
   patient_id: string;
@@ -29,6 +34,12 @@ export interface TaskActionResult {
   success: boolean;
   taskId?: string;
   error?: string;
+}
+
+export interface UpdateTaskStatusPayload {
+  task_id: string;
+  patient_id: string;
+  status: TherapistTaskStatus;
 }
 
 function getExpectedTaskErrorMessage(err: unknown): string | null {
@@ -183,6 +194,57 @@ export async function deletePatientTask(
     return {
       success: false,
       error: getExpectedTaskErrorMessage(err) || safeClientError("Não foi possível concluir a operação."),
+    };
+  }
+}
+
+export async function updatePatientTaskStatus(
+  payload: UpdateTaskStatusPayload
+): Promise<TaskActionResult> {
+  if (!payload.task_id || !payload.patient_id) {
+    return { success: false, error: "Dados da tarefa invÃ¡lidos." };
+  }
+
+  if (!["pending", "in_progress", "completed", "cancelled"].includes(payload.status)) {
+    return { success: false, error: "Status invÃ¡lido." };
+  }
+
+  try {
+    const { supabase, user } = await requireTherapist();
+
+    const { data: patientCheck } = await supabase
+      .from("patients")
+      .select("id")
+      .eq("id", payload.patient_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!patientCheck) {
+      return { success: false, error: "Acesso negado." };
+    }
+
+    const { error: updateErr } = await supabase
+      .from("patient_tasks")
+      .update({
+        status: payload.status,
+        completed_at: payload.status === "completed" ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", payload.task_id)
+      .eq("patient_id", payload.patient_id);
+
+    if (updateErr) {
+      logSafeError("[updatePatientTaskStatus] Supabase error", updateErr);
+      return { success: false, error: safeClientError("NÃ£o foi possÃ­vel concluir a operaÃ§Ã£o.") };
+    }
+
+    revalidatePath(`/dashboard/patients/${payload.patient_id}`);
+    return { success: true, taskId: payload.task_id };
+  } catch (err: unknown) {
+    logSafeError("[updatePatientTaskStatus] Exception", err);
+    return {
+      success: false,
+      error: getExpectedTaskErrorMessage(err) || safeClientError("NÃ£o foi possÃ­vel concluir a operaÃ§Ã£o."),
     };
   }
 }

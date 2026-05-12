@@ -26,6 +26,27 @@ export interface SaveDiaryResult {
   error?: string;
 }
 
+export interface SaveMoodCheckinResult {
+  success: boolean;
+  checkin?: {
+    id: string;
+    patient_id: string;
+    therapist_id: string;
+    mood_score: number | null;
+    anxiety_score: number | null;
+    sleep_quality: number | null;
+    energy_score: number | null;
+    notes: string | null;
+    created_at: string;
+  };
+  error?: string;
+}
+
+export interface RespondTaskResult {
+  success: boolean;
+  error?: string;
+}
+
 export interface PatientEngagementStats {
   totalTasks: number;
   completedTasks: number;
@@ -34,6 +55,7 @@ export interface PatientEngagementStats {
   lastEmotionIntensity: number | null;
   lastEmotionDate: string | null;
   diaryEntriesCount: number;
+  moodCheckinsList: any[];
   tasksList: PatientTask[];
   diaryList: EmotionDiary[];
 }
@@ -165,6 +187,23 @@ const ALLOWED_DIARY_KEYS = [
   "coping_strategy",
 ] as const;
 
+const ALLOWED_MOOD_CHECKIN_KEYS = [
+  "mood_score",
+  "anxiety_score",
+  "sleep_quality",
+  "energy_score",
+  "notes",
+] as const;
+
+const ALLOWED_TASK_RESPONSE_KEYS = ["task_id", "response"] as const;
+
+function clampText(value: unknown, maxLength: number): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, maxLength);
+}
+
 function normalizeEmotion(input: string): { emotion: string; notesPrefix: string | null } {
   const trimmed = input.trim();
   const normalized = trimmed
@@ -279,6 +318,145 @@ export async function saveDiaryEntry(formData: {
   }
 }
 
+export async function saveMoodCheckin(formData: {
+  mood_score?: number;
+  anxiety_score?: number;
+  sleep_quality?: number;
+  energy_score?: number;
+  notes?: string;
+}): Promise<SaveMoodCheckinResult> {
+  if (!isPlainObject(formData) || !hasOnlyAllowedKeys(formData, ALLOWED_MOOD_CHECKIN_KEYS)) {
+    return { success: false, error: "Payload invÃ¡lido do check-in." };
+  }
+
+  let patientId: string;
+  try {
+    patientId = await requirePatientId();
+  } catch (authErr: unknown) {
+    logSafeError("[saveMoodCheckin] Auth error", authErr);
+    return { success: false, error: "Sessao invalida. Abra seu link de acesso." };
+  }
+
+  const scores = {
+    mood_score: toFiniteNumber(formData.mood_score),
+    anxiety_score: toFiniteNumber(formData.anxiety_score),
+    sleep_quality: toFiniteNumber(formData.sleep_quality),
+    energy_score: toFiniteNumber(formData.energy_score),
+  };
+
+  if (Object.values(scores).every((value) => value === null)) {
+    return { success: false, error: "Informe pelo menos um indicador." };
+  }
+
+  for (const value of Object.values(scores)) {
+    if (value !== null && (!Number.isInteger(value) || value < 1 || value > 5)) {
+      return { success: false, error: "Indicadores devem estar entre 1 e 5." };
+    }
+  }
+
+  try {
+    const admin = createAdminClient();
+    const { data: patient } = await admin
+      .from("patients")
+      .select("id,user_id")
+      .eq("id", patientId)
+      .maybeSingle();
+
+    if (!patient?.user_id) {
+      return { success: false, error: "Paciente nÃ£o encontrado." };
+    }
+
+    const { data: checkin, error } = await admin
+      .from("patient_mood_checkins")
+      .insert({
+        patient_id: patientId,
+        therapist_id: patient.user_id,
+        mood_score: scores.mood_score,
+        anxiety_score: scores.anxiety_score,
+        sleep_quality: scores.sleep_quality,
+        energy_score: scores.energy_score,
+        notes_encrypted: clampText(formData.notes, 2000),
+      })
+      .select("id,patient_id,therapist_id,mood_score,anxiety_score,sleep_quality,energy_score,created_at")
+      .single();
+
+    if (error || !checkin) {
+      logSafeError("[saveMoodCheckin] Supabase error", error);
+      return { success: false, error: "NÃ£o foi possÃ­vel salvar o check-in agora." };
+    }
+
+    revalidatePath("/patient/dashboard");
+    return {
+      success: true,
+      checkin: {
+        ...checkin,
+        notes: clampText(formData.notes, 2000),
+      },
+    };
+  } catch (err: unknown) {
+    logSafeError("[saveMoodCheckin] Exception", err);
+    return { success: false, error: "Erro inesperado ao salvar." };
+  }
+}
+
+export async function respondToTask(formData: {
+  task_id: string;
+  response: string;
+}): Promise<RespondTaskResult> {
+  if (!isPlainObject(formData) || !hasOnlyAllowedKeys(formData, ALLOWED_TASK_RESPONSE_KEYS)) {
+    return { success: false, error: "Payload invÃ¡lido da resposta." };
+  }
+
+  let patientId: string;
+  try {
+    patientId = await requirePatientId();
+  } catch (authErr: unknown) {
+    logSafeError("[respondToTask] Auth error", authErr);
+    return { success: false, error: "Sessao invalida. Abra seu link de acesso." };
+  }
+
+  if (!isValidUuid(formData.task_id)) {
+    return { success: false, error: "ID de tarefa invÃ¡lido." };
+  }
+
+  const response = clampText(formData.response, 4000);
+  if (!response) {
+    return { success: false, error: "Escreva uma resposta antes de enviar." };
+  }
+
+  try {
+    const admin = createAdminClient();
+    const { data: updatedRows, error } = await admin
+      .from("patient_tasks")
+      .update({
+        patient_feedback: response,
+        responded_at: new Date().toISOString(),
+        status: "completed",
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", formData.task_id)
+      .eq("patient_id", patientId)
+      .neq("status", "cancelled")
+      .select("id");
+
+    if (error) {
+      logSafeError("[respondToTask] Supabase error", error);
+      return { success: false, error: "NÃ£o foi possÃ­vel enviar a resposta." };
+    }
+
+    if (!updatedRows || updatedRows.length === 0) {
+      return { success: false, error: "Tarefa nÃ£o encontrada." };
+    }
+
+    revalidatePath("/patient/dashboard");
+    return { success: true };
+  } catch (err: unknown) {
+    logSafeError("[respondToTask] Exception", err);
+    return { success: false, error: "Erro ao responder tarefa." };
+  }
+}
+
 export async function toggleTaskStatus(
   taskId: string,
   currentStatus: string
@@ -345,22 +523,15 @@ export async function getPatientEngagement(patientId: string): Promise<Engagemen
       return { success: false, error: "Sessao do terapeuta invalida." };
     }
 
-    const [tasksRes, diaryRes] = await Promise.all([
-      supabase
-        .from("patient_tasks")
-        .select("*")
-        .eq("patient_id", patientId)
-        .neq("status", "cancelled")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("emotion_diary")
-        .select("*")
-        .eq("patient_id", patientId)
-        .order("created_at", { ascending: false }),
+    const [tasksRes, diaryRes, moodCheckinsRes] = await Promise.all([
+      supabase.rpc("get_patient_tasks_decrypted", { p_patient_id: patientId }),
+      supabase.rpc("get_patient_emotion_diary_decrypted", { p_patient_id: patientId }),
+      supabase.rpc("get_patient_mood_checkins_decrypted", { p_patient_id: patientId }),
     ]);
 
-    const tasks = tasksRes.data || [];
-    const diary = diaryRes.data || [];
+    const tasks = Array.isArray(tasksRes.data) ? tasksRes.data as PatientTask[] : [];
+    const diary = Array.isArray(diaryRes.data) ? diaryRes.data as EmotionDiary[] : [];
+    const moodCheckins = Array.isArray(moodCheckinsRes.data) ? moodCheckinsRes.data as any[] : [];
     const lastEntry = diary[0] ?? null;
     const completedTasks = tasks.filter((task: PatientTask) => task.status === "completed").length;
 
@@ -374,6 +545,7 @@ export async function getPatientEngagement(patientId: string): Promise<Engagemen
         lastEmotionIntensity: lastEntry?.intensity ?? null,
         lastEmotionDate: lastEntry?.created_at ?? null,
         diaryEntriesCount: diary.length,
+        moodCheckinsList: moodCheckins,
         tasksList: tasks,
         diaryList: diary,
       },

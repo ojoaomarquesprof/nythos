@@ -3,7 +3,7 @@ import { InteractivePatientDashboard } from "@/components/patient/interactive-da
 import { getPatientAccessState } from "@/lib/auth/patient-access";
 import { getPatientSessionDetails } from "@/lib/auth/patient-session";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { EmotionDiary, Patient, PatientTask } from "@/types/database";
+import type { Patient, PatientMoodCheckin } from "@/types/database";
 
 type PatientDashboardProfile = Pick<Patient, "id" | "full_name">;
 
@@ -25,19 +25,10 @@ export default async function PatientDashboardPage() {
     redirect("/patient/login");
   }
 
-  const [{ data: tasksRaw }, { data: diaryRaw }] = await Promise.all([
-    admin
-      .from("patient_tasks")
-      .select("id, patient_id, title, description, category, due_date, status, completed_at, created_at, updated_at")
-      .eq("patient_id", session.patientId)
-      .neq("status", "cancelled")
-      .order("due_date", { ascending: true, nullsFirst: false }),
-    admin
-      .from("emotion_diary")
-      .select("id, patient_id, emotion, intensity, notes, context, created_at")
-      .eq("patient_id", session.patientId)
-      .order("created_at", { ascending: false })
-      .limit(5),
+  const [{ data: tasksRaw }, { data: diaryRaw }, { data: moodCheckinsRaw }] = await Promise.all([
+    admin.rpc("get_patient_portal_tasks_decrypted", { p_patient_id: session.patientId }),
+    admin.rpc("get_patient_portal_emotion_diary_decrypted", { p_patient_id: session.patientId }),
+    admin.rpc("get_patient_portal_mood_checkins_decrypted", { p_patient_id: session.patientId }),
   ]);
 
   const patientProfile: PatientDashboardProfile = {
@@ -48,8 +39,9 @@ export default async function PatientDashboardPage() {
   return (
     <InteractivePatientDashboard
       patient={patientProfile}
-      initialTasks={tasksRaw ?? []}
-      initialDiary={diaryRaw ?? []}
+      initialTasks={Array.isArray(tasksRaw) ? tasksRaw as any : []}
+      initialDiary={Array.isArray(diaryRaw) ? diaryRaw as any : []}
+      initialMoodCheckins={Array.isArray(moodCheckinsRaw) ? moodCheckinsRaw as PatientMoodCheckin[] : []}
     />
   );
 }

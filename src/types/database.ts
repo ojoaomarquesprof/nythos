@@ -379,6 +379,8 @@ export type Database = {
           status: string;
           priority: string | null;
           completed_at: string | null;
+          responded_at: string | null;
+          viewed_at: string | null;
           therapist_notes: string | null;
           patient_feedback: string | null;
           created_at: string | null;
@@ -395,6 +397,9 @@ export type Database = {
           status?: string;
           priority?: string | null;
           therapist_notes?: string | null;
+          patient_feedback?: string | null;
+          responded_at?: string | null;
+          viewed_at?: string | null;
         };
         Update: {
           title?: string;
@@ -404,6 +409,8 @@ export type Database = {
           status?: string;
           priority?: string | null;
           completed_at?: string | null;
+          responded_at?: string | null;
+          viewed_at?: string | null;
           therapist_notes?: string | null;
           patient_feedback?: string | null;
           updated_at?: string | null;
@@ -635,6 +642,42 @@ export type Database = {
         };
         Relationships: never[];
       };
+
+      patient_mood_checkins: {
+        Row: {
+          id: string;
+          patient_id: string;
+          therapist_id: string;
+          mood_score: number | null;
+          anxiety_score: number | null;
+          sleep_quality: number | null;
+          energy_score: number | null;
+          notes_encrypted: string | null;
+          notes?: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          patient_id: string;
+          therapist_id: string;
+          mood_score?: number | null;
+          anxiety_score?: number | null;
+          sleep_quality?: number | null;
+          energy_score?: number | null;
+          notes_encrypted?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          patient_id?: string;
+          therapist_id?: string;
+          mood_score?: number | null;
+          anxiety_score?: number | null;
+          sleep_quality?: number | null;
+          energy_score?: number | null;
+          notes_encrypted?: string | null;
+        };
+        Relationships: never[];
+      };
     };
 
     Views: {
@@ -686,6 +729,41 @@ export type Database = {
       };
       create_anamnesis_request_secure: {
         Args: { p_patient_id: string; p_template_id: string };
+        Returns: Json;
+      };
+      get_patient_tasks_decrypted: {
+        Args: { p_patient_id: string };
+        Returns: Json;
+      };
+      get_patient_emotion_diary_decrypted: {
+        Args: { p_patient_id: string };
+        Returns: Json;
+      };
+      get_patient_mood_checkins_decrypted: {
+        Args: { p_patient_id: string };
+        Returns: Json;
+      };
+      create_patient_mood_checkin_secure: {
+        Args: {
+          p_patient_id: string;
+          p_mood_score?: number | null;
+          p_anxiety_score?: number | null;
+          p_sleep_quality?: number | null;
+          p_energy_score?: number | null;
+          p_notes?: string | null;
+        };
+        Returns: Json;
+      };
+      get_patient_portal_tasks_decrypted: {
+        Args: { p_patient_id: string };
+        Returns: Json;
+      };
+      get_patient_portal_emotion_diary_decrypted: {
+        Args: { p_patient_id: string };
+        Returns: Json;
+      };
+      get_patient_portal_mood_checkins_decrypted: {
+        Args: { p_patient_id: string };
         Returns: Json;
       };
       get_patient_treatment_plan_decrypted: {
@@ -751,6 +829,9 @@ export type PatientTreatmentPlan = Database['public']['Tables']['patient_treatme
   strategies: string | null;
   goals: PatientTreatmentGoal[];
 };
+export type PatientMoodCheckin = Database['public']['Tables']['patient_mood_checkins']['Row'] & {
+  notes: string | null;
+};
 
 // ─── Convenience Insert/Update Types ────────────────────────────────────────
 export type ProfileInsert  = Database['public']['Tables']['profiles']['Insert'];
@@ -773,4 +854,4 @@ export type SessionType    = 'individual' | 'couple' | 'group' | 'online' | 'ini
 export type CashFlowType   = 'income' | 'expense';
 export type CashFlowStatus = 'pending' | 'confirmed' | 'cancelled';
 export type PatientStatus  = 'active' | 'inactive' | 'archived';
-export type TaskStatus     = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+export type TaskStatus     = 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'responded' | 'viewed';
