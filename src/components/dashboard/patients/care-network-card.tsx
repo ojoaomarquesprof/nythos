@@ -2,21 +2,27 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useSubscription } from "@/hooks/use-subscription";
-import { 
-  Users, 
-  Plus, 
-  Phone, 
-  Stethoscope, 
-  GraduationCap, 
-  MoreVertical, 
-  Trash2,
+import {
   AlertCircle,
-  Download
+  Building2,
+  Download,
+  GraduationCap,
+  Mail,
+  Phone,
+  Plus,
+  ShieldCheck,
+  Star,
+  Stethoscope,
+  Trash2,
+  UserRound,
+  Users,
 } from "lucide-react";
+import { useSubscription } from "@/hooks/use-subscription";
 import { usePdfExport } from "@/hooks/use-pdf-export";
-import type { Profile, Patient } from "@/types/database";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { PatientSupportService } from "@/services/patient-support-service";
+import type { Patient, Profile, SupportContact } from "@/types/database";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,118 +40,153 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import { SPECIALTIES, formatDate } from "@/lib/constants";
+import { formatDate } from "@/lib/constants";
 
-interface Professional {
-  id: string;
-  patient_id: string;
-  name: string;
-  specialty: string;
-  phone: string | null;
-  notes: string | null;
-  created_at: string;
+const CONTACT_TYPES = [
+  { value: "legal_guardian", label: "Responsavel legal" },
+  { value: "financial_guardian", label: "Responsavel financeiro" },
+  { value: "emergency", label: "Contato de emergencia" },
+  { value: "psychiatrist", label: "Psiquiatra" },
+  { value: "speech_therapist", label: "Fonoaudiologo" },
+  { value: "occupational_therapist", label: "Terapeuta ocupacional" },
+  { value: "doctor", label: "Medico" },
+  { value: "school", label: "Escola" },
+  { value: "teacher", label: "Professor" },
+  { value: "caregiver", label: "Cuidador" },
+  { value: "other", label: "Outro" },
+];
+
+const defaultForm = {
+  name: "",
+  contactType: "other",
+  relationship: "",
+  phone: "",
+  email: "",
+  organization: "",
+  notes: "",
+  canContact: false,
+  consentDate: "",
+  isPrimary: false,
+  isActive: true,
+};
+
+function contactLabel(value?: string | null) {
+  return CONTACT_TYPES.find((item) => item.value === value)?.label || "Contato";
 }
 
-const specialties = SPECIALTIES;
+function contactIcon(type?: string | null) {
+  if (type === "school" || type === "teacher") return GraduationCap;
+  if (type === "psychiatrist" || type === "doctor" || type === "speech_therapist" || type === "occupational_therapist") return Stethoscope;
+  if (type === "legal_guardian" || type === "financial_guardian" || type === "emergency") return UserRound;
+  return Users;
+}
 
-export function CareNetworkCard({ 
-  patientId, 
-  patient, 
-  profile 
-}: { 
+export function CareNetworkCard({
+  patientId,
+  patient,
+  profile,
+  initialContacts,
+  onChanged,
+}: {
   patientId: string;
   patient?: Patient | null;
   profile?: Profile | null;
+  initialContacts?: SupportContact[];
+  onChanged?: (contacts: SupportContact[]) => void;
 }) {
-  const [professionals, setProfessionals] = useState<Professional[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [contacts, setContacts] = useState<SupportContact[]>(initialContacts || []);
+  const [loading, setLoading] = useState(!initialContacts);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const supabase = createClient() as any;
+  const [error, setError] = useState<string | null>(null);
+  const [formData, setFormData] = useState(defaultForm);
   const router = useRouter();
   const { hasSubscription, loading: subLoading } = useSubscription();
   const { exportPdf, isExporting: isExportingPdf } = usePdfExport();
 
-  // Form State
-  const [formData, setFormData] = useState({
-    name: "",
-    specialty: "Fonoaudiologia",
-    phone: "",
-    notes: "",
-  });
-
   useEffect(() => {
-    fetchCareNetwork();
-  }, [patientId]);
-
-  async function fetchCareNetwork() {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("care_network")
-      .select("*")
-      .eq("patient_id", patientId)
-      .order("created_at", { ascending: false });
-
-    if (!error && data) {
-      setProfessionals(data);
+    if (initialContacts) {
+      setContacts(initialContacts);
+      setLoading(false);
+      return;
     }
+
+    fetchContacts();
+  }, [patientId, initialContacts]);
+
+  function syncContacts(nextContacts: SupportContact[]) {
+    setContacts(nextContacts);
+    onChanged?.(nextContacts);
+  }
+
+  async function fetchContacts() {
+    setLoading(true);
+    const { data } = await PatientSupportService.getContacts(patientId);
+    syncContacts(data || []);
     setLoading(false);
   }
 
-  async function handleAddProfessional(e: React.FormEvent) {
+  async function handleAddContact(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setError(null);
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { error } = await supabase.from("care_network").insert({
-      patient_id: patientId,
-      user_id: user.id,
+    const { data, error: serviceError } = await PatientSupportService.createContact({
+      patientId,
       name: formData.name,
-      specialty: formData.specialty,
-      phone: formData.phone || null,
-      notes: formData.notes || null,
+      contactType: formData.contactType,
+      relationship: formData.relationship,
+      specialty: contactLabel(formData.contactType),
+      phone: formData.phone,
+      email: formData.email,
+      organization: formData.organization,
+      notes: formData.notes,
+      canContact: formData.canContact,
+      consentDate: formData.consentDate || null,
+      isPrimary: formData.isPrimary,
+      isActive: formData.isActive,
     });
 
-    if (!error) {
-      setOpen(false);
-      setFormData({ name: "", specialty: "fono", phone: "", notes: "" });
-      fetchCareNetwork();
+    if (serviceError || !data) {
+      setError(serviceError || "Nao foi possivel cadastrar o contato.");
+      setSaving(false);
+      return;
     }
+
+    syncContacts(data);
+    setFormData(defaultForm);
+    setOpen(false);
     setSaving(false);
   }
 
   async function handleDelete(id: string) {
-    const { error } = await supabase
-      .from("care_network")
-      .delete()
-      .eq("id", id);
-
-    if (!error) {
-      setProfessionals(professionals.filter(p => p.id !== id));
+    const { data, error: serviceError } = await PatientSupportService.deleteContact(id);
+    if (!serviceError && data) {
+      syncContacts(data);
     }
   }
 
   async function handleExportPdf() {
-    if (!profile || !professionals.length || !patient) return;
-    
+    if (!profile || !contacts.length || !patient) return;
+
     const patientDetails = [
       `Paciente: ${patient.full_name}`,
       patient.cpf ? `CPF: ${patient.cpf}` : null,
-      patient.date_of_birth ? `Data de Nasc.: ${formatDate(patient.date_of_birth)}` : null,
-      `Data do Relatório: ${new Date().toLocaleDateString("pt-BR")}`
+      patient.date_of_birth ? `Data de nasc.: ${formatDate(patient.date_of_birth)}` : null,
+      `Data do relatorio: ${new Date().toLocaleDateString("pt-BR")}`,
     ].filter(Boolean).join(" | ");
 
-    const tableBody = professionals.map((contact: Professional) => {
-      const specLabel = specialties.find(s => s.value === contact.specialty)?.label || contact.specialty;
-      return [contact.name, specLabel, contact.phone || "—"];
-    });
+    const tableBody = contacts.map((contact) => [
+      contact.name,
+      contactLabel(contact.contact_type),
+      contact.organization || contact.relationship || "-",
+      contact.phone || contact.email || "-",
+      contact.can_contact ? "Autorizado" : "Sem autorizacao",
+    ]);
 
     await exportPdf({
-      title: "Rede de Apoio Multidisciplinar",
+      title: "Rede de Apoio",
       subtitle: patientDetails,
       profile,
       fileName: `rede_apoio_${patient.full_name.toLowerCase().replace(/\s+/g, "_")}.pdf`,
@@ -153,225 +194,334 @@ export function CareNetworkCard({
         {
           table: {
             headerRows: 1,
-            widths: ['*', 'auto', 'auto'],
+            widths: ["*", "auto", "auto", "auto", "auto"],
             body: [
               [
-                { text: 'Nome do Profissional', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
-                { text: 'Especialidade', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
-                { text: 'Contato', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] }
+                { text: "Nome", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
+                { text: "Papel", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
+                { text: "Vinculo", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
+                { text: "Contato", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
+                { text: "Autorizacao", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
               ],
-              ...tableBody.map(row => row.map(cell => ({ text: cell, margin: [5, 5] })))
-            ]
+              ...tableBody.map((row) => row.map((cell) => ({ text: cell, margin: [5, 5] }))),
+            ],
           },
-          layout: {
-            fillColor: function (rowIndex: number) {
-              return (rowIndex % 2 === 0 && rowIndex > 0) ? '#f8fafc' : null;
-            },
-            hLineColor: '#cbd5e1',
-            vLineColor: '#cbd5e1'
-          }
-        }
-      ]
+        },
+      ],
     });
   }
 
+  const activeContacts = contacts.filter((contact) => contact.is_active !== false);
+  const emergencyContact = activeContacts.find((contact) => contact.contact_type === "emergency");
+
   return (
-    <Card className="glass-panel border-0 shadow-lg overflow-hidden rounded-[32px] animate-fade-in">
-      <CardHeader className="pb-4 bg-white/30 backdrop-blur-sm border-b border-white/40">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center">
-              <Users className="w-5 h-5 text-primary" />
+    <Card className="rounded-[28px] border border-border/70 bg-white/85 shadow-sm">
+      <CardHeader className="border-b border-border/60 px-5 py-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex size-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Users className="size-5" />
             </div>
             <div>
-              <CardTitle className="text-lg font-bold text-primary">Rede de Apoio</CardTitle>
+              <CardTitle className="text-lg font-semibold text-foreground">Rede de apoio</CardTitle>
               <CardDescription className="text-xs">
-                Contatos dos profissionais que atendem o paciente.
+                Responsaveis, contatos de emergencia e profissionais envolvidos no caso.
               </CardDescription>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-2">
-            <Button 
-              size="sm" 
-              variant="outline" 
-              className="h-9 px-4 rounded-full border-primary/20 text-primary hover:bg-primary/5 transition-all"
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 rounded-2xl bg-white text-xs"
               onClick={handleExportPdf}
-              disabled={professionals.length === 0 || !profile || !patient || isExportingPdf}
+              disabled={contacts.length === 0 || !profile || !patient || isExportingPdf}
             >
-              <Download className="w-4 h-4 mr-2" />
-              <span className="hidden sm:inline">PDF</span>
+              <Download className="size-4" />
+              PDF
             </Button>
-
-            <Dialog open={open} onOpenChange={setOpen}>
-              <Button 
-                size="sm" 
-                className="gradient-primary text-white h-9 px-5 rounded-full shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all active:scale-95" 
-                onClick={() => {
-                  if (!hasSubscription && !subLoading) {
-                    router.push("/dashboard/settings/billing");
-                  } else {
-                    setOpen(true);
-                  }
-                }}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                <span>Novo</span>
-              </Button>
-              <DialogContent className="sm:max-w-md rounded-[32px] border-0 shadow-2xl">
-                <DialogHeader className="p-4">
-                  <DialogTitle className="text-xl font-bold text-primary">Novo Profissional</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleAddProfessional} className="space-y-5 p-4 pt-0">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="name" className="text-sm font-bold text-slate-700">Nome do Profissional *</Label>
-                    <Input
-                      id="name"
-                      placeholder="Ex: Dra. Ana Souza"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      required
-                      className="glass-input-field h-12 bg-slate-50/50"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="specialty" className="text-sm font-bold text-slate-700">Especialidade *</Label>
-                    <Select
-                      value={formData.specialty}
-                      onValueChange={(val: any) => setFormData({ ...formData, specialty: val || "" })}
-                    >
-                      <SelectTrigger id="specialty" className="glass-input-field h-12 bg-slate-50/50 w-full">
-                        <SelectValue placeholder="Selecione..." />
-                      </SelectTrigger>
-                      <SelectContent className="rounded-2xl border-white/40 backdrop-blur-xl">
-                        {specialties.map((s: { value: string; label: string }) => (
-                          <SelectItem key={s.value} value={s.value} className="rounded-lg">
-                            {s.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="phone" className="text-sm font-bold text-slate-700">Telefone / WhatsApp</Label>
-                    <Input
-                      id="phone"
-                      placeholder="(00) 00000-0000"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className="glass-input-field h-12 bg-slate-50/50"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="notes" className="text-sm font-bold text-slate-700">Observações</Label>
-                    <Textarea
-                      id="notes"
-                      placeholder="Ex: Atendimento nas quartas pela manhã"
-                      className="rounded-2xl border-slate-200 focus:border-primary transition-all shadow-sm bg-slate-50/50 min-h-[80px] py-4"
-                      value={formData.notes}
-                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    />
-                  </div>
-
-                  <div className="flex gap-3 pt-4">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="flex-1 rounded-full h-12"
-                      onClick={() => setOpen(false)}
-                    >
-                      Cancelar
-                    </Button>
-                    <Button
-                      type="submit"
-                      className="flex-1 gradient-primary text-white rounded-full h-12 font-bold shadow-lg shadow-primary/20"
-                      disabled={saving}
-                    >
-                      {saving ? "Salvando..." : "Cadastrar"}
-                    </Button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
+            <Button
+              size="sm"
+              className="h-9 rounded-2xl"
+              onClick={() => {
+                if (!hasSubscription && !subLoading) {
+                  router.push("/dashboard/settings/billing");
+                  return;
+                }
+                setOpen(true);
+              }}
+            >
+              <Plus className="size-4" />
+              Adicionar contato
+            </Button>
           </div>
         </div>
       </CardHeader>
-      
-      <CardContent className="p-8">
+
+      <CardContent className="p-5">
+        {!emergencyContact && (
+          <div className="mb-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-3 text-sm text-amber-800">
+            <AlertCircle className="mt-0.5 size-4 shrink-0" />
+            <span>Nenhum contato de emergencia cadastrado para este paciente.</span>
+          </div>
+        )}
+
         {loading ? (
-          <div className="space-y-4">
-            {[1, 2].map((i) => (
-              <div key={i} className="animate-pulse flex items-center gap-4 p-4 rounded-2xl bg-white/40 border border-white/60">
-                <div className="w-12 h-12 rounded-xl bg-muted/20" />
-                <div className="flex-1 space-y-2">
-                  <div className="w-32 h-4 bg-muted/20 rounded" />
-                  <div className="w-20 h-3 bg-muted/20 rounded" />
-                </div>
-              </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {[1, 2].map((item) => (
+              <div key={item} className="h-28 animate-pulse rounded-2xl bg-slate-100" />
             ))}
           </div>
-        ) : professionals.length === 0 ? (
-          <div className="py-12 text-center border border-dashed rounded-[32px] bg-white/5 flex flex-col items-center">
-            <div className="w-12 h-12 rounded-full bg-muted/20 flex items-center justify-center mb-3">
-              <Users className="w-6 h-6 text-muted-foreground/40" />
-            </div>
-            <p className="text-sm text-muted-foreground">Nenhum profissional na rede de apoio deste paciente.</p>
+        ) : contacts.length === 0 ? (
+          <div className="rounded-3xl border border-dashed border-border/80 bg-slate-50/70 p-10 text-center">
+            <Users className="mx-auto mb-3 size-9 text-muted-foreground/40" />
+            <p className="text-sm font-semibold text-foreground">Nenhum contato de apoio cadastrado.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Cadastre responsaveis, escola, contatos de emergencia ou equipe multidisciplinar.
+            </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {professionals.map((contact: any) => {
-              const OLD_MAPPING: Record<string, string> = {
-                fono: "Fonoaudiologia",
-                to: "Terapia Ocupacional",
-                at: "Acompanhamento Terapêutico",
-                neuro: "Neuropediatria",
-                psico: "Psicopedagogia"
-              };
-              const specLabel = specialties.find(s => s.value === contact.specialty)?.label || OLD_MAPPING[contact.specialty] || contact.specialty;
-              const isSchool = contact.specialty === "escola";
-
+          <div className="grid gap-3 md:grid-cols-2">
+            {contacts.map((contact) => {
+              const Icon = contactIcon(contact.contact_type);
               return (
-                <div 
-                  key={contact.id} 
-                  className="flex items-center justify-between p-4 rounded-[24px] border border-white/40 bg-white/40 hover:bg-white/60 transition-all group"
+                <div
+                  key={contact.id}
+                  className={cn(
+                    "group rounded-3xl border border-border/70 bg-white/85 p-4 shadow-sm transition hover:border-primary/20",
+                    contact.is_active === false && "opacity-60"
+                  )}
                 >
-                  <div className="flex items-center gap-4 min-w-0">
-                    <div className={cn(
-                      "w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm",
-                      isSchool ? "bg-amber-100 text-amber-700" : "bg-primary/10 text-primary"
-                    )}>
-                      {isSchool ? <GraduationCap className="w-6 h-6" /> : <Stethoscope className="w-6 h-6" />}
-                    </div>
-                    
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-primary/80 truncate leading-none mb-1.5">{contact.name}</p>
-                      <p className="text-xs text-muted-foreground font-bold">{specLabel}</p>
-                      {contact.phone && (
-                        <div className="flex items-center gap-1.5 mt-2 text-[11px] text-muted-foreground font-medium">
-                          <Phone className="w-3 h-3" />
-                          {contact.phone}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 gap-3">
+                      <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                        <Icon className="size-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-semibold text-foreground">{contact.name}</p>
+                          {contact.is_primary && (
+                            <Badge variant="outline" className="rounded-full border-violet-200 bg-violet-50 text-[10px] text-violet-700">
+                              <Star className="mr-1 size-3" />
+                              Preferencial
+                            </Badge>
+                          )}
                         </div>
-                      )}
+                        <p className="mt-1 text-xs font-medium text-muted-foreground">
+                          {contactLabel(contact.contact_type)}
+                          {contact.relationship ? ` · ${contact.relationship}` : ""}
+                        </p>
+                      </div>
                     </div>
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 rounded-full text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-600"
+                      onClick={() => handleDelete(contact.id)}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
                   </div>
 
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="w-9 h-9 rounded-full opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-red-600 hover:bg-red-50"
-                    onClick={() => handleDelete(contact.id)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                  <div className="mt-4 grid gap-2 text-xs text-muted-foreground">
+                    {contact.organization && (
+                      <span className="inline-flex items-center gap-2">
+                        <Building2 className="size-3.5 text-primary/60" />
+                        {contact.organization}
+                      </span>
+                    )}
+                    {contact.phone && (
+                      <span className="inline-flex items-center gap-2">
+                        <Phone className="size-3.5 text-primary/60" />
+                        {contact.phone}
+                      </span>
+                    )}
+                    {contact.email && (
+                      <span className="inline-flex items-center gap-2">
+                        <Mail className="size-3.5 text-primary/60" />
+                        {contact.email}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "rounded-full text-[10px]",
+                        contact.can_contact
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : "border-slate-200 bg-slate-50 text-slate-600"
+                      )}
+                    >
+                      <ShieldCheck className="mr-1 size-3" />
+                      {contact.can_contact ? "Contato autorizado" : "Sem autorizacao"}
+                    </Badge>
+                    {contact.consent_date && (
+                      <Badge variant="outline" className="rounded-full border-sky-200 bg-sky-50 text-[10px] text-sky-700">
+                        {formatDate(contact.consent_date)}
+                      </Badge>
+                    )}
+                    {contact.is_active === false && (
+                      <Badge variant="outline" className="rounded-full border-slate-200 bg-slate-50 text-[10px] text-slate-600">
+                        Inativo
+                      </Badge>
+                    )}
+                  </div>
+
+                  {contact.notes && (
+                    <p className="mt-3 line-clamp-2 rounded-2xl bg-slate-50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                      {contact.notes}
+                    </p>
+                  )}
                 </div>
               );
             })}
           </div>
         )}
       </CardContent>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl border border-border/70 bg-white p-0 shadow-2xl sm:max-w-2xl">
+          <DialogHeader className="border-b border-border/60 bg-slate-50/80 px-6 py-5">
+            <DialogTitle className="text-lg font-semibold">Adicionar contato de apoio</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleAddContact} className="space-y-5 p-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="support-name">Nome *</Label>
+                <Input
+                  id="support-name"
+                  value={formData.name}
+                  onChange={(event) => setFormData({ ...formData, name: event.target.value })}
+                  required
+                  className="h-11 rounded-2xl"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Papel no caso *</Label>
+                <Select value={formData.contactType} onValueChange={(value) => setFormData({ ...formData, contactType: value || "other" })}>
+                  <SelectTrigger className="h-11 rounded-2xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CONTACT_TYPES.map((type) => (
+                      <SelectItem key={type.value} value={type.value}>
+                        {type.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="support-relationship">Relacao/vinculo</Label>
+                <Input
+                  id="support-relationship"
+                  value={formData.relationship}
+                  onChange={(event) => setFormData({ ...formData, relationship: event.target.value })}
+                  className="h-11 rounded-2xl"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="support-organization">Organizacao</Label>
+                <Input
+                  id="support-organization"
+                  value={formData.organization}
+                  onChange={(event) => setFormData({ ...formData, organization: event.target.value })}
+                  className="h-11 rounded-2xl"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="support-phone">Telefone</Label>
+                <Input
+                  id="support-phone"
+                  value={formData.phone}
+                  onChange={(event) => setFormData({ ...formData, phone: event.target.value })}
+                  className="h-11 rounded-2xl"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="support-email">E-mail</Label>
+                <Input
+                  id="support-email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(event) => setFormData({ ...formData, email: event.target.value })}
+                  className="h-11 rounded-2xl"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="support-notes">Observacoes</Label>
+              <Textarea
+                id="support-notes"
+                value={formData.notes}
+                onChange={(event) => setFormData({ ...formData, notes: event.target.value })}
+                className="min-h-24 rounded-2xl"
+              />
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <label className="flex items-center gap-3 rounded-2xl border border-border/70 bg-slate-50/70 p-3 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={formData.canContact}
+                  onChange={(event) => setFormData({ ...formData, canContact: event.target.checked })}
+                  className="size-4"
+                />
+                Autorizado para contato
+              </label>
+              <label className="flex items-center gap-3 rounded-2xl border border-border/70 bg-slate-50/70 p-3 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={formData.isPrimary}
+                  onChange={(event) => setFormData({ ...formData, isPrimary: event.target.checked })}
+                  className="size-4"
+                />
+                Preferencial
+              </label>
+              <label className="flex items-center gap-3 rounded-2xl border border-border/70 bg-slate-50/70 p-3 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={formData.isActive}
+                  onChange={(event) => setFormData({ ...formData, isActive: event.target.checked })}
+                  className="size-4"
+                />
+                Ativo
+              </label>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="support-consent-date">Data da autorizacao</Label>
+              <Input
+                id="support-consent-date"
+                type="date"
+                value={formData.consentDate}
+                onChange={(event) => setFormData({ ...formData, consentDate: event.target.value })}
+                className="h-11 rounded-2xl"
+              />
+            </div>
+
+            {error && (
+              <p className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {error}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button type="button" variant="ghost" className="rounded-2xl" onClick={() => setOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="rounded-2xl" disabled={saving}>
+                {saving ? "Salvando..." : "Cadastrar"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

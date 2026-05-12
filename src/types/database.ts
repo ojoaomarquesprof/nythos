@@ -678,6 +678,102 @@ export type Database = {
         };
         Relationships: never[];
       };
+
+      patient_documents: {
+        Row: {
+          id: string;
+          patient_id: string;
+          therapist_id: string;
+          category: string;
+          title: string;
+          description_encrypted: string | null;
+          description?: string | null;
+          storage_path: string | null;
+          file_name: string | null;
+          mime_type: string | null;
+          size_bytes: number | null;
+          document_date: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          patient_id: string;
+          therapist_id: string;
+          category?: string;
+          title: string;
+          description_encrypted?: string | null;
+          storage_path?: string | null;
+          file_name?: string | null;
+          mime_type?: string | null;
+          size_bytes?: number | null;
+          document_date?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          patient_id?: string;
+          therapist_id?: string;
+          category?: string;
+          title?: string;
+          description_encrypted?: string | null;
+          storage_path?: string | null;
+          file_name?: string | null;
+          mime_type?: string | null;
+          size_bytes?: number | null;
+          document_date?: string | null;
+          updated_at?: string;
+        };
+        Relationships: never[];
+      };
+
+      patient_consents: {
+        Row: {
+          id: string;
+          patient_id: string;
+          therapist_id: string;
+          consent_type: string;
+          status: string;
+          signed_at: string | null;
+          expires_at: string | null;
+          related_person_name: string | null;
+          document_file_id: string | null;
+          version: string | null;
+          notes_encrypted: string | null;
+          notes?: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          patient_id: string;
+          therapist_id: string;
+          consent_type?: string;
+          status?: string;
+          signed_at?: string | null;
+          expires_at?: string | null;
+          related_person_name?: string | null;
+          document_file_id?: string | null;
+          version?: string | null;
+          notes_encrypted?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          patient_id?: string;
+          therapist_id?: string;
+          consent_type?: string;
+          status?: string;
+          signed_at?: string | null;
+          expires_at?: string | null;
+          related_person_name?: string | null;
+          document_file_id?: string | null;
+          version?: string | null;
+          notes_encrypted?: string | null;
+          updated_at?: string;
+        };
+        Relationships: never[];
+      };
     };
 
     Views: {
@@ -801,6 +897,76 @@ export type Database = {
         };
         Returns: Json;
       };
+      get_patient_care_network_decrypted: {
+        Args: { p_patient_id: string };
+        Returns: Json;
+      };
+      create_patient_support_contact_secure: {
+        Args: {
+          p_patient_id: string;
+          p_name: string;
+          p_contact_type?: string;
+          p_relationship?: string | null;
+          p_specialty?: string | null;
+          p_phone?: string | null;
+          p_email?: string | null;
+          p_organization?: string | null;
+          p_notes?: string | null;
+          p_can_contact?: boolean;
+          p_consent_date?: string | null;
+          p_is_primary?: boolean;
+          p_is_active?: boolean;
+        };
+        Returns: Json;
+      };
+      delete_patient_support_contact_secure: {
+        Args: { p_contact_id: string };
+        Returns: Json;
+      };
+      get_patient_consents_decrypted: {
+        Args: { p_patient_id: string };
+        Returns: Json;
+      };
+      create_patient_consent_secure: {
+        Args: {
+          p_patient_id: string;
+          p_consent_type: string;
+          p_status?: string;
+          p_signed_at?: string | null;
+          p_expires_at?: string | null;
+          p_related_person_name?: string | null;
+          p_document_file_id?: string | null;
+          p_version?: string | null;
+          p_notes?: string | null;
+        };
+        Returns: Json;
+      };
+      delete_patient_consent_secure: {
+        Args: { p_consent_id: string };
+        Returns: Json;
+      };
+      get_patient_documents_decrypted: {
+        Args: { p_patient_id: string };
+        Returns: Json;
+      };
+      create_patient_document_secure: {
+        Args: {
+          p_patient_id: string;
+          p_category: string;
+          p_title: string;
+          p_description?: string | null;
+          p_storage_path?: string | null;
+          p_file_name?: string | null;
+          p_mime_type?: string | null;
+          p_size_bytes?: number | null;
+          p_document_date?: string | null;
+        };
+        Returns: Json;
+      };
+      delete_patient_document_secure: {
+        Args: { p_document_id: string };
+        Returns: Json;
+      };
     };
   };
 };
@@ -831,6 +997,28 @@ export type PatientTreatmentPlan = Database['public']['Tables']['patient_treatme
 };
 export type PatientMoodCheckin = Database['public']['Tables']['patient_mood_checkins']['Row'] & {
   notes: string | null;
+};
+export type SupportContact = Database['public']['Tables']['care_network']['Row'] & {
+  name: string;
+  specialty: string | null;
+  contact_type: string | null;
+  relationship: string | null;
+  phone: string | null;
+  email: string | null;
+  organization: string | null;
+  notes: string | null;
+  can_contact: boolean | null;
+  consent_date: string | null;
+  is_primary: boolean | null;
+  is_active: boolean | null;
+  created_at: string;
+  updated_at: string | null;
+};
+export type PatientConsent = Database['public']['Tables']['patient_consents']['Row'] & {
+  notes: string | null;
+};
+export type PatientDocument = Database['public']['Tables']['patient_documents']['Row'] & {
+  description: string | null;
 };
 
 // ─── Convenience Insert/Update Types ────────────────────────────────────────

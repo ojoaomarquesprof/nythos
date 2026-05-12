@@ -178,11 +178,7 @@ export const PatientService = {
   }>> {
     try {
       const [networkRes, protocolsRes, behaviorRes] = await Promise.all([
-        supabase
-          .from("care_network")
-          .select("*")
-          .eq("patient_id", patientId)
-          .order("created_at", { ascending: false }),
+        supabase.rpc("get_patient_care_network_decrypted", { p_patient_id: patientId }),
         supabase.rpc("get_patient_evaluations_decrypted", { p_patient_id: patientId }),
         supabase.rpc("get_abc_records_decrypted", { p_patient_id: patientId }),
       ]);

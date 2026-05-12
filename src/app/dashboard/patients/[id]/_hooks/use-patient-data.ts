@@ -4,11 +4,23 @@ import { createClient } from "@/lib/supabase/client";
 import { PatientService } from "@/services/patient-service";
 import { BillingService } from "@/services/billing-service";
 import { TreatmentPlanService } from "@/services/treatment-plan-service";
+import { PatientSupportService } from "@/services/patient-support-service";
 import type { TherapistSessionInRange } from "@/services/billing-service";
 import { useSubscription } from "@/hooks/use-subscription";
 import { usePdfExport } from "@/hooks/use-pdf-export";
 import { SESSION_STATUS, formatDate, formatTime } from "@/lib/constants";
-import type { Patient, Session, Profile, CashFlow, PatientTask, PatientTreatmentPlan, PatientMoodCheckin } from "@/types/database";
+import type {
+  Patient,
+  Session,
+  Profile,
+  CashFlow,
+  PatientTask,
+  PatientTreatmentPlan,
+  PatientMoodCheckin,
+  SupportContact,
+  PatientConsent,
+  PatientDocument,
+} from "@/types/database";
 
 export type PatientAnamnesisSummary = {
   id: string;
@@ -58,6 +70,9 @@ export function usePatientData() {
   const [abcSummaries, setAbcSummaries] = useState<PatientAbcSummary[]>([]);
   const [treatmentPlan, setTreatmentPlan] = useState<PatientTreatmentPlan | null>(null);
   const [moodCheckins, setMoodCheckins] = useState<PatientMoodCheckin[]>([]);
+  const [supportContacts, setSupportContacts] = useState<SupportContact[]>([]);
+  const [patientConsents, setPatientConsents] = useState<PatientConsent[]>([]);
+  const [patientDocuments, setPatientDocuments] = useState<PatientDocument[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState("");
@@ -130,7 +145,21 @@ export function usePatientData() {
 
     const idStr = Array.isArray(id) ? id[0] : id;
 
-    const [patientRes, sessionsRes, authRes, guardianRes, tasksRes, treatmentPlanRes, moodCheckinsRes, anamnesisRes, protocolRes, abcRes] = await Promise.all([
+    const [
+      patientRes,
+      sessionsRes,
+      authRes,
+      guardianRes,
+      tasksRes,
+      treatmentPlanRes,
+      moodCheckinsRes,
+      supportContactsRes,
+      consentsRes,
+      documentsRes,
+      anamnesisRes,
+      protocolRes,
+      abcRes
+    ] = await Promise.all([
       PatientService.getById(idStr),
       BillingService.getSessionsByPatient(idStr),
       supabase.auth.getUser(),
@@ -138,6 +167,9 @@ export function usePatientData() {
       PatientService.getTasks(idStr),
       TreatmentPlanService.getByPatient(idStr),
       supabase.rpc("get_patient_mood_checkins_decrypted", { p_patient_id: idStr }),
+      PatientSupportService.getContacts(idStr),
+      PatientSupportService.getConsents(idStr),
+      PatientSupportService.getDocuments(idStr),
       supabase
         .from("anamnesis_responses")
         .select("id,status,created_at,completed_at,public_expires_at,public_revoked_at")
@@ -164,6 +196,9 @@ export function usePatientData() {
     if (tasksRes.data) setPatientTasks(tasksRes.data);
     setTreatmentPlan(treatmentPlanRes.data || null);
     setMoodCheckins(moodCheckinsRes.error ? [] : (moodCheckinsRes.data || []));
+    setSupportContacts(supportContactsRes.data || []);
+    setPatientConsents(consentsRes.data || []);
+    setPatientDocuments(documentsRes.data || []);
     setAnamnesisSummaries(anamnesisRes.error ? [] : (anamnesisRes.data || []));
     setProtocolSummaries(protocolRes.error ? [] : (protocolRes.data || []).map((item: any) => ({
       id: item.id,
@@ -427,6 +462,12 @@ export function usePatientData() {
     setTreatmentPlan,
     moodCheckins,
     setMoodCheckins,
+    supportContacts,
+    setSupportContacts,
+    patientConsents,
+    setPatientConsents,
+    patientDocuments,
+    setPatientDocuments,
     profile,
     loading,
     newNote,

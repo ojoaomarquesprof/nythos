@@ -64,6 +64,7 @@ import { SessionList } from "./_components/session-list";
 import { EvolutionNotesForm } from "./_components/evolution-notes-form";
 import { PatientFinances } from "./_components/patient-finances";
 import { TreatmentPlanManager, TreatmentPlanOverviewCard } from "./_components/treatment-plan-manager";
+import { PatientRecordsManager } from "./_components/patient-records-manager";
 
 const patientStatusConfig: Record<string, { label: string; className: string }> = {
   active: {
@@ -160,13 +161,13 @@ function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-dashed border-border/80 bg-white/65 p-6 text-center">
-      <div className="mx-auto mb-3 flex size-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
-        <Icon className="size-5" />
+    <div className="rounded-2xl border border-dashed border-border/80 bg-white/65 p-4 text-center">
+      <div className="mx-auto mb-2 flex size-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+        <Icon className="size-4" />
       </div>
       <p className="text-sm font-semibold text-foreground">{title}</p>
-      <p className="mx-auto mt-1 max-w-md text-sm leading-relaxed text-muted-foreground">{description}</p>
-      {action && <div className="mt-4">{action}</div>}
+      <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">{description}</p>
+      {action && <div className="mt-3">{action}</div>}
     </div>
   );
 }
@@ -251,9 +252,9 @@ function NextActionRow({
   }[priority];
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-white/80 p-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-2 rounded-2xl border border-border/70 bg-white/80 p-2.5 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-start gap-3">
-        <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-2xl", priorityMeta.icon)}>
+        <div className={cn("flex size-8 shrink-0 items-center justify-center rounded-xl", priorityMeta.icon)}>
           <Icon className="size-4" />
         </div>
         <div className="min-w-0">
@@ -279,6 +280,131 @@ function NextActionRow({
         {actionLabel}
       </Button>
     </div>
+  );
+}
+
+type GuidanceState = "success" | "attention" | "pending" | "suggested";
+
+type GuidedSessionItem = {
+  icon: React.ElementType;
+  title: string;
+  detail: string;
+  state: GuidanceState;
+  actionLabel?: string;
+  onAction?: () => void;
+};
+
+function GuidedSessionCard({
+  title,
+  description,
+  icon: Icon,
+  items,
+  actions,
+  maxItems,
+  dense = false,
+}: {
+  title: string;
+  description: string;
+  icon: React.ElementType;
+  items: GuidedSessionItem[];
+  actions: Array<{ label: string; icon: React.ElementType; onClick: () => void; variant?: "default" | "outline" }>;
+  maxItems?: number;
+  dense?: boolean;
+}) {
+  const stateMeta: Record<GuidanceState, { label: string; className: string; iconClass: string }> = {
+    success: {
+      label: "Em ordem",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      iconClass: "bg-emerald-50 text-emerald-700",
+    },
+    attention: {
+      label: "Atenção",
+      className: "border-amber-200 bg-amber-50 text-amber-700",
+      iconClass: "bg-amber-50 text-amber-700",
+    },
+    pending: {
+      label: "Pendente",
+      className: "border-violet-200 bg-violet-50 text-violet-700",
+      iconClass: "bg-violet-50 text-violet-700",
+    },
+    suggested: {
+      label: "Sugerido",
+      className: "border-slate-200 bg-slate-50 text-slate-600",
+      iconClass: "bg-slate-100 text-slate-600",
+    },
+  };
+
+  const visibleItems = items.slice(0, maxItems ?? items.length);
+  const hiddenCount = Math.max(0, items.length - visibleItems.length);
+
+  return (
+    <Card className="rounded-3xl border border-border/70 bg-white/85 shadow-[0_12px_32px_rgba(41,31,67,0.05)]">
+      <CardHeader className={cn("border-b border-border/60", dense ? "px-4 py-3" : "px-5 py-4")}>
+        <div className="flex items-start gap-3">
+          <div className={cn("flex shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary", dense ? "size-9" : "size-10")}>
+            <Icon className={dense ? "size-4" : "size-5"} />
+          </div>
+          <div className="min-w-0">
+            <CardTitle className="text-base font-semibold text-foreground">{title}</CardTitle>
+            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</p>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className={cn("space-y-3", dense ? "p-4" : "p-5")}>
+        <div className="space-y-2.5">
+          {visibleItems.map((item) => {
+            const ItemIcon = item.icon;
+            const meta = stateMeta[item.state];
+            return (
+              <div key={`${item.title}-${item.detail}`} className="flex flex-col gap-2 rounded-2xl border border-border/70 bg-white/80 p-2.5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-xl", meta.iconClass)}>
+                    <ItemIcon className="size-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                      <Badge variant="outline" className={cn("h-5 rounded-full px-2 text-[10px] font-semibold", meta.className)}>
+                        {meta.label}
+                      </Badge>
+                    </div>
+                    <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{item.detail}</p>
+                  </div>
+                </div>
+                {item.onAction && item.actionLabel && (
+                  <Button variant="outline" size="sm" className="h-8 shrink-0 rounded-2xl bg-white px-3 text-xs" onClick={item.onAction}>
+                    {item.actionLabel}
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+          {hiddenCount > 0 && (
+            <p className="px-1 text-xs font-medium text-muted-foreground">
+              +{hiddenCount} item(ns) disponíveis nas abas detalhadas.
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-2 pt-1">
+          {actions.map((action) => {
+            const ActionIcon = action.icon;
+            return (
+              <Button
+                key={action.label}
+                variant={action.variant || "outline"}
+                size="sm"
+                className={cn("h-8 rounded-2xl px-3 text-xs", action.variant !== "default" && "bg-white")}
+                onClick={action.onClick}
+              >
+                <ActionIcon className="size-4" />
+                {action.label}
+              </Button>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -362,6 +488,12 @@ export default function PatientDetailPage() {
     treatmentPlan,
     setTreatmentPlan,
     moodCheckins,
+    supportContacts,
+    setSupportContacts,
+    patientConsents,
+    setPatientConsents,
+    patientDocuments,
+    setPatientDocuments,
     profile,
     loading,
     newNote,
@@ -423,7 +555,7 @@ export default function PatientDetailPage() {
     { value: "anamnesis", label: "Anamnese", icon: Shield },
     { value: "behavior", label: "ABC", icon: Activity },
     { value: "protocols", label: "Protocolos", icon: ClipboardList },
-    { value: "team", label: "Equipe", icon: Users },
+    { value: "team", label: "Rede", icon: Users },
     { value: "finance", label: "Financeiro", icon: Wallet },
     { value: "archive", label: "Arquivos", icon: Archive },
   ];
@@ -537,6 +669,21 @@ export default function PatientDetailPage() {
     !patient.email ? "e-mail" : null,
     !patient.date_of_birth ? "nascimento" : null,
   ].filter(Boolean) as string[];
+  const activeSupportContacts = supportContacts.filter((contact) => contact.is_active !== false);
+  const primarySupportContact =
+    activeSupportContacts.find((contact) => contact.is_primary) ||
+    activeSupportContacts.find((contact) => contact.contact_type === "legal_guardian") ||
+    activeSupportContacts.find((contact) => contact.contact_type === "emergency") ||
+    null;
+  const emergencySupportContact = activeSupportContacts.find((contact) => contact.contact_type === "emergency") || null;
+  const activeExternalProfessionals = activeSupportContacts.filter(
+    (contact) => !["legal_guardian", "financial_guardian", "emergency"].includes(String(contact.contact_type || ""))
+  );
+  const signedGeneralConsent = patientConsents.find(
+    (consent) => consent.consent_type === "general_consent" && consent.status === "signed"
+  ) || null;
+  const pendingOrExpiredConsents = patientConsents.filter((consent) => consent.status === "pending" || consent.status === "expired");
+  const recentDocuments = patientDocuments.slice(0, 3);
   const needsAccessLinkUpdate =
     !!patient.access_token_revoked_at ||
     (!!patient.access_token_expires_at && new Date(patient.access_token_expires_at) < now);
@@ -828,7 +975,345 @@ export default function PatientDetailPage() {
 
       return events;
     })(),
-  ].sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 8);
+    ...supportContacts.flatMap((contact): ClinicalTimelineEvent[] => {
+      const date = toDate(contact.created_at);
+      if (!date) return [];
+      return [{
+        id: `support-contact-${contact.id}`,
+        date,
+        icon: Users,
+        type: "Contato de apoio cadastrado",
+        title: contact.name,
+        description: contact.contact_type === "emergency"
+          ? "Contato de emergencia registrado na rede de apoio."
+          : "Contato vinculado ao ecossistema do caso.",
+        badge: contact.can_contact ? "Contato autorizado" : "Sem autorizacao",
+        tone: contact.can_contact ? "emerald" : "slate",
+        onAction: () => setActiveTab("team"),
+        actionLabel: "Ver rede",
+      }];
+    }),
+    ...patientConsents.flatMap((consent): ClinicalTimelineEvent[] => {
+      const date = toDate(consent.signed_at || consent.created_at);
+      if (!date) return [];
+      return [{
+        id: `consent-${consent.id}`,
+        date,
+        icon: Shield,
+        type: consent.status === "signed" ? "Consentimento assinado" : "Consentimento registrado",
+        title: consent.consent_type === "general_consent" ? "Termo de consentimento geral" : "Autorizacao/termo do paciente",
+        description: consent.expires_at ? `Validade: ${formatDate(consent.expires_at)}.` : "Registro manual de consentimento ou autorizacao.",
+        badge: consent.status,
+        tone: consent.status === "signed" ? "emerald" : consent.status === "expired" ? "rose" : "amber",
+        includeTime: false,
+        onAction: () => setActiveTab("archive"),
+        actionLabel: "Ver termos",
+      }];
+    }),
+    ...patientDocuments.flatMap((document): ClinicalTimelineEvent[] => {
+      const date = toDate(document.document_date || document.created_at);
+      if (!date) return [];
+      return [{
+        id: `document-${document.id}`,
+        date,
+        icon: Archive,
+        type: "Documento registrado",
+        title: document.title,
+        description: document.file_name ? `Metadado privado: ${document.file_name}.` : "Documento registrado como metadado privado.",
+        badge: document.category,
+        tone: "slate",
+        includeTime: !document.document_date,
+        onAction: () => setActiveTab("archive"),
+        actionLabel: "Ver arquivos",
+      }];
+    }),
+  ].sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 6);
+
+  const nextSessionDate = nextSession ? toDate(nextSession.scheduled_at) : null;
+  const lastSessionDate = lastSession ? toDate(lastSession.scheduled_at) : null;
+  const hasNextSessionIn24h =
+    !!nextSessionDate &&
+    nextSessionDate.getTime() >= now.getTime() &&
+    nextSessionDate.getTime() - now.getTime() <= 24 * 60 * 60 * 1000;
+  const todaySession =
+    [...sessions]
+      .filter((session) => {
+        const date = toDate(session.scheduled_at);
+        return !!date && date.toDateString() === now.toDateString() && session.status !== "cancelled";
+      })
+      .sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime())[0] ?? null;
+  const todayScheduledNeedsStatus =
+    todaySession?.status === "scheduled" && toDate(todaySession.scheduled_at)! <= now ? todaySession : null;
+  const latestRespondedTask =
+    [...patientTasks]
+      .filter((task) => {
+        const respondedAt = toDate((task as any).responded_at);
+        if (!respondedAt) return false;
+        return !lastSessionDate || respondedAt >= lastSessionDate;
+      })
+      .sort((a, b) => {
+        const aDate = toDate((a as any).responded_at)?.getTime() ?? 0;
+        const bDate = toDate((b as any).responded_at)?.getTime() ?? 0;
+        return bDate - aDate;
+      })[0] ?? null;
+  const activeTreatmentGoals = treatmentPlan?.goals?.filter((goal) => goal.status === "active" || goal.status === "in_progress") || [];
+  const treatmentPlanReviewDue =
+    !!treatmentPlan?.review_date && new Date(`${treatmentPlan.review_date}T23:59:59`).getTime() < now.getTime();
+  const preSessionAlerts = [
+    !signedGeneralConsent ? "consentimento geral pendente" : null,
+    !emergencySupportContact ? "sem contato de emergencia" : null,
+    pendingPatientIncome > 0 ? "pendencia financeira" : null,
+    needsAccessLinkUpdate ? "link do paciente precisa de revisao" : null,
+    overdueTasks.length > 0 ? `${overdueTasks.length} tarefa(s) atrasada(s)` : null,
+    lastSessionNeedsEvolution ? "ultima sessao sem evolucao" : null,
+  ].filter(Boolean) as string[];
+
+  const preSessionItems: GuidedSessionItem[] = [
+    nextSession
+      ? {
+          icon: Calendar,
+          title: hasNextSessionIn24h ? "Proxima sessao em destaque" : "Proxima sessao",
+          detail: `${getSessionDateLabel(nextSession)} · ${nextSession.duration_minutes ?? 50} min`,
+          state: hasNextSessionIn24h ? "success" : "suggested",
+          actionLabel: "Ver sessoes",
+          onAction: () => setActiveTab("sessions"),
+        }
+      : {
+          icon: Calendar,
+          title: "Sem sessao futura",
+          detail: "Nao ha proxima sessao agendada para este paciente.",
+          state: "pending",
+          actionLabel: "Agendar",
+          onAction: () => router.push("/dashboard/schedule"),
+        },
+    latestEvolutionSession
+      ? {
+          icon: FileText,
+          title: "Ultima evolucao",
+          detail: latestEvolutionSession ? getSessionDateLabel(latestEvolutionSession) : "Evolucao registrada.",
+          state: "success",
+          actionLabel: "Abrir",
+          onAction: () => setActiveTab("notes"),
+        }
+      : lastSessionNeedsEvolution
+        ? {
+            icon: FileText,
+            title: "Evolucao pendente",
+            detail: `A sessao de ${getSessionDateLabel(lastSessionNeedsEvolution)} ainda nao tem evolucao registrada.`,
+            state: "attention",
+            actionLabel: "Registrar",
+            onAction: () => setActiveTab("notes"),
+          }
+        : {
+            icon: FileText,
+            title: "Sem evolucao recente",
+            detail: "Registros de evolucao aparecerao aqui antes do atendimento.",
+            state: "suggested",
+            actionLabel: "Prontuario",
+            onAction: () => setActiveTab("notes"),
+          },
+    treatmentPlan
+      ? {
+          icon: Target,
+          title: "Plano terapeutico",
+          detail: `${treatmentPlan.current_focus || "Foco atual registrado."}${activeTreatmentGoals.length > 0 ? ` · ${activeTreatmentGoals.length} objetivo(s) ativo(s)` : ""}`,
+          state: treatmentPlanReviewDue ? "attention" : "success",
+          actionLabel: "Ver plano",
+          onAction: () => setActiveTab("plan"),
+        }
+      : {
+          icon: Target,
+          title: "Plano terapeutico ausente",
+          detail: "Ainda nao ha foco atual e objetivos estruturados para revisao pre-sessao.",
+          state: "suggested",
+          actionLabel: "Criar plano",
+          onAction: () => setActiveTab("plan"),
+        },
+    latestRespondedTask
+      ? {
+          icon: ListChecks,
+          title: "Tarefa respondida",
+          detail: latestRespondedTask.title,
+          state: "pending",
+          actionLabel: "Revisar",
+          onAction: () => setActiveTab("tasks"),
+        }
+      : pendingTasks.length > 0
+        ? {
+            icon: ListChecks,
+            title: "Tarefas em aberto",
+            detail: overdueTasks.length > 0 ? `${overdueTasks.length} atrasada(s) de ${pendingTasks.length} em aberto.` : `${pendingTasks.length} tarefa(s) em aberto.`,
+            state: overdueTasks.length > 0 ? "attention" : "suggested",
+            actionLabel: "Ver tarefas",
+            onAction: () => setActiveTab("tasks"),
+          }
+        : {
+            icon: ListChecks,
+            title: "Tarefas",
+            detail: "Nenhuma tarefa terapeutica em aberto.",
+            state: "success",
+            actionLabel: "Abrir",
+            onAction: () => setActiveTab("tasks"),
+          },
+    latestMoodCheckin
+      ? {
+          icon: Activity,
+          title: "Check-in recente",
+          detail: `Humor ${latestMoodCheckin.mood_score ?? "-"}/5 · Ansiedade ${latestMoodCheckin.anxiety_score ?? "-"}/5 · Sono ${latestMoodCheckin.sleep_quality ?? "-"}/5.`,
+          state: "success",
+          actionLabel: "Ver",
+          onAction: () => setActiveTab("tasks"),
+        }
+      : {
+          icon: Activity,
+          title: "Sem check-in recente",
+          detail: "Quando o paciente registrar humor/sintomas, o resumo aparecera aqui.",
+          state: "suggested",
+          actionLabel: "Tarefas",
+          onAction: () => setActiveTab("tasks"),
+        },
+    preSessionAlerts.length > 0
+      ? {
+          icon: Bell,
+          title: "Atencoes antes da sessao",
+          detail: preSessionAlerts.slice(0, 4).join(" · "),
+          state: "attention",
+          actionLabel: "Revisar",
+          onAction: () => setActiveTab(!signedGeneralConsent ? "archive" : !emergencySupportContact ? "team" : pendingPatientIncome > 0 ? "finance" : "tasks"),
+        }
+      : {
+          icon: CheckCircle2,
+          title: "Alertas principais",
+          detail: "Consentimento, emergencia, financeiro e portal sem alerta imediato.",
+          state: "success",
+        },
+  ];
+
+  const postSessionItems: GuidedSessionItem[] = [
+    lastSessionNeedsEvolution
+      ? {
+          icon: FileText,
+          title: "Registrar evolucao",
+          detail: `Fechamento pendente para ${getSessionDateLabel(lastSessionNeedsEvolution)}.`,
+          state: "attention",
+          actionLabel: "Registrar",
+          onAction: () => setActiveTab("notes"),
+        }
+      : latestEvolutionSession
+        ? {
+            icon: CheckCircle2,
+            title: "Evolucao recente",
+            detail: `Ultimo registro em ${getSessionDateLabel(latestEvolutionSession)}.`,
+            state: "success",
+            actionLabel: "Prontuario",
+            onAction: () => setActiveTab("notes"),
+          }
+        : {
+            icon: FileText,
+            title: "Evolucao",
+            detail: "Nenhuma evolucao registrada ainda neste prontuario.",
+            state: "suggested",
+            actionLabel: "Registrar",
+            onAction: () => setActiveTab("notes"),
+          },
+    nextSession
+      ? {
+          icon: Calendar,
+          title: "Proxima sessao agendada",
+          detail: getSessionDateLabel(nextSession),
+          state: "success",
+          actionLabel: "Agenda",
+          onAction: () => setActiveTab("sessions"),
+        }
+      : {
+          icon: Calendar,
+          title: "Agendar continuidade",
+          detail: "Nao ha sessao futura registrada apos o atendimento.",
+          state: "pending",
+          actionLabel: "Agendar",
+          onAction: () => router.push("/dashboard/schedule"),
+        },
+    latestRespondedTask
+      ? {
+          icon: ListChecks,
+          title: "Revisar tarefa respondida",
+          detail: `${latestRespondedTask.title}. Se fizer sentido, crie a proxima tarefa.`,
+          state: "pending",
+          actionLabel: "Abrir tarefas",
+          onAction: () => setActiveTab("tasks"),
+        }
+      : {
+          icon: ListChecks,
+          title: "Tarefas terapeuticas",
+          detail: pendingTasks.length > 0 ? `${pendingTasks.length} tarefa(s) ainda em aberto.` : "Nenhuma tarefa aberta para fechamento.",
+          state: pendingTasks.length > 0 ? "suggested" : "success",
+          actionLabel: "Tarefas",
+          onAction: () => setActiveTab("tasks"),
+        },
+    treatmentPlanReviewDue
+      ? {
+          icon: Target,
+          title: "Revisar plano",
+          detail: `Revisao prevista para ${formatDate(treatmentPlan!.review_date!)}.`,
+          state: "attention",
+          actionLabel: "Ver plano",
+          onAction: () => setActiveTab("plan"),
+        }
+      : treatmentPlan
+        ? {
+            icon: Target,
+            title: "Plano atualizado",
+            detail: activeTreatmentGoals.length > 0 ? `${activeTreatmentGoals.length} objetivo(s) ativo(s) em acompanhamento.` : "Plano terapeutico disponivel para consulta.",
+            state: "success",
+            actionLabel: "Ver plano",
+            onAction: () => setActiveTab("plan"),
+          }
+        : {
+            icon: Target,
+            title: "Plano terapeutico",
+            detail: "Criar ou revisar plano pode ajudar no fechamento do caso.",
+            state: "suggested",
+            actionLabel: "Abrir plano",
+            onAction: () => setActiveTab("plan"),
+          },
+    pendingPatientIncome > 0
+      ? {
+          icon: Wallet,
+          title: "Financeiro pendente",
+          detail: `${formatCurrency(pendingPatientIncome)} em lancamentos pendentes.`,
+          state: "pending",
+          actionLabel: "Financeiro",
+          onAction: () => setActiveTab("finance"),
+        }
+      : {
+          icon: Wallet,
+          title: "Financeiro",
+          detail: "Sem pendencia financeira identificada nos dados carregados.",
+          state: "success",
+          actionLabel: "Abrir",
+          onAction: () => setActiveTab("finance"),
+        },
+    todayScheduledNeedsStatus
+      ? {
+          icon: Clock,
+          title: "Conferir status da sessao",
+          detail: "Ha uma sessao de hoje ainda agendada; revise antes de encerrar o atendimento.",
+          state: "suggested",
+          actionLabel: "Sessoes",
+          onAction: () => setActiveTab("sessions"),
+        }
+      : {
+          icon: CheckCircle2,
+          title: "Fechamento",
+          detail: "Nenhuma acao automatica foi aplicada; use o checklist conforme necessario.",
+          state: "success",
+      },
+  ];
+  const shouldShowPostSessionGuide =
+    !!todaySession ||
+    !!lastSessionNeedsEvolution ||
+    (!!lastSessionDate && now.getTime() - lastSessionDate.getTime() <= 48 * 60 * 60 * 1000);
+
   const nextActions: Array<{
     icon: React.ElementType;
     title: string;
@@ -931,6 +1416,28 @@ export default function PatientDetailPage() {
     });
   }
 
+  if (!emergencySupportContact) {
+    nextActions.push({
+      icon: Users,
+      title: "Cadastrar contato de emergencia",
+      reason: "A rede de apoio ainda nao tem um contato de emergencia identificado.",
+      priority: "medium",
+      actionLabel: "Abrir rede",
+      onAction: () => setActiveTab("team"),
+    });
+  }
+
+  if (!signedGeneralConsent) {
+    nextActions.push({
+      icon: Shield,
+      title: "Registrar consentimento geral",
+      reason: "Nao ha termo de consentimento geral assinado registrado para este paciente.",
+      priority: "medium",
+      actionLabel: "Ver termos",
+      onAction: () => setActiveTab("archive"),
+    });
+  }
+
   if (nextActions.length === 0) {
     nextActions.push({
       icon: CheckCircle2,
@@ -941,6 +1448,7 @@ export default function PatientDetailPage() {
       onAction: () => setActiveTab("sessions"),
     });
   }
+  const priorityNextActions = nextActions.slice(0, 4);
   const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setEditForm((prev: any) => ({ ...prev, [name]: value }));
@@ -1241,8 +1749,8 @@ export default function PatientDetailPage() {
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
                 <div className="space-y-4">
                   <OverviewPanel
-                    title="Resumo clínico do caso"
-                    description="Somente registros já existentes no prontuário e evoluções."
+                    title="Resumo clínico"
+                    description="Registros essenciais do prontuário."
                     icon={FileText}
                     action={
                       <Button variant="outline" size="sm" className="h-8 rounded-2xl bg-white text-xs" onClick={() => setActiveTab("notes")}>
@@ -1253,14 +1761,14 @@ export default function PatientDetailPage() {
                     {clinicalSummaryItems.length > 0 ? (
                       <div className="space-y-3">
                         {clinicalSummaryItems.map((item) => (
-                          <div key={item.label} className="rounded-2xl border border-border/70 bg-white/80 p-4">
+                          <div key={item.label} className="rounded-2xl border border-border/70 bg-white/80 p-3">
                             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary/70">
                                 {item.label}
                               </p>
                               <span className="text-[11px] font-medium text-muted-foreground">{item.detail}</span>
                             </div>
-                            <p className="line-clamp-4 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                            <p className="line-clamp-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
                               {item.text}
                             </p>
                           </div>
@@ -1270,7 +1778,7 @@ export default function PatientDetailPage() {
                       <EmptyState
                         icon={FileText}
                         title="Nenhum resumo clínico registrado ainda."
-                        description="Adicione uma observação ou registre uma evolução para facilitar a leitura rápida do caso."
+                        description="Registre uma evolução para facilitar a leitura rápida do caso."
                         action={
                           <Button size="sm" className="h-8 rounded-2xl" onClick={() => setActiveTab("notes")}>
                             Registrar evolução
@@ -1280,14 +1788,41 @@ export default function PatientDetailPage() {
                     )}
                   </OverviewPanel>
 
-                  <TreatmentPlanOverviewCard
-                    treatmentPlan={treatmentPlan}
-                    onOpenPlan={() => setActiveTab("plan")}
-                  />
+                  <div className={cn("grid gap-4", shouldShowPostSessionGuide && "lg:grid-cols-2")}>
+                    <GuidedSessionCard
+                      title="Preparação"
+                      description="O essencial para revisar antes do atendimento."
+                      icon={Clock}
+                      items={preSessionItems}
+                      maxItems={4}
+                      dense
+                      actions={[
+                        { label: "Registrar evolucao", icon: FileText, onClick: () => setActiveTab("notes"), variant: "default" },
+                        { label: "Ver plano", icon: Target, onClick: () => setActiveTab("plan") },
+                        { label: "Ver tarefas", icon: ListChecks, onClick: () => setActiveTab("tasks") },
+                      ]}
+                    />
+
+                    {shouldShowPostSessionGuide && (
+                      <GuidedSessionCard
+                        title="Fechamento"
+                        description="Checklist pos-atendimento, sem automatizar acoes."
+                        icon={CheckCircle2}
+                        items={postSessionItems}
+                        maxItems={4}
+                        dense
+                        actions={[
+                          { label: "Evolucao", icon: FileText, onClick: () => setActiveTab("notes"), variant: "default" },
+                          { label: "Tarefas", icon: ListChecks, onClick: () => setActiveTab("tasks") },
+                          { label: "Agenda", icon: Calendar, onClick: () => router.push("/dashboard/schedule") },
+                        ]}
+                      />
+                    )}
+                  </div>
 
                   <OverviewPanel
-                    title="Linha do tempo clínica"
-                    description="Eventos recentes reunidos por data, com dados reais já carregados."
+                    title="Linha do tempo"
+                    description="Últimos eventos do caso."
                     icon={History}
                     action={
                       <Button variant="outline" size="sm" className="h-8 rounded-2xl bg-white text-xs" onClick={() => setActiveTab("sessions")}>
@@ -1323,7 +1858,7 @@ export default function PatientDetailPage() {
                 <aside className="space-y-4">
                   <OverviewPanel title="Próximas ações" icon={ListChecks}>
                     <div className="space-y-2.5">
-                      {nextActions.map((action) => (
+                      {priorityNextActions.map((action) => (
                         <NextActionRow
                           key={`${action.title}-${action.priority}`}
                           icon={action.icon}
@@ -1335,20 +1870,17 @@ export default function PatientDetailPage() {
                         />
                       ))}
                     </div>
+                    {nextActions.length > priorityNextActions.length && (
+                      <p className="mt-3 px-1 text-xs font-medium text-muted-foreground">
+                        +{nextActions.length - priorityNextActions.length} ação(ões) nas abas específicas.
+                      </p>
+                    )}
                   </OverviewPanel>
 
-                  <OverviewPanel title="Status rápido" icon={Bell}>
-                    <div className="space-y-1">
-                      <DetailRow label="Próxima sessão" value={nextSession ? getSessionDateLabel(nextSession) : "Sem sessão futura"} />
-                      <DetailRow label="Anamnese" value={anamnesisState} />
-                      <DetailRow label="Tarefas abertas" value={`${pendingTasks.length}`} />
-                      <DetailRow label="Financeiro" value={financeState} />
-                      <DetailRow label="Portal" value={portalState} />
-                    </div>
-                    <Button variant="outline" className="mt-4 h-9 w-full rounded-2xl bg-white" onClick={() => setActiveTab("tasks")}>
-                      Gerenciar tarefas e link
-                    </Button>
-                  </OverviewPanel>
+                  <TreatmentPlanOverviewCard
+                    treatmentPlan={treatmentPlan}
+                    onOpenPlan={() => setActiveTab("plan")}
+                  />
 
                   <OverviewPanel title="Humor e sintomas" icon={Activity}>
                     {latestMoodCheckin ? (
@@ -1375,25 +1907,44 @@ export default function PatientDetailPage() {
                     )}
                   </OverviewPanel>
 
-                  <OverviewPanel title="Dados essenciais" icon={User}>
+                  <OverviewPanel title="Apoio e documentos" icon={Users}>
                     <div className="space-y-1">
-                      <DetailRow label="Telefone" value={patient.phone || "Não informado"} />
-                      <DetailRow label="E-mail" value={patient.email || "Não informado"} />
                       <DetailRow
-                        label="Nascimento"
+                        label="Responsavel principal"
+                        value={primarySupportContact?.name || guardian?.full_name || "Nao cadastrado"}
+                      />
+                      <DetailRow
+                        label="Emergencia"
+                        value={emergencySupportContact?.name || patient.emergency_contact_name || "Nao cadastrado"}
+                      />
+                      <DetailRow label="Profissionais ativos" value={`${activeExternalProfessionals.length}`} />
+                      <DetailRow
+                        label="Consentimentos"
                         value={
-                          patient.date_of_birth
-                            ? `${formatDate(patient.date_of_birth)}${age !== null ? ` · ${age} anos` : ""}`
-                            : "Não informado"
+                          signedGeneralConsent
+                            ? `Geral assinado${pendingOrExpiredConsents.length > 0 ? ` · ${pendingOrExpiredConsents.length} pendente(s)` : ""}`
+                            : "Sem termo geral assinado"
                         }
                       />
-                      <DetailRow label="Responsável" value={guardian?.full_name || "Não cadastrado"} />
-                      <DetailRow label="Portal" value={portalState} />
+                      <DetailRow
+                        label="Documentos"
+                        value={
+                          patientDocuments.length > 0
+                            ? `${patientDocuments.length} registrado(s)${recentDocuments[0]?.title ? ` · ultimo: ${recentDocuments[0].title}` : ""}`
+                            : "Nenhum registrado"
+                        }
+                      />
                     </div>
-                    <Button variant="outline" className="mt-4 h-9 w-full rounded-2xl bg-white" onClick={() => setProfileDialogOpen(true)}>
-                      Editar cadastro
-                    </Button>
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      <Button variant="outline" className="h-9 rounded-2xl bg-white" onClick={() => setActiveTab("team")}>
+                        Ver rede
+                      </Button>
+                      <Button variant="outline" className="h-9 rounded-2xl bg-white" onClick={() => setActiveTab("archive")}>
+                        Ver arquivos
+                      </Button>
+                    </div>
                   </OverviewPanel>
+
                 </aside>
               </div>
             </TabsContent>
@@ -1428,7 +1979,13 @@ export default function PatientDetailPage() {
             </TabsContent>
 
             <TabsContent value="team" className="mt-0 space-y-6 w-full animate-fade-in">
-              <CareNetworkCard patientId={id as string} patient={patient} profile={profile} />
+              <CareNetworkCard
+                patientId={id as string}
+                patient={patient}
+                profile={profile}
+                initialContacts={supportContacts}
+                onChanged={setSupportContacts}
+              />
             </TabsContent>
 
             <TabsContent value="protocols" className="mt-0 space-y-6 w-full animate-fade-in">
@@ -1448,7 +2005,19 @@ export default function PatientDetailPage() {
             </TabsContent>
 
             <TabsContent value="archive" className="mt-0 space-y-6 w-full animate-fade-in">
+              <PatientRecordsManager
+                patientId={patient.id}
+                consents={patientConsents}
+                documents={patientDocuments}
+                onConsentsChanged={setPatientConsents}
+                onDocumentsChanged={setPatientDocuments}
+              />
+
               <div className="space-y-3">
+                <div className="flex items-center gap-2 px-1">
+                  <Archive className="size-4 text-muted-foreground" />
+                  <h3 className="text-sm font-semibold text-foreground">Sessoes arquivadas</h3>
+                </div>
                 {archivedSessions.length === 0 ? (
                   <Card className="glass-panel border-0 shadow-md rounded-[32px] bg-white/10">
                     <CardContent className="py-16 text-center">
