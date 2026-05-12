@@ -556,6 +556,85 @@ export type Database = {
         Update: { [key: string]: unknown };
         Relationships: never[];
       };
+
+      patient_treatment_plans: {
+        Row: {
+          id: string;
+          patient_id: string;
+          therapist_id: string;
+          main_goal_encrypted: string;
+          current_focus_encrypted: string;
+          strategies_encrypted: string | null;
+          review_date: string | null;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          patient_id: string;
+          therapist_id: string;
+          main_goal_encrypted: string;
+          current_focus_encrypted: string;
+          strategies_encrypted?: string | null;
+          review_date?: string | null;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          patient_id?: string;
+          therapist_id?: string;
+          main_goal_encrypted?: string;
+          current_focus_encrypted?: string;
+          strategies_encrypted?: string | null;
+          review_date?: string | null;
+          status?: string;
+          updated_at?: string;
+        };
+        Relationships: never[];
+      };
+
+      patient_treatment_goals: {
+        Row: {
+          id: string;
+          treatment_plan_id: string;
+          patient_id: string;
+          therapist_id: string;
+          title_encrypted: string;
+          description_encrypted: string | null;
+          status: string;
+          target_date: string | null;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          treatment_plan_id: string;
+          patient_id: string;
+          therapist_id: string;
+          title_encrypted: string;
+          description_encrypted?: string | null;
+          status?: string;
+          target_date?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          treatment_plan_id?: string;
+          patient_id?: string;
+          therapist_id?: string;
+          title_encrypted?: string;
+          description_encrypted?: string | null;
+          status?: string;
+          target_date?: string | null;
+          completed_at?: string | null;
+          updated_at?: string;
+        };
+        Relationships: never[];
+      };
     };
 
     Views: {
@@ -609,6 +688,41 @@ export type Database = {
         Args: { p_patient_id: string; p_template_id: string };
         Returns: Json;
       };
+      get_patient_treatment_plan_decrypted: {
+        Args: { p_patient_id: string };
+        Returns: Json;
+      };
+      upsert_patient_treatment_plan_secure: {
+        Args: {
+          p_patient_id: string;
+          p_main_goal: string;
+          p_current_focus: string;
+          p_strategies?: string | null;
+          p_review_date?: string | null;
+          p_status?: string;
+        };
+        Returns: Json;
+      };
+      create_patient_treatment_goal_secure: {
+        Args: {
+          p_patient_id: string;
+          p_title: string;
+          p_description?: string | null;
+          p_status?: string;
+          p_target_date?: string | null;
+        };
+        Returns: Json;
+      };
+      update_patient_treatment_goal_secure: {
+        Args: {
+          p_goal_id: string;
+          p_title: string;
+          p_description?: string | null;
+          p_status?: string;
+          p_target_date?: string | null;
+        };
+        Returns: Json;
+      };
     };
   };
 };
@@ -625,6 +739,18 @@ export type EmotionDiary       = Database['public']['Tables']['emotion_diary']['
 export type AnamnesisTemplate  = Database['public']['Tables']['anamnesis_templates']['Row'];
 export type AnamnesisResponse  = Database['public']['Tables']['anamnesis_responses']['Row'];
 export type SystemSetting      = Database['public']['Tables']['system_settings']['Row'];
+export type PatientTreatmentPlanStatus = 'active' | 'paused' | 'completed' | 'archived';
+export type PatientTreatmentGoalStatus = 'active' | 'in_progress' | 'completed' | 'paused';
+export type PatientTreatmentGoal = Database['public']['Tables']['patient_treatment_goals']['Row'] & {
+  title: string;
+  description: string | null;
+};
+export type PatientTreatmentPlan = Database['public']['Tables']['patient_treatment_plans']['Row'] & {
+  main_goal: string;
+  current_focus: string;
+  strategies: string | null;
+  goals: PatientTreatmentGoal[];
+};
 
 // ─── Convenience Insert/Update Types ────────────────────────────────────────
 export type ProfileInsert  = Database['public']['Tables']['profiles']['Insert'];

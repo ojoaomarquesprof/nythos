@@ -1,21 +1,17 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import React, { useState } from "react";
 import {
   ArrowLeft,
   Phone,
   Mail,
   Calendar,
-  MapPin,
   Shield,
   FileText,
   Clock,
   Edit,
   Trash2,
-  Plus,
   User,
-  Heart,
   AlertCircle,
   Download,
   Users,
@@ -24,18 +20,17 @@ import {
   Wallet,
   Bell,
   Archive,
-  X,
-  ChevronDown,
-  ChevronUp,
   ChevronRight,
   ChevronLeft,
   Check,
+  CheckCircle2,
   History,
   Smile,
   Frown,
   Zap,
   Waves,
   ListChecks,
+  Target,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -43,18 +38,14 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { 
   Dialog, 
   DialogContent, 
   DialogHeader, 
   DialogTitle, 
-  DialogTrigger, 
-  DialogClose,
   DialogDescription,
   DialogFooter
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { SESSION_STATUS, formatCurrency, formatDate, formatTime } from "@/lib/constants";
@@ -72,6 +63,289 @@ import { PatientProfile } from "./_components/patient-profile";
 import { SessionList } from "./_components/session-list";
 import { EvolutionNotesForm } from "./_components/evolution-notes-form";
 import { PatientFinances } from "./_components/patient-finances";
+import { TreatmentPlanManager, TreatmentPlanOverviewCard } from "./_components/treatment-plan-manager";
+
+const patientStatusConfig: Record<string, { label: string; className: string }> = {
+  active: {
+    label: "Ativo",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+  inactive: {
+    label: "Inativo",
+    className: "border-amber-200 bg-amber-50 text-amber-700",
+  },
+  archived: {
+    label: "Arquivado",
+    className: "border-slate-200 bg-slate-50 text-slate-600",
+  },
+};
+
+function getInitials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function getAge(dateOfBirth?: string | null) {
+  if (!dateOfBirth) return null;
+  const birthDate = new Date(`${dateOfBirth.slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(birthDate.getTime())) return null;
+
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const hadBirthday =
+    today.getMonth() > birthDate.getMonth() ||
+    (today.getMonth() === birthDate.getMonth() && today.getDate() >= birthDate.getDate());
+
+  if (!hadBirthday) age -= 1;
+  return age >= 0 ? age : null;
+}
+
+function getSessionDateLabel(session?: Session | null) {
+  if (!session) return "Sem registro";
+  return `${formatDate(session.scheduled_at, { day: "2-digit", month: "short" })} às ${formatTime(session.scheduled_at)}`;
+}
+
+function SummaryCard({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  tone = "violet",
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  detail: string;
+  tone?: "violet" | "emerald" | "amber" | "sky";
+}) {
+  const toneClass = {
+    violet: "bg-violet-50 text-violet-700 border-violet-100",
+    emerald: "bg-emerald-50 text-emerald-700 border-emerald-100",
+    amber: "bg-amber-50 text-amber-700 border-amber-100",
+    sky: "bg-sky-50 text-sky-700 border-sky-100",
+  }[tone];
+
+  return (
+    <Card className="rounded-2xl border border-border/70 bg-white/85 shadow-[0_12px_32px_rgba(41,31,67,0.06)] ring-1 ring-white/80">
+      <CardContent className="p-4">
+        <div className="flex items-start gap-3">
+          <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-xl border", toneClass)}>
+            <Icon className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+            <p className="mt-1 truncate text-base font-semibold text-foreground">{value}</p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{detail}</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  action,
+}: {
+  icon: React.ElementType;
+  title: string;
+  description: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-dashed border-border/80 bg-white/65 p-6 text-center">
+      <div className="mx-auto mb-3 flex size-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+        <Icon className="size-5" />
+      </div>
+      <p className="text-sm font-semibold text-foreground">{title}</p>
+      <p className="mx-auto mt-1 max-w-md text-sm leading-relaxed text-muted-foreground">{description}</p>
+      {action && <div className="mt-4">{action}</div>}
+    </div>
+  );
+}
+
+function OverviewPanel({
+  title,
+  description,
+  icon: Icon,
+  children,
+  action,
+}: {
+  title: string;
+  description?: string;
+  icon: React.ElementType;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  return (
+    <Card className="rounded-3xl border border-border/70 bg-white/85 shadow-[0_12px_32px_rgba(41,31,67,0.05)]">
+      <CardHeader className="flex flex-row items-start justify-between gap-3 border-b border-border/60 px-5 py-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+            <Icon className="size-5" />
+          </div>
+          <div className="min-w-0">
+            <CardTitle className="text-base font-semibold text-foreground">{title}</CardTitle>
+            {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
+          </div>
+        </div>
+        {action}
+      </CardHeader>
+      <CardContent className="p-5">{children}</CardContent>
+    </Card>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value?: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-border/50 py-2.5 last:border-0">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <span className="max-w-[60%] text-right text-xs font-semibold text-foreground">{value || "—"}</span>
+    </div>
+  );
+}
+
+function NextActionRow({
+  icon: Icon,
+  title,
+  reason,
+  priority,
+  actionLabel,
+  onAction,
+}: {
+  icon: React.ElementType;
+  title: string;
+  reason: string;
+  priority: "high" | "medium" | "low" | "success";
+  actionLabel: string;
+  onAction: () => void;
+}) {
+  const priorityMeta = {
+    high: {
+      label: "Atenção",
+      badge: "border-amber-200 bg-amber-50 text-amber-700",
+      icon: "bg-amber-50 text-amber-700",
+    },
+    medium: {
+      label: "Pendente",
+      badge: "border-violet-200 bg-violet-50 text-violet-700",
+      icon: "bg-violet-50 text-violet-700",
+    },
+    low: {
+      label: "Sugerido",
+      badge: "border-slate-200 bg-slate-50 text-slate-600",
+      icon: "bg-slate-100 text-slate-600",
+    },
+    success: {
+      label: "Em ordem",
+      badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      icon: "bg-emerald-50 text-emerald-700",
+    },
+  }[priority];
+
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-white/80 p-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-start gap-3">
+        <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-2xl", priorityMeta.icon)}>
+          <Icon className="size-4" />
+        </div>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-foreground">{title}</p>
+            <Badge variant="outline" className={cn("h-5 rounded-full px-2 text-[10px] font-semibold", priorityMeta.badge)}>
+              {priorityMeta.label}
+            </Badge>
+          </div>
+          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{reason}</p>
+        </div>
+      </div>
+      <Button
+        variant={priority === "success" ? "outline" : priority === "high" || priority === "medium" ? "default" : "outline"}
+        size="sm"
+        className={cn(
+          "h-8 shrink-0 rounded-2xl px-3 text-xs",
+          priority === "success" && "border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50",
+          priority === "low" && "bg-white"
+        )}
+        onClick={onAction}
+      >
+        {actionLabel}
+      </Button>
+    </div>
+  );
+}
+
+type ClinicalTimelineEvent = {
+  id: string;
+  date: Date;
+  icon: React.ElementType;
+  type: string;
+  title: string;
+  description: string;
+  badge?: string;
+  tone: "violet" | "emerald" | "amber" | "rose" | "sky" | "slate" | "teal";
+  includeTime?: boolean;
+  onAction?: () => void;
+  actionLabel?: string;
+};
+
+function TimelineEventRow({ event, isLast }: { event: ClinicalTimelineEvent; isLast: boolean }) {
+  const toneClass = {
+    violet: "bg-violet-50 text-violet-700 ring-violet-100",
+    emerald: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+    amber: "bg-amber-50 text-amber-700 ring-amber-100",
+    rose: "bg-rose-50 text-rose-700 ring-rose-100",
+    sky: "bg-sky-50 text-sky-700 ring-sky-100",
+    slate: "bg-slate-100 text-slate-600 ring-slate-200",
+    teal: "bg-teal-50 text-teal-700 ring-teal-100",
+  }[event.tone];
+  const Icon = event.icon;
+
+  return (
+    <div className="relative grid grid-cols-[36px_minmax(0,1fr)] gap-3">
+      {!isLast && <div className="absolute left-[17px] top-10 h-[calc(100%-1rem)] w-px bg-border/70" />}
+      <div className={cn("relative z-10 flex size-9 items-center justify-center rounded-full ring-4", toneClass)}>
+        <Icon className="size-4" />
+      </div>
+      <div className="rounded-2xl border border-border/70 bg-white/82 p-3 shadow-sm">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                {event.type}
+              </span>
+              {event.badge && (
+                <Badge variant="outline" className="h-5 rounded-full border-border/70 bg-white px-2 text-[10px] font-semibold text-muted-foreground">
+                  {event.badge}
+                </Badge>
+              )}
+            </div>
+            <p className="mt-1 text-sm font-semibold text-foreground">{event.title}</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{event.description}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 sm:flex-col sm:items-end">
+            <span className="text-xs font-medium text-muted-foreground">
+              {formatDate(event.date.toISOString(), { day: "2-digit", month: "short" })}
+              {event.includeTime !== false && ` às ${formatTime(event.date.toISOString())}`}
+            </span>
+            {event.onAction && event.actionLabel && (
+              <Button variant="ghost" size="sm" className="h-7 rounded-xl px-2 text-xs text-primary hover:bg-primary/5" onClick={event.onAction}>
+                {event.actionLabel}
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function PatientDetailPage() {
   const {
@@ -82,6 +356,11 @@ export default function PatientDetailPage() {
     sessions,
     patientCashFlow,
     patientTasks,
+    anamnesisSummaries,
+    protocolSummaries,
+    abcSummaries,
+    treatmentPlan,
+    setTreatmentPlan,
     profile,
     loading,
     newNote,
@@ -134,42 +413,36 @@ export default function PatientDetailPage() {
     isExportingPdf,
   } = usePatientData();
 
-  const TABS = [
-    { value: "info", label: "Perfil do Paciente", shortLabel: "Perfil", icon: User },
-    { value: "sessions", label: "Sessões Agendadas", shortLabel: "Sessões", icon: Clock },
-    { value: "finance", label: "Financeiro do Paciente", shortLabel: "Finanças", icon: Wallet },
-    { value: "notes", label: "Prontuário Geral", shortLabel: "Prontuário", icon: FileText },
-    { value: "behavior", label: "Comportamento (ABC)", shortLabel: "ABC", icon: Activity },
-    { value: "team", label: "Equipe Multidisciplinar", shortLabel: "Equipe", icon: Users },
-    { value: "protocols", label: "Protocolos e Rastreadores", shortLabel: "Protocolos", icon: ClipboardList },
-    { value: "anamnesis", label: "Anamnese e Formulários", shortLabel: "Anamnese", icon: Shield },
-    { value: "archive", label: "Arquivo de Sessões", shortLabel: "Arquivo", icon: Archive },
-    { value: "alerts", label: "Interações e Tarefas", shortLabel: "Interações", icon: ListChecks },
+  const PATIENT_TABS = [
+    { value: "overview", label: "Visão geral", icon: Activity },
+    { value: "sessions", label: "Sessões", icon: Clock },
+    { value: "notes", label: "Prontuário", icon: FileText },
+    { value: "tasks", label: "Tarefas", icon: ListChecks },
+    { value: "plan", label: "Plano", icon: Target },
+    { value: "anamnesis", label: "Anamnese", icon: Shield },
+    { value: "behavior", label: "ABC", icon: Activity },
+    { value: "protocols", label: "Protocolos", icon: ClipboardList },
+    { value: "team", label: "Equipe", icon: Users },
+    { value: "finance", label: "Financeiro", icon: Wallet },
+    { value: "archive", label: "Arquivos", icon: Archive },
   ];
 
-  const [isMobile, setIsMobile] = useState(false);
-  const [orientation, setOrientation] = useState<"horizontal" | "vertical">("vertical");
-  const [activeTab, setActiveTab] = useState("info");
-
-  useEffect(() => {
-    const checkMobile = () => {
-      const mobile = window.innerWidth < 1024;
-      setIsMobile(mobile);
-      setOrientation(mobile ? "horizontal" : "vertical");
-    };
-    
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
-  }, []);
+  const [activeTab, setActiveTab] = useState("overview");
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
 
   if (loading) {
     return (
-      <div className="px-4 py-5 md:px-6 md:py-6 max-w-7xl mx-auto w-full">
-        <div className="animate-pulse space-y-6">
-          <div className="h-6 w-32 bg-muted rounded" />
-          <div className="h-32 bg-muted rounded-xl" />
-          <div className="h-64 bg-muted rounded-xl" />
+      <div className="mx-auto w-full max-w-7xl px-4 py-5 md:px-6 md:py-6">
+        <div className="animate-pulse space-y-4">
+          <div className="h-10 w-40 rounded-2xl bg-muted" />
+          <div className="h-44 rounded-3xl bg-muted" />
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="h-24 rounded-2xl bg-muted" />
+            <div className="h-24 rounded-2xl bg-muted" />
+            <div className="h-24 rounded-2xl bg-muted" />
+            <div className="h-24 rounded-2xl bg-muted" />
+          </div>
+          <div className="h-80 rounded-3xl bg-muted" />
         </div>
       </div>
     );
@@ -196,9 +469,435 @@ export default function PatientDetailPage() {
     .filter((f) => f.type === "income" && f.status === "pending")
     .reduce((sum, f) => sum + Number(f.amount), 0);
 
-  const activeTabInfo = TABS.find(t => t.value === activeTab) || TABS[0];
-  const ActiveIcon = activeTabInfo.icon;
+  const now = new Date();
+  const completedSessions = sessions.filter((s) => s.status === "completed");
+  const lastSession =
+    [...sessions]
+      .filter((s) => new Date(s.scheduled_at) <= now && s.status !== "cancelled")
+      .sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime())[0] ?? null;
+  const nextSession =
+    [...sessions]
+      .filter((s) => s.status === "scheduled" && new Date(s.scheduled_at) >= now)
+      .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime())[0] ?? null;
+  const pendingTasks = patientTasks.filter((task) => task.status !== "completed" && task.status !== "cancelled");
+  const overdueTasks = pendingTasks.filter((task) => task.due_date && new Date(`${task.due_date}T23:59:59`) < now);
+  const age = getAge(patient.date_of_birth);
+  const statusCfg = patientStatusConfig[patient.status] ?? patientStatusConfig.active;
+  const hasGeneralNotes = !!patient.notes_encrypted;
+  const hasGuardian = !!guardian;
+  const portalState = patient.access_token_revoked_at
+    ? "Link revogado"
+    : patient.access_token_expires_at && new Date(patient.access_token_expires_at) < now
+      ? "Link expirado"
+      : patient.access_token
+        ? "Link ativo"
+        : "Sem link";
+  const latestEvolutionSession =
+    [...sessions]
+      .filter((s) => s.status === "completed" && s.session_notes_encrypted)
+      .sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime())[0] ?? null;
+  let latestEvolutionText = "";
+  if (latestEvolutionSession?.session_notes_encrypted) {
+    try {
+      const parsed = JSON.parse(latestEvolutionSession.session_notes_encrypted);
+      latestEvolutionText = parsed.notes || latestEvolutionSession.session_notes_encrypted;
+    } catch (e) {
+      latestEvolutionText = latestEvolutionSession.session_notes_encrypted;
+    }
+  }
+  const financeState =
+    pendingPatientIncome > 0
+      ? `${formatCurrency(pendingPatientIncome)} pendente`
+      : patientCashFlow.length > 0
+        ? "Sem pendências financeiras"
+        : "Sem lançamentos";
+  const latestAnamnesis = anamnesisSummaries[0] ?? null;
+  const completedAnamnesis = anamnesisSummaries.find((item) => item.status === "completed") ?? null;
+  const pendingAnamnesis = anamnesisSummaries.find((item) => item.status !== "completed") ?? null;
+  const hasAnsweredAnamnesis = !!completedAnamnesis;
+  const anamnesisState =
+    completedAnamnesis
+      ? `Respondida em ${formatDate(completedAnamnesis.completed_at || completedAnamnesis.created_at || new Date().toISOString())}`
+      : pendingAnamnesis
+        ? "Solicitada, aguardando resposta"
+        : "Não solicitada";
+  const missingEssentialFields = [
+    !patient.phone ? "telefone" : null,
+    !patient.email ? "e-mail" : null,
+    !patient.date_of_birth ? "nascimento" : null,
+  ].filter(Boolean) as string[];
+  const needsAccessLinkUpdate =
+    !!patient.access_token_revoked_at ||
+    (!!patient.access_token_expires_at && new Date(patient.access_token_expires_at) < now);
+  const lastSessionNeedsEvolution =
+    lastSession?.status === "completed" && !lastSession.session_notes_encrypted ? lastSession : null;
+  const clinicalSummaryItems = [
+    patient.diagnosis_encrypted
+      ? {
+          label: "Registro clínico",
+          text: patient.diagnosis_encrypted,
+          detail: "Campo seguro do cadastro do paciente",
+        }
+      : null,
+    patient.notes_encrypted
+      ? {
+          label: "Observações gerais",
+          text: patient.notes_encrypted,
+          detail: "Notas gerais registradas no prontuário",
+        }
+      : null,
+    latestEvolutionText
+      ? {
+          label: "Última evolução",
+          text: latestEvolutionText,
+          detail: latestEvolutionSession ? getSessionDateLabel(latestEvolutionSession) : "Sessão concluída",
+        }
+      : null,
+  ].filter(Boolean) as Array<{ label: string; text: string; detail: string }>;
+  const toDate = (value?: string | null) => {
+    if (!value) return null;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  };
+  const clinicalTimelineEvents = [
+    ...sessions.flatMap((session): ClinicalTimelineEvent[] => {
+      const date = toDate(session.scheduled_at);
+      if (!date) return [];
+      const statusCfg = SESSION_STATUS[session.status as keyof typeof SESSION_STATUS];
+      const hasEvolution = !!session.session_notes_encrypted;
+      const isFuture = session.status === "scheduled" && date >= now;
+      const eventType =
+        session.status === "cancelled"
+          ? "Sessão cancelada"
+          : isFuture
+            ? "Sessão agendada"
+            : "Sessão realizada";
 
+      return [{
+        id: `session-${session.id}`,
+        date,
+        icon: Clock,
+        type: eventType,
+        title: `${formatDate(session.scheduled_at)} às ${formatTime(session.scheduled_at)}`,
+        description: hasEvolution
+          ? "Sessão com evolução registrada."
+          : session.status === "scheduled"
+            ? `${session.duration_minutes ?? 50} min · ${session.session_type || "atendimento"}`
+            : "Sessão sem evolução registrada.",
+        badge: hasEvolution ? "Evolução registrada" : statusCfg?.label ?? session.status,
+        tone: session.status === "cancelled" ? "rose" : isFuture ? "sky" : hasEvolution ? "emerald" : "violet",
+        onAction: () => {
+          setViewingSession(session);
+          setIsEditingSession(false);
+          setShowSessionModal(true);
+        },
+        actionLabel: "Abrir",
+      }];
+    }),
+    ...anamnesisSummaries.flatMap((item): ClinicalTimelineEvent[] => {
+      const created = toDate(item.created_at);
+      const completed = toDate(item.completed_at);
+      const events: ClinicalTimelineEvent[] = [];
+
+      if (created) {
+        events.push({
+          id: `anamnesis-requested-${item.id}`,
+          date: created,
+          icon: Shield,
+          type: "Anamnese solicitada",
+          title: "Solicitação de anamnese criada",
+          description: item.public_revoked_at ? "Link público revogado." : "Aguardando preenchimento ou conclusão.",
+          badge: item.status === "completed" ? "Respondida" : "Pendente",
+          tone: item.status === "completed" ? "emerald" : "amber",
+          onAction: () => setActiveTab("anamnesis"),
+          actionLabel: "Ver",
+        });
+      }
+
+      if (completed) {
+        events.push({
+          id: `anamnesis-completed-${item.id}`,
+          date: completed,
+          icon: CheckCircle2,
+          type: "Anamnese respondida",
+          title: "Anamnese concluída",
+          description: "Resposta registrada no fluxo seguro de anamnese.",
+          badge: "Concluída",
+          tone: "emerald",
+          onAction: () => setActiveTab("anamnesis"),
+          actionLabel: "Ver",
+        });
+      }
+
+      return events;
+    }),
+    ...patientTasks.flatMap((task): ClinicalTimelineEvent[] => {
+      const created = toDate(task.created_at);
+      const completed = toDate(task.completed_at);
+      const events: ClinicalTimelineEvent[] = [];
+
+      if (created) {
+        events.push({
+          id: `task-created-${task.id}`,
+          date: created,
+          icon: ListChecks,
+          type: "Tarefa enviada",
+          title: task.title,
+          description: task.due_date ? `Prazo: ${formatDate(task.due_date)}` : "Tarefa criada para o paciente.",
+          badge: task.status === "completed" ? "Concluída" : "Pendente",
+          tone: task.status === "completed" ? "emerald" : "amber",
+          onAction: () => setActiveTab("tasks"),
+          actionLabel: "Abrir",
+        });
+      }
+
+      if (completed) {
+        events.push({
+          id: `task-completed-${task.id}`,
+          date: completed,
+          icon: Check,
+          type: "Tarefa concluída",
+          title: task.title,
+          description: "Paciente concluiu a tarefa registrada.",
+          badge: "Concluída",
+          tone: "emerald",
+          onAction: () => setActiveTab("tasks"),
+          actionLabel: "Abrir",
+        });
+      }
+
+      return events;
+    }),
+    ...abcSummaries.flatMap((item): ClinicalTimelineEvent[] => {
+      const date = toDate(item.occurrence_date || item.created_at);
+      if (!date) return [];
+      return [{
+        id: `abc-${item.id}`,
+        date,
+        icon: Activity,
+        type: "Registro ABC",
+        title: "Registro comportamental adicionado",
+        description: item.intensity ? `Intensidade registrada: ${item.intensity}/10.` : "Registro ABC disponível na aba correspondente.",
+        badge: "ABC",
+        tone: "rose",
+        includeTime: false,
+        onAction: () => setActiveTab("behavior"),
+        actionLabel: "Ver ABC",
+      }];
+    }),
+    ...protocolSummaries.flatMap((item): ClinicalTimelineEvent[] => {
+      const date = toDate(item.evaluation_date || item.created_at);
+      if (!date) return [];
+      return [{
+        id: `protocol-${item.id}`,
+        date,
+        icon: ClipboardList,
+        type: "Avaliação/protocolo",
+        title: item.protocol_name || "Protocolo aplicado",
+        description: item.status === "completed" ? "Avaliação concluída." : "Avaliação em acompanhamento.",
+        badge: item.status === "completed" ? "Concluído" : "Em andamento",
+        tone: "teal",
+        includeTime: false,
+        onAction: () => setActiveTab("protocols"),
+        actionLabel: "Ver",
+      }];
+    }),
+    ...patientCashFlow.flatMap((item): ClinicalTimelineEvent[] => {
+      const date = toDate(item.paid_at || item.due_date || item.created_at);
+      if (!date) return [];
+      const isConfirmed = item.status === "confirmed";
+      const includeTime = !!item.paid_at || (!item.due_date && !!item.created_at);
+      return [{
+        id: `finance-${item.id}`,
+        date,
+        icon: Wallet,
+        type: isConfirmed ? "Pagamento recebido" : "Financeiro",
+        title: item.description || "Lançamento financeiro",
+        description: `${formatCurrency(Number(item.amount))} · ${isConfirmed ? "confirmado" : item.status}`,
+        badge: isConfirmed ? "Recebido" : item.status === "pending" ? "Pendente" : item.status,
+        tone: isConfirmed ? "emerald" : "amber",
+        includeTime,
+        onAction: () => setActiveTab("finance"),
+        actionLabel: "Ver",
+      }];
+    }),
+    ...((): ClinicalTimelineEvent[] => {
+      if (!treatmentPlan) return [];
+      const events: ClinicalTimelineEvent[] = [];
+      const planUpdated = toDate(treatmentPlan.updated_at);
+      const planCreated = toDate(treatmentPlan.created_at);
+
+      if (planUpdated || planCreated) {
+        const changed =
+          planUpdated &&
+          planCreated &&
+          Math.abs(planUpdated.getTime() - planCreated.getTime()) > 1000;
+
+        events.push({
+          id: `treatment-plan-${treatmentPlan.id}-${changed ? "updated" : "created"}`,
+          date: planUpdated || planCreated!,
+          icon: Target,
+          type: changed ? "Plano terapêutico atualizado" : "Plano terapêutico criado",
+          title: "Plano do tratamento registrado",
+          description: "Objetivo principal, foco atual e estratégias disponíveis na aba Plano.",
+          badge: treatmentPlan.status === "active" ? "Ativo" : treatmentPlan.status,
+          tone: "violet",
+          onAction: () => setActiveTab("plan"),
+          actionLabel: "Ver plano",
+        });
+      }
+
+      treatmentPlan.goals?.forEach((goal) => {
+        const completedAt = toDate(goal.completed_at);
+        const createdAt = toDate(goal.created_at);
+
+        if (completedAt) {
+          events.push({
+            id: `treatment-goal-completed-${goal.id}`,
+            date: completedAt,
+            icon: CheckCircle2,
+            type: "Objetivo concluído",
+            title: goal.title,
+            description: "Meta do plano terapêutico marcada como concluída.",
+            badge: "Concluído",
+            tone: "emerald",
+            onAction: () => setActiveTab("plan"),
+            actionLabel: "Ver plano",
+          });
+          return;
+        }
+
+        if (createdAt) {
+          events.push({
+            id: `treatment-goal-created-${goal.id}`,
+            date: createdAt,
+            icon: Target,
+            type: "Objetivo terapêutico",
+            title: goal.title,
+            description: goal.target_date ? `Prazo: ${formatDate(goal.target_date)}.` : "Meta registrada no plano terapêutico.",
+            badge: goal.status === "in_progress" ? "Em andamento" : goal.status,
+            tone: goal.status === "paused" ? "amber" : "violet",
+            onAction: () => setActiveTab("plan"),
+            actionLabel: "Ver plano",
+          });
+        }
+      });
+
+      return events;
+    })(),
+  ].sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 8);
+  const nextActions: Array<{
+    icon: React.ElementType;
+    title: string;
+    reason: string;
+    priority: "high" | "medium" | "low" | "success";
+    actionLabel: string;
+    onAction: () => void;
+  }> = [];
+
+  if (!nextSession) {
+    nextActions.push({
+      icon: Calendar,
+      title: "Agendar próxima sessão",
+      reason: "Não há sessão futura registrada para este paciente.",
+      priority: "high",
+      actionLabel: "Agendar",
+      onAction: () => router.push("/dashboard/schedule"),
+    });
+  }
+
+  if (!hasAnsweredAnamnesis) {
+    nextActions.push({
+      icon: Shield,
+      title: pendingAnamnesis ? "Acompanhar anamnese pendente" : "Solicitar anamnese",
+      reason: pendingAnamnesis
+        ? "Há uma solicitação aberta, mas ainda sem resposta concluída."
+        : "Ainda não há anamnese respondida para este paciente.",
+      priority: "medium",
+      actionLabel: "Ver anamnese",
+      onAction: () => setActiveTab("anamnesis"),
+    });
+  }
+
+  if (pendingTasks.length > 0) {
+    nextActions.push({
+      icon: ListChecks,
+      title: "Revisar tarefas pendentes",
+      reason:
+        overdueTasks.length > 0
+          ? `${overdueTasks.length} tarefa(s) atrasada(s) entre ${pendingTasks.length} em aberto.`
+          : `${pendingTasks.length} tarefa(s) em aberto no portal do paciente.`,
+      priority: overdueTasks.length > 0 ? "high" : "medium",
+      actionLabel: "Abrir tarefas",
+      onAction: () => setActiveTab("tasks"),
+    });
+  }
+
+  if (lastSessionNeedsEvolution) {
+    nextActions.push({
+      icon: ClipboardList,
+      title: "Registrar evolução da última sessão",
+      reason: `A sessão de ${getSessionDateLabel(lastSessionNeedsEvolution)} ainda não tem evolução registrada.`,
+      priority: "high",
+      actionLabel: "Registrar",
+      onAction: () => setActiveTab("notes"),
+    });
+  }
+
+  if (!treatmentPlan) {
+    nextActions.push({
+      icon: Target,
+      title: "Criar plano terapêutico",
+      reason: "Ainda não há objetivo principal e foco atual estruturados para este caso.",
+      priority: "low",
+      actionLabel: "Abrir plano",
+      onAction: () => setActiveTab("plan"),
+    });
+  }
+
+  if (pendingPatientIncome > 0) {
+    nextActions.push({
+      icon: Wallet,
+      title: "Ver pendência financeira",
+      reason: `${formatCurrency(pendingPatientIncome)} em lançamentos pendentes para este paciente.`,
+      priority: "medium",
+      actionLabel: "Ver financeiro",
+      onAction: () => setActiveTab("finance"),
+    });
+  }
+
+  if (needsAccessLinkUpdate) {
+    nextActions.push({
+      icon: Bell,
+      title: "Atualizar link do paciente",
+      reason: `O portal está com status: ${portalState.toLowerCase()}.`,
+      priority: "medium",
+      actionLabel: "Gerenciar link",
+      onAction: () => setActiveTab("tasks"),
+    });
+  }
+
+  if (missingEssentialFields.length > 0) {
+    nextActions.push({
+      icon: User,
+      title: "Completar cadastro",
+      reason: `Faltam dados essenciais: ${missingEssentialFields.join(", ")}.`,
+      priority: "low",
+      actionLabel: "Abrir cadastro",
+      onAction: () => setProfileDialogOpen(true),
+    });
+  }
+
+  if (nextActions.length === 0) {
+    nextActions.push({
+      icon: CheckCircle2,
+      title: "Acompanhamento em ordem",
+      reason: "Sessão futura, anamnese respondida e pendências principais estão sem alerta.",
+      priority: "success",
+      actionLabel: "Ver sessões",
+      onAction: () => setActiveTab("sessions"),
+    });
+  }
   const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setEditForm((prev: any) => ({ ...prev, [name]: value }));
@@ -308,97 +1007,183 @@ export default function PatientDetailPage() {
   };
 
   return (
-    <div className="px-4 py-5 md:px-6 md:py-6 max-w-7xl mx-auto w-full space-y-5">
-      <div className="flex items-center justify-between">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => router.push("/dashboard/patients")}
-          className="text-muted-foreground hover:bg-white/40 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4 mr-1" />
-          Voltar para Pacientes
-        </Button>
-      </div>
+    <div className="mx-auto w-full max-w-7xl space-y-4 px-4 py-4 md:px-6 md:py-5">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => router.push("/dashboard/patients")}
+        className="rounded-2xl text-muted-foreground transition-colors hover:bg-white/70 hover:text-foreground"
+      >
+        <ArrowLeft className="mr-1 size-4" />
+        Voltar para pacientes
+      </Button>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} orientation={orientation} className="w-full">
-        <div className={cn(
-          "w-full rounded-[24px] lg:rounded-[32px] glass-panel overflow-hidden flex flex-col lg:grid lg:grid-cols-[280px_minmax(0,1fr)] lg:h-[calc(100vh-9rem)]",
-          !isMobile && "min-h-[600px]"
-        )}>
-          {/* Mobile Selector */}
-          <div className="lg:hidden flex items-center justify-between p-4 bg-white/40 backdrop-blur-md border-b border-white/20">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl gradient-primary flex items-center justify-center text-white shadow-lg shadow-primary/20">
-                <ActiveIcon className="w-5 h-5" />
+      <section className="animate-fade-in overflow-hidden rounded-3xl border border-primary/10 bg-card/90 shadow-[0_18px_50px_rgba(41,31,67,0.08)] ring-1 ring-white/80">
+        <div className="relative grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+          <div className="pointer-events-none absolute inset-y-0 left-0 w-56 bg-[radial-gradient(circle_at_22%_20%,rgba(124,58,237,0.18),transparent_42%),radial-gradient(circle_at_45%_90%,rgba(16,185,129,0.14),transparent_36%)]" />
+
+          <div className="relative flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start">
+            <Avatar className="size-16 shrink-0 rounded-3xl ring-4 ring-primary/10 md:size-20">
+              <AvatarFallback className="gradient-primary text-lg font-semibold text-white md:text-2xl">
+                {getInitials(patient.full_name)}
+              </AvatarFallback>
+            </Avatar>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className={cn("rounded-full px-3 py-1 text-xs font-semibold", statusCfg.className)}>
+                  {statusCfg.label}
+                </Badge>
+                {age !== null && (
+                  <Badge variant="outline" className="rounded-full border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
+                    {age} anos
+                  </Badge>
+                )}
+                {hasGuardian && (
+                  <Badge variant="outline" className="rounded-full border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
+                    Responsável cadastrado
+                  </Badge>
+                )}
               </div>
-              <div>
-                <p className="text-[10px] font-bold text-primary/60 uppercase tracking-tighter leading-none mb-1">Seção atual</p>
-                <h2 className="text-sm font-bold text-foreground leading-none">{activeTabInfo.label}</h2>
+
+              <h1 className="mt-3 truncate text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+                {patient.full_name}
+              </h1>
+
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm text-muted-foreground">
+                {patient.email && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Mail className="size-4 text-primary/60" />
+                    {patient.email}
+                  </span>
+                )}
+                {patient.phone && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Phone className="size-4 text-primary/60" />
+                    {patient.phone}
+                  </span>
+                )}
+                {patient.date_of_birth && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Calendar className="size-4 text-primary/60" />
+                    Nascimento: {formatDate(patient.date_of_birth)}
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button className="h-9 rounded-2xl" onClick={() => router.push("/dashboard/schedule")}>
+                  <Calendar className="size-4" />
+                  Agendar sessão
+                </Button>
+                <Button variant="outline" className="h-9 rounded-2xl bg-white/80" onClick={() => setActiveTab("notes")}>
+                  <FileText className="size-4" />
+                  Registrar evolução
+                </Button>
+                <Button variant="outline" className="h-9 rounded-2xl bg-white/80" onClick={() => setActiveTab("anamnesis")}>
+                  <Shield className="size-4" />
+                  Solicitar anamnese
+                </Button>
+                <Button variant="outline" className="h-9 rounded-2xl bg-white/80" onClick={() => setActiveTab("tasks")}>
+                  <Bell className="size-4" />
+                  Link do paciente
+                </Button>
+                <Button variant="outline" className="h-9 rounded-2xl bg-white/80" onClick={() => setActiveTab("finance")}>
+                  <Wallet className="size-4" />
+                  Financeiro
+                </Button>
+                <Button variant="ghost" className="h-9 rounded-2xl text-muted-foreground hover:bg-white/70 hover:text-foreground" onClick={() => setProfileDialogOpen(true)}>
+                  <User className="size-4" />
+                  Cadastro
+                </Button>
               </div>
             </div>
-            
-            <Dialog>
-              <DialogTrigger render={
-                <Button variant="ghost" size="sm" className="rounded-full bg-white/60 border border-white/80 shadow-sm text-primary font-bold text-[11px] h-9 px-4 hover:bg-white transition-all">
-                  Mudar Seção
-                  <ChevronDown className="w-3.5 h-3.5 ml-1.5 opacity-60" />
-                </Button>
-              } />
-              <DialogContent className="sm:max-w-[400px] p-0 overflow-hidden rounded-[32px] border-none glass-panel">
-                <div className="p-6 bg-gradient-to-br from-primary/10 to-transparent">
-                  <h3 className="text-xl font-bold text-primary mb-1">Navegação</h3>
-                  <p className="text-xs text-muted-foreground mb-6">Selecione uma seção para visualizar os detalhes.</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {TABS.map((tab) => {
-                      const Icon = tab.icon;
-                      const isActive = activeTab === tab.value;
-                      return (
-                        <DialogClose
-                          key={tab.value}
-                          render={
-                            <Button
-                              variant="ghost"
-                              onClick={() => setActiveTab(tab.value)}
-                              className={cn(
-                                "flex flex-col items-start gap-2 h-auto p-4 rounded-2xl border transition-all text-left",
-                                isActive 
-                                  ? "bg-primary text-white border-primary shadow-lg shadow-primary/20 scale-[1.02]" 
-                                  : "bg-white/40 border-white/60 hover:bg-white/60 text-foreground"
-                              )}
-                            >
-                              <Icon className={cn("w-5 h-5", isActive ? "text-white" : "text-primary")} />
-                              <span className="text-[11px] font-bold leading-tight">{tab.label}</span>
-                            </Button>
-                          }
-                        />
-                      );
-                    })}
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
           </div>
 
-          <div className="bg-white/30 p-2 lg:p-5 overflow-x-auto lg:overflow-y-auto border-b lg:border-b-0 lg:border-r border-white/20 scrollbar-hide hidden lg:block">
-            <div className="hidden lg:flex items-center gap-3 mb-8 p-2 rounded-2xl bg-white/40 border border-white/50 shadow-sm">
-              <Avatar className="w-10 h-10 ring-2 ring-primary/20">
-                <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
-                  {patient.full_name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold text-primary/60 uppercase tracking-tighter">Paciente em foco</p>
-                <p className="text-sm font-bold truncate text-foreground">{patient.full_name}</p>
-              </div>
+          <div className="relative grid gap-3 sm:grid-cols-3 lg:w-[420px] lg:grid-cols-1">
+            <div className="rounded-2xl border border-border/70 bg-white/75 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Agora</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">
+                {pendingTasks.length > 0
+                  ? `${pendingTasks.length} tarefa(s) em aberto`
+                  : nextSession
+                    ? "Próxima sessão agendada"
+                    : "Sem pendências imediatas"}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {overdueTasks.length > 0
+                  ? `${overdueTasks.length} tarefa(s) atrasada(s)`
+                  : nextSession
+                    ? getSessionDateLabel(nextSession)
+                    : "Revise as abas para manter o caso atualizado."}
+              </p>
             </div>
+            <div className="rounded-2xl border border-border/70 bg-white/75 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Portal</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">{portalState}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {patient.auth_user_id ? "Paciente com acesso vinculado." : "Gerencie link e tarefas em Tarefas."}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-white/75 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Clínico</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">
+                {hasGeneralNotes ? "Prontuário com notas gerais" : "Sem nota geral registrada"}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {completedSessions.length} sessão(ões) realizadas
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
 
-            <TabsList className="w-fit lg:w-full h-fit bg-transparent p-1 flex flex-row flex-nowrap lg:flex-col gap-2 pr-10 lg:pr-1">
-              {TABS.map((tab) => {
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <SummaryCard
+          icon={History}
+          label="Última sessão"
+          value={getSessionDateLabel(lastSession)}
+          detail={lastSession ? SESSION_STATUS[lastSession.status as keyof typeof SESSION_STATUS]?.label ?? lastSession.status : "Ainda sem histórico"}
+          tone="violet"
+        />
+        <SummaryCard
+          icon={Calendar}
+          label="Próxima sessão"
+          value={getSessionDateLabel(nextSession)}
+          detail={nextSession ? `${nextSession.duration_minutes ?? 50} min` : "Nenhuma sessão futura"}
+          tone="emerald"
+        />
+        <SummaryCard
+          icon={Check}
+          label="Sessões realizadas"
+          value={`${completedSessions.length}`}
+          detail={`${scheduledOnlySessions.length} agendada(s)`}
+          tone="sky"
+        />
+        <SummaryCard
+          icon={ListChecks}
+          label="Pendências"
+          value={`${pendingTasks.length}`}
+          detail={overdueTasks.length > 0 ? `${overdueTasks.length} atrasada(s)` : "Sem atraso identificado"}
+          tone={overdueTasks.length > 0 ? "amber" : "emerald"}
+        />
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} orientation="horizontal" className="w-full">
+        <div className={cn(
+          "flex w-full flex-col overflow-hidden rounded-3xl border border-border/70 bg-white/90 shadow-[0_18px_50px_rgba(41,31,67,0.08)] ring-1 ring-white/80"
+        )}>
+          <div className="overflow-x-auto bg-slate-50/85 px-3 pb-4 pt-3 scrollbar-hide md:overflow-visible">
+            <TabsList className="!h-auto w-max min-w-full flex-row flex-nowrap justify-start gap-1 bg-transparent p-1 md:grid md:w-full md:grid-cols-6 md:gap-1.5 2xl:flex 2xl:flex-nowrap">
+              {PATIENT_TABS.map((tab) => {
                 const Icon = tab.icon;
                 return (
-                  <TabsTrigger key={tab.value} value={tab.value} className="glass-pill whitespace-nowrap px-4 lg:px-4 py-3 lg:py-2.5">
-                    <Icon className="w-4 h-4" />
+                  <TabsTrigger
+                    key={tab.value}
+                    value={tab.value}
+                    className="h-8 flex-none rounded-2xl px-3 text-xs font-semibold data-active:bg-white data-active:text-primary data-active:shadow-sm md:w-full md:justify-center 2xl:w-auto"
+                  >
+                    <Icon className="size-4" />
                     <span>{tab.label}</span>
                   </TabsTrigger>
                 );
@@ -406,7 +1191,145 @@ export default function PatientDetailPage() {
             </TabsList>
           </div>
 
-          <div className="p-4 lg:p-6 overflow-y-auto min-w-0 w-full flex-1">
+          <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent" />
+
+          <div className="min-w-0 flex-1 overflow-y-auto bg-white/70 p-4 lg:max-h-[calc(100vh-18rem)] lg:p-5">
+            <TabsContent value="overview" className="mt-0 w-full animate-fade-in">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="space-y-4">
+                  <OverviewPanel
+                    title="Resumo clínico do caso"
+                    description="Somente registros já existentes no prontuário e evoluções."
+                    icon={FileText}
+                    action={
+                      <Button variant="outline" size="sm" className="h-8 rounded-2xl bg-white text-xs" onClick={() => setActiveTab("notes")}>
+                        Abrir prontuário
+                      </Button>
+                    }
+                  >
+                    {clinicalSummaryItems.length > 0 ? (
+                      <div className="space-y-3">
+                        {clinicalSummaryItems.map((item) => (
+                          <div key={item.label} className="rounded-2xl border border-border/70 bg-white/80 p-4">
+                            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary/70">
+                                {item.label}
+                              </p>
+                              <span className="text-[11px] font-medium text-muted-foreground">{item.detail}</span>
+                            </div>
+                            <p className="line-clamp-4 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                              {item.text}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyState
+                        icon={FileText}
+                        title="Nenhum resumo clínico registrado ainda."
+                        description="Adicione uma observação ou registre uma evolução para facilitar a leitura rápida do caso."
+                        action={
+                          <Button size="sm" className="h-8 rounded-2xl" onClick={() => setActiveTab("notes")}>
+                            Registrar evolução
+                          </Button>
+                        }
+                      />
+                    )}
+                  </OverviewPanel>
+
+                  <TreatmentPlanOverviewCard
+                    treatmentPlan={treatmentPlan}
+                    onOpenPlan={() => setActiveTab("plan")}
+                  />
+
+                  <OverviewPanel
+                    title="Linha do tempo clínica"
+                    description="Eventos recentes reunidos por data, com dados reais já carregados."
+                    icon={History}
+                    action={
+                      <Button variant="outline" size="sm" className="h-8 rounded-2xl bg-white text-xs" onClick={() => setActiveTab("sessions")}>
+                        Ver histórico completo
+                      </Button>
+                    }
+                  >
+                    {clinicalTimelineEvents.length > 0 ? (
+                      <div className="space-y-3">
+                        {clinicalTimelineEvents.map((event, index) => (
+                          <TimelineEventRow
+                            key={event.id}
+                            event={event}
+                            isLast={index === clinicalTimelineEvents.length - 1}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyState
+                        icon={History}
+                        title="Ainda não há histórico clínico recente."
+                        description="Quando houver sessões, anamnese, tarefas ou outros registros, eles aparecerão aqui."
+                        action={
+                          <Button size="sm" className="h-8 rounded-2xl" onClick={() => router.push("/dashboard/schedule")}>
+                            Agendar sessão
+                          </Button>
+                        }
+                      />
+                    )}
+                  </OverviewPanel>
+                </div>
+
+                <aside className="space-y-4">
+                  <OverviewPanel title="Próximas ações" icon={ListChecks}>
+                    <div className="space-y-2.5">
+                      {nextActions.map((action) => (
+                        <NextActionRow
+                          key={`${action.title}-${action.priority}`}
+                          icon={action.icon}
+                          title={action.title}
+                          reason={action.reason}
+                          priority={action.priority}
+                          actionLabel={action.actionLabel}
+                          onAction={action.onAction}
+                        />
+                      ))}
+                    </div>
+                  </OverviewPanel>
+
+                  <OverviewPanel title="Status rápido" icon={Bell}>
+                    <div className="space-y-1">
+                      <DetailRow label="Próxima sessão" value={nextSession ? getSessionDateLabel(nextSession) : "Sem sessão futura"} />
+                      <DetailRow label="Anamnese" value={anamnesisState} />
+                      <DetailRow label="Tarefas abertas" value={`${pendingTasks.length}`} />
+                      <DetailRow label="Financeiro" value={financeState} />
+                      <DetailRow label="Portal" value={portalState} />
+                    </div>
+                    <Button variant="outline" className="mt-4 h-9 w-full rounded-2xl bg-white" onClick={() => setActiveTab("tasks")}>
+                      Gerenciar tarefas e link
+                    </Button>
+                  </OverviewPanel>
+
+                  <OverviewPanel title="Dados essenciais" icon={User}>
+                    <div className="space-y-1">
+                      <DetailRow label="Telefone" value={patient.phone || "Não informado"} />
+                      <DetailRow label="E-mail" value={patient.email || "Não informado"} />
+                      <DetailRow
+                        label="Nascimento"
+                        value={
+                          patient.date_of_birth
+                            ? `${formatDate(patient.date_of_birth)}${age !== null ? ` · ${age} anos` : ""}`
+                            : "Não informado"
+                        }
+                      />
+                      <DetailRow label="Responsável" value={guardian?.full_name || "Não cadastrado"} />
+                      <DetailRow label="Portal" value={portalState} />
+                    </div>
+                    <Button variant="outline" className="mt-4 h-9 w-full rounded-2xl bg-white" onClick={() => setProfileDialogOpen(true)}>
+                      Editar cadastro
+                    </Button>
+                  </OverviewPanel>
+                </aside>
+              </div>
+            </TabsContent>
+
             <TabsContent value="sessions" className="mt-0 space-y-3 w-full">
               <SessionList
                 sessions={sessions}
@@ -419,21 +1342,6 @@ export default function PatientDetailPage() {
                 setShowRescheduleModal={setShowRescheduleModal}
                 setCancellingSession={setCancellingSession}
                 setShowCancelSeriesModal={setShowCancelSeriesModal}
-              />
-            </TabsContent>
-
-            <TabsContent value="info" className="mt-0 space-y-6 animate-fade-in w-full">
-              <PatientProfile
-                patient={patient}
-                isEditing={isEditing}
-                setIsEditing={setIsEditing}
-                editForm={editForm}
-                setEditForm={setEditForm}
-                handleEditChange={handleEditChange}
-                guardian={guardian}
-                isSaving={isSaving}
-                handleUpdatePatient={handleUpdatePatient}
-                loadData={loadData}
               />
             </TabsContent>
 
@@ -523,11 +1431,20 @@ export default function PatientDetailPage() {
               </div>
             </TabsContent>
 
+            <TabsContent value="plan" className="mt-0 space-y-6 w-full animate-fade-in">
+              <TreatmentPlanManager
+                patientId={patient.id}
+                treatmentPlan={treatmentPlan}
+                onChanged={setTreatmentPlan}
+                isSecretary={isSecretary}
+              />
+            </TabsContent>
+
             <TabsContent value="anamnesis" className="mt-0 space-y-6 w-full animate-fade-in">
               <AnamnesisRequestCard patientId={patient.id} />
             </TabsContent>
 
-            <TabsContent value="alerts" className="mt-0 space-y-6 w-full animate-fade-in">
+            <TabsContent value="tasks" className="mt-0 space-y-6 w-full animate-fade-in">
               <PatientEngagementCard
                 patientId={patient.id}
                 patientEmail={patient.email}
@@ -546,6 +1463,46 @@ export default function PatientDetailPage() {
           </div>
         </div>
       </Tabs>
+
+      <Dialog open={profileDialogOpen} onOpenChange={setProfileDialogOpen}>
+        <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden rounded-3xl border border-border/70 bg-white/95 p-0 shadow-2xl sm:max-w-5xl">
+          <DialogHeader className="border-b border-border/60 bg-slate-50/80 px-6 py-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <DialogTitle className="text-xl font-semibold text-foreground">Cadastro do paciente</DialogTitle>
+                <DialogDescription>
+                  Dados administrativos e responsáveis ficam fora da primeira dobra clínica.
+                </DialogDescription>
+              </div>
+              {!isSecretary && (
+                <Button
+                  variant="outline"
+                  className="h-9 rounded-2xl border-rose-200 bg-white text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                  onClick={handleArchive}
+                  disabled={isArchiving}
+                >
+                  <Trash2 className="size-4" />
+                  {isArchiving ? "Arquivando..." : "Arquivar paciente"}
+                </Button>
+              )}
+            </div>
+          </DialogHeader>
+          <div className="overflow-y-auto p-5">
+            <PatientProfile
+              patient={patient}
+              isEditing={isEditing}
+              setIsEditing={setIsEditing}
+              editForm={editForm}
+              setEditForm={setEditForm}
+              handleEditChange={handleEditChange}
+              guardian={guardian}
+              isSaving={isSaving}
+              handleUpdatePatient={handleUpdatePatient}
+              loadData={loadData}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Reschedule Modal */}
       <Dialog open={showRescheduleModal} onOpenChange={setShowRescheduleModal}>

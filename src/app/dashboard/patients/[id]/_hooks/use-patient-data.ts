@@ -2,13 +2,37 @@ import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PatientService } from "@/services/patient-service";
-import { AnamnesisService } from "@/services/anamnesis-service";
 import { BillingService } from "@/services/billing-service";
+import { TreatmentPlanService } from "@/services/treatment-plan-service";
 import type { TherapistSessionInRange } from "@/services/billing-service";
 import { useSubscription } from "@/hooks/use-subscription";
 import { usePdfExport } from "@/hooks/use-pdf-export";
 import { SESSION_STATUS, formatDate, formatTime } from "@/lib/constants";
-import type { Patient, Session, Profile, CashFlow, PatientTask } from "@/types/database";
+import type { Patient, Session, Profile, CashFlow, PatientTask, PatientTreatmentPlan } from "@/types/database";
+
+export type PatientAnamnesisSummary = {
+  id: string;
+  status: string | null;
+  created_at: string | null;
+  completed_at: string | null;
+  public_expires_at: string | null;
+  public_revoked_at: string | null;
+};
+
+export type PatientProtocolSummary = {
+  id: string;
+  protocol_name: string | null;
+  evaluation_date: string | null;
+  status: string | null;
+  created_at: string | null;
+};
+
+export type PatientAbcSummary = {
+  id: string;
+  occurrence_date: string | null;
+  intensity: number | null;
+  created_at: string | null;
+};
 
 const getWeekStart = (date: Date) => {
   const d = new Date(date);
@@ -29,6 +53,10 @@ export function usePatientData() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [patientCashFlow, setPatientCashFlow] = useState<CashFlow[]>([]);
   const [patientTasks, setPatientTasks] = useState<PatientTask[]>([]);
+  const [anamnesisSummaries, setAnamnesisSummaries] = useState<PatientAnamnesisSummary[]>([]);
+  const [protocolSummaries, setProtocolSummaries] = useState<PatientProtocolSummary[]>([]);
+  const [abcSummaries, setAbcSummaries] = useState<PatientAbcSummary[]>([]);
+  const [treatmentPlan, setTreatmentPlan] = useState<PatientTreatmentPlan | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState("");
@@ -101,12 +129,20 @@ export function usePatientData() {
 
     const idStr = Array.isArray(id) ? id[0] : id;
 
-    const [patientRes, sessionsRes, authRes, guardianRes, tasksRes] = await Promise.all([
+    const [patientRes, sessionsRes, authRes, guardianRes, tasksRes, treatmentPlanRes, anamnesisRes, protocolRes, abcRes] = await Promise.all([
       PatientService.getById(idStr),
       BillingService.getSessionsByPatient(idStr),
       supabase.auth.getUser(),
       PatientService.getGuardian(idStr),
       PatientService.getTasks(idStr),
+      TreatmentPlanService.getByPatient(idStr),
+      supabase
+        .from("anamnesis_responses")
+        .select("id,status,created_at,completed_at,public_expires_at,public_revoked_at")
+        .eq("patient_id", idStr)
+        .order("created_at", { ascending: false }),
+      supabase.rpc("get_patient_evaluations_decrypted", { p_patient_id: idStr }),
+      supabase.rpc("get_abc_records_decrypted", { p_patient_id: idStr }),
     ]);
 
     if (patientRes.data) {
@@ -124,6 +160,21 @@ export function usePatientData() {
     }
     if (sessionsRes.data) setSessions(sessionsRes.data);
     if (tasksRes.data) setPatientTasks(tasksRes.data);
+    setTreatmentPlan(treatmentPlanRes.data || null);
+    setAnamnesisSummaries(anamnesisRes.error ? [] : (anamnesisRes.data || []));
+    setProtocolSummaries(protocolRes.error ? [] : (protocolRes.data || []).map((item: any) => ({
+      id: item.id,
+      protocol_name: item.protocol_name ?? null,
+      evaluation_date: item.evaluation_date ?? null,
+      status: item.status ?? null,
+      created_at: item.created_at ?? null,
+    })));
+    setAbcSummaries(abcRes.error ? [] : (abcRes.data || []).map((item: any) => ({
+      id: item.id,
+      occurrence_date: item.occurrence_date ?? null,
+      intensity: typeof item.intensity === "number" ? item.intensity : null,
+      created_at: item.created_at ?? null,
+    })));
     if (guardianRes.data) setGuardian(guardianRes.data);
 
     const sessionIds = sessionsRes.data?.map((s: Session) => s.id) || [];
@@ -366,6 +417,11 @@ export function usePatientData() {
     setSessions,
     patientCashFlow,
     patientTasks,
+    anamnesisSummaries,
+    protocolSummaries,
+    abcSummaries,
+    treatmentPlan,
+    setTreatmentPlan,
     profile,
     loading,
     newNote,

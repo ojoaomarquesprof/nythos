@@ -32,7 +32,7 @@ export function EvolutionNotesForm({
 }: EvolutionNotesFormProps) {
   return (
     <>
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/20 p-6 rounded-[32px] border border-white/40 backdrop-blur-md">
+      <div className="flex flex-col justify-between gap-4 rounded-2xl border border-border/70 bg-white/75 p-4 shadow-sm md:flex-row md:items-center">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-primary">Prontuário e Evolução</h2>
           <p className="text-sm text-muted-foreground">Registro de notas de evolução e histórico clínico do paciente.</p>
@@ -40,7 +40,7 @@ export function EvolutionNotesForm({
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
           <Button
             variant="outline"
-            className="rounded-full border-primary/20 text-primary hover:bg-primary/5 h-10 px-6 font-bold text-xs w-full sm:w-auto justify-center"
+            className="h-9 w-full justify-center rounded-2xl border-primary/20 bg-white/80 text-xs font-semibold text-primary hover:bg-primary/5 sm:w-auto"
             onClick={handleExportFullRecord}
             disabled={isExportingPdf}
           >
@@ -49,7 +49,7 @@ export function EvolutionNotesForm({
           </Button>
           <Button
             variant="outline"
-            className="rounded-full border-primary/20 text-primary hover:bg-primary/5 h-10 px-6 font-bold text-xs w-full sm:w-auto justify-center"
+            className="h-9 w-full justify-center rounded-2xl border-primary/20 bg-white/80 text-xs font-semibold text-primary hover:bg-primary/5 sm:w-auto"
             onClick={handleExportNotes}
             disabled={isExportingPdf || !patient.notes_encrypted}
           >
@@ -60,26 +60,26 @@ export function EvolutionNotesForm({
       </div>
 
       <Card className="glass-panel border-0 shadow-lg rounded-[32px] overflow-hidden">
-        <CardHeader className="pb-4 bg-white/30 backdrop-blur-sm border-b border-white/40">
-          <CardTitle className="text-base font-bold flex items-center gap-2 text-primary">
+        <CardHeader className="border-b border-border/60 bg-white/70 pb-4">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
             <FileText className="w-5 h-5" />
             Nova Nota de Evolução
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-8 space-y-4">
+        <CardContent className="space-y-4 p-5">
           <Textarea
             placeholder="Registre a evolução do paciente nesta sessão..."
-            className="min-h-[160px] rounded-[24px] border-white/40 bg-white/50 focus:bg-white/80 transition-all p-6 text-sm leading-relaxed resize-none shadow-inner"
+            className="min-h-[150px] resize-none rounded-2xl border-border/70 bg-white/80 p-4 text-sm leading-relaxed transition-all focus:bg-white"
             value={newNote}
             onChange={(e) => setNewNote(e.target.value)}
           />
-          <div className="flex items-center justify-between pt-2">
+          <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2 text-muted-foreground">
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <p className="text-[11px] font-bold uppercase tracking-widest">Criptografia de ponta-a-ponta ativa</p>
             </div>
             <Button
-              className="gradient-primary text-white rounded-full h-11 px-10 font-black shadow-lg shadow-primary/20 hover:shadow-primary/40 active:scale-95 transition-all"
+              className="h-10 rounded-2xl px-6 font-semibold shadow-primary/20"
               disabled={!newNote.trim() || savingNote}
               onClick={handleAddNote}
             >
@@ -90,7 +90,7 @@ export function EvolutionNotesForm({
       </Card>
 
       <Card className="glass-panel border-0 shadow-lg rounded-[32px] overflow-hidden">
-        <CardContent className="p-8">
+        <CardContent className="p-5">
           <div className="flex items-center gap-2 mb-6">
             <History className="w-5 h-5 text-primary/40" />
             <h3 className="text-sm font-black text-primary/40 uppercase tracking-widest">Linha do Tempo de Evolução</h3>
@@ -100,8 +100,8 @@ export function EvolutionNotesForm({
             {/* Notas Manuais */}
             {patient.notes_encrypted && (
               <div className="space-y-2">
-                <p className="text-[10px] font-black text-teal- uppercase tracking-widest ml-4">Observações Gerais</p>
-                <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans text-slate-700 font-medium bg-white/20 p-8 rounded-[24px] border border-white/40">
+                <p className="ml-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-700">Observações gerais</p>
+                <pre className="whitespace-pre-wrap rounded-2xl border border-border/70 bg-white/80 p-5 font-sans text-sm font-medium leading-relaxed text-slate-700">
                   {patient.notes_encrypted}
                 </pre>
               </div>
@@ -130,7 +130,7 @@ export function EvolutionNotesForm({
                       </div>
                     )}
                   </div>
-                  <div className="bg-white/40 p-6 rounded-[24px] border border-white/60 shadow-sm">
+                  <div className="rounded-2xl border border-border/70 bg-white/80 p-5 shadow-sm">
                     <p className="text-sm leading-relaxed font-medium text-slate-700">
                       {evolution.notes || evolution}
                     </p>

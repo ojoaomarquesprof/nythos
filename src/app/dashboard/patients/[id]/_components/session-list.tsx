@@ -1,10 +1,10 @@
 import React from "react";
-import { Clock, Download, Calendar, X, ChevronRight } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Calendar, Clock, Download, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { formatDate, formatTime, formatCurrency, SESSION_STATUS } from "@/lib/constants";
+import { formatCurrency, formatDate, formatTime, SESSION_STATUS } from "@/lib/constants";
 import type { Session } from "@/types/database";
 
 interface SessionListProps {
@@ -34,88 +34,103 @@ export function SessionList({
 }: SessionListProps) {
   return (
     <>
-      <div className="flex justify-end mb-2">
+      <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-white/75 p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">Sessões agendadas</h2>
+          <p className="text-sm text-muted-foreground">
+            Próximos atendimentos deste paciente.
+          </p>
+        </div>
         <Button
           variant="outline"
           size="sm"
+          className="h-9 rounded-2xl bg-white/80"
           onClick={handleExportSessions}
           disabled={isExportingPdf || sessions.length === 0}
         >
-          <Download className="w-4 h-4 mr-2" />
-          Exportar Sessões (PDF)
+          <Download className="size-4" />
+          Exportar PDF
         </Button>
       </div>
 
       {scheduledOnlySessions.length === 0 ? (
-        <Card className="border shadow-none">
+        <Card className="rounded-3xl border border-dashed border-border/80 bg-white/70 shadow-none">
           <CardContent className="py-12 text-center">
-            <Clock className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">Nenhuma sessão agendada.</p>
+            <div className="mx-auto mb-3 flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Clock className="size-5" />
+            </div>
+            <p className="text-sm font-medium text-foreground">Nenhuma sessão agendada</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Use a ação de agendamento no topo para criar o próximo atendimento.
+            </p>
           </CardContent>
         </Card>
       ) : (
-        scheduledOnlySessions.map((session: Session) => {
-          const statusCfg = SESSION_STATUS[session.status as keyof typeof SESSION_STATUS] || SESSION_STATUS.scheduled;
-          return (
-            <Card key={session.id} className="border shadow-none">
-              <CardContent className="p-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-medium">
-                        {formatDate(session.scheduled_at, {
-                          weekday: "short",
-                          day: "2-digit",
-                          month: "short",
-                        })}
+        <div className="space-y-2.5">
+          {scheduledOnlySessions.map((session: Session) => {
+            const statusCfg = SESSION_STATUS[session.status as keyof typeof SESSION_STATUS] || SESSION_STATUS.scheduled;
+            return (
+              <Card key={session.id} className="rounded-2xl border border-border/70 bg-white/85 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+                <CardContent className="p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-foreground">
+                          {formatDate(session.scheduled_at, {
+                            weekday: "short",
+                            day: "2-digit",
+                            month: "short",
+                          })}
+                        </p>
+                        <span className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground">
+                          <Clock className="size-3.5" />
+                          {formatTime(session.scheduled_at)}
+                        </span>
+                        <Badge className={cn("h-5 rounded-full text-[10px] font-semibold", statusCfg.color)}>
+                          <span className={cn("mr-1 size-1.5 rounded-full", statusCfg.dot)} />
+                          {statusCfg.label}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
+                        {session.duration_minutes} min · {session.session_type}
+                        {session.session_price && ` · ${formatCurrency(session.session_price)}`}
                       </p>
-                      <span className="text-sm text-muted-foreground">
-                        {formatTime(session.scheduled_at)}
-                      </span>
-                      <Badge className={cn("text-[10px] h-5", statusCfg.color)}>
-                        <span className={cn("w-1.5 h-1.5 rounded-full mr-1", statusCfg.dot)} />
-                        {statusCfg.label}
-                      </Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {session.duration_minutes} min · {session.session_type}
-                      {session.session_price && ` · ${formatCurrency(session.session_price)}`}
-                    </p>
+                    <div className="flex flex-wrap gap-1.5 sm:flex-nowrap">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 rounded-xl border-primary/20 bg-white text-xs text-primary hover:bg-primary/5"
+                        onClick={() => {
+                          setRescheduleSession(session);
+                          const date = new Date(session.scheduled_at);
+                          setRescheduleDate(date.toISOString().split("T")[0]);
+                          setRescheduleTime(date.toTimeString().slice(0, 5));
+                          setShowRescheduleModal(true);
+                        }}
+                      >
+                        <Calendar className="size-3.5" />
+                        Remarcar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 rounded-xl border-rose-200 bg-white text-xs text-rose-700 hover:bg-rose-50"
+                        onClick={() => {
+                          setCancellingSession(session);
+                          setShowCancelSeriesModal(true);
+                        }}
+                      >
+                        <X className="size-3.5" />
+                        Cancelar
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap sm:flex-nowrap gap-1.5">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs text-primary border-primary/20 hover:bg-primary/5"
-                      onClick={() => {
-                        setRescheduleSession(session);
-                        const date = new Date(session.scheduled_at);
-                        setRescheduleDate(date.toISOString().split('T')[0]);
-                        setRescheduleTime(date.toTimeString().slice(0, 5));
-                        setShowRescheduleModal(true);
-                      }}
-                    >
-                      <Calendar className="w-3.5 h-3.5 mr-1" />
-                      Remarcar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs text-red-700 border-red-200 hover:bg-red-50"
-                      onClick={() => {
-                        setCancellingSession(session);
-                        setShowCancelSeriesModal(true);
-                      }}
-                    >
-                      <X className="w-3.5 h-3.5 mr-1" />
-                      Cancelar
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       )}
     </>
   );
