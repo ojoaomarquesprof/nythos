@@ -39,11 +39,8 @@ export type PatientDocumentPayload = {
   category: string;
   title: string;
   description?: string | null;
-  storagePath?: string | null;
-  fileName?: string | null;
-  mimeType?: string | null;
-  sizeBytes?: number | null;
   documentDate?: string | null;
+  file?: File | null;
 };
 
 export const PatientSupportService = {
@@ -167,20 +164,27 @@ export const PatientSupportService = {
 
   async createDocument(payload: PatientDocumentPayload): Promise<ServiceResponse<PatientDocument[]>> {
     try {
-      const { data, error } = await supabase.rpc("create_patient_document_secure", {
-        p_patient_id: payload.patientId,
-        p_category: payload.category,
-        p_title: payload.title,
-        p_description: payload.description || null,
-        p_storage_path: payload.storagePath || null,
-        p_file_name: payload.fileName || null,
-        p_mime_type: payload.mimeType || null,
-        p_size_bytes: payload.sizeBytes || null,
-        p_document_date: payload.documentDate || null,
+      const formData = new FormData();
+      formData.append("patientId", payload.patientId);
+      formData.append("category", payload.category);
+      formData.append("title", payload.title);
+      formData.append("description", payload.description || "");
+      formData.append("documentDate", payload.documentDate || "");
+      if (payload.file) {
+        formData.append("file", payload.file);
+      }
+
+      const response = await fetch("/api/patient-documents", {
+        method: "POST",
+        body: formData,
       });
 
-      if (error) throw error;
-      return { data: data || [], error: null };
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return { data: null, error: result.error || "Nao foi possivel registrar o documento." };
+      }
+
+      return { data: result.documents || [], error: null };
     } catch (err: unknown) {
       logSafeError(`Error in PatientSupportService.createDocument(${payload.patientId})`, err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
@@ -189,14 +193,39 @@ export const PatientSupportService = {
 
   async deleteDocument(documentId: string): Promise<ServiceResponse<PatientDocument[]>> {
     try {
-      const { data, error } = await supabase.rpc("delete_patient_document_secure", {
-        p_document_id: documentId,
+      const response = await fetch(`/api/patient-documents/${documentId}`, {
+        method: "DELETE",
       });
 
-      if (error) throw error;
-      return { data: data || [], error: null };
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return { data: null, error: result.error || "Nao foi possivel remover o documento." };
+      }
+
+      return {
+        data: result.documents || [],
+        error: result.warning || null,
+      };
     } catch (err: unknown) {
       logSafeError(`Error in PatientSupportService.deleteDocument(${documentId})`, err);
+      return { data: null, error: GENERIC_SERVICE_ERROR };
+    }
+  },
+
+  async getDocumentDownloadUrl(documentId: string): Promise<ServiceResponse<{ url: string; expiresIn: number }>> {
+    try {
+      const response = await fetch(`/api/patient-documents/${documentId}/download`, {
+        method: "GET",
+      });
+
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.url) {
+        return { data: null, error: result.error || "Nao foi possivel preparar o download." };
+      }
+
+      return { data: { url: result.url, expiresIn: result.expiresIn || 60 }, error: null };
+    } catch (err: unknown) {
+      logSafeError(`Error in PatientSupportService.getDocumentDownloadUrl(${documentId})`, err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
     }
   },

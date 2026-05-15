@@ -132,7 +132,11 @@ function getSessionTimeRange(session: ScheduleItem) {
 }
 
 function getStatusLabel(session: ScheduleItem) {
-  return SESSION_STATUS[session.status as keyof typeof SESSION_STATUS]?.label ?? session.status;
+  return SESSION_STATUS[session.status as keyof typeof SESSION_STATUS]?.label ?? "Status nao informado";
+}
+
+function getSessionTypeLabel(type?: string | null) {
+  return sessionTypeLabels[type || ""] || "Tipo nao informado";
 }
 
 function getSessionStyle(session: ScheduleItem) {
@@ -724,7 +728,7 @@ export default function SchedulePage() {
                                   <div className={cn("mt-auto flex min-w-0 items-center gap-2 text-[10px] font-semibold leading-4 opacity-80", compact && "hidden")}>
                                     <span className="shrink-0">{getSessionTimeRange(session)}</span>
                                     {!session.is_external_google && !dense && (
-                                      <span className="min-w-0 truncate text-right">{sessionTypeLabels[session.session_type || ""] || session.session_type}</span>
+                                      <span className="min-w-0 truncate text-right">{getSessionTypeLabel(session.session_type)}</span>
                                     )}
                                   </div>
                                 </div>
@@ -1115,7 +1119,7 @@ export default function SchedulePage() {
                     {selectedIsExternal ? "Origem" : "Modalidade"}
                   </div>
                   <p className="text-sm font-semibold text-foreground">
-                    {selectedIsExternal ? "Google Calendar" : sessionTypeLabels[selectedItem.session_type || ""] || selectedItem.session_type || "-"}
+                    {selectedIsExternal ? "Google Calendar" : getSessionTypeLabel(selectedItem.session_type)}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">{getSessionSubtitle(selectedItem)}</p>
                 </div>

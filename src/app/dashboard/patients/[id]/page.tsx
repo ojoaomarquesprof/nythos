@@ -48,7 +48,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { SESSION_STATUS, formatCurrency, formatDate, formatTime } from "@/lib/constants";
+import { SESSION_STATUS, SESSION_TYPES, formatCurrency, formatDate, formatTime } from "@/lib/constants";
 import { CareNetworkCard } from "@/components/dashboard/patients/care-network-card";
 import { ProtocolTrackerCard } from "@/components/dashboard/patients/protocol-tracker-card";
 import { AbcRecordCard } from "@/components/dashboard/patients/abc-record-card";
@@ -81,6 +81,25 @@ const patientStatusConfig: Record<string, { label: string; className: string }> 
   },
 };
 
+const consentStatusLabels: Record<string, string> = {
+  pending: "Pendente",
+  signed: "Assinado",
+  revoked: "Revogado",
+  expired: "Expirado",
+};
+
+const documentCategoryLabels: Record<string, string> = {
+  consent: "Termo",
+  report: "Relatorio",
+  assessment: "Laudo/avaliacao",
+  certificate: "Atestado",
+  referral: "Encaminhamento",
+  school_document: "Documento escolar",
+  receipt: "Recibo",
+  image: "Imagem",
+  other: "Outro",
+};
+
 function getInitials(name: string) {
   return name
     .split(" ")
@@ -109,6 +128,14 @@ function getAge(dateOfBirth?: string | null) {
 function getSessionDateLabel(session?: Session | null) {
   if (!session) return "Sem registro";
   return `${formatDate(session.scheduled_at, { day: "2-digit", month: "short" })} às ${formatTime(session.scheduled_at)}`;
+}
+
+function getSessionTypeLabel(type?: string | null) {
+  return SESSION_TYPES[type as keyof typeof SESSION_TYPES]?.label || "Tipo nao informado";
+}
+
+function getDocumentCategoryLabel(category?: string | null) {
+  return documentCategoryLabels[category || ""] || "Documento";
 }
 
 function SummaryCard({
@@ -740,7 +767,7 @@ export default function PatientDetailPage() {
         description: hasEvolution
           ? "Sessão com evolução registrada."
           : session.status === "scheduled"
-            ? `${session.duration_minutes ?? 50} min · ${session.session_type || "atendimento"}`
+            ? `${session.duration_minutes ?? 50} min · ${getSessionTypeLabel(session.session_type)}`
             : "Sessão sem evolução registrada.",
         badge: hasEvolution ? "Evolução registrada" : statusCfg?.label ?? session.status,
         tone: session.status === "cancelled" ? "rose" : isFuture ? "sky" : hasEvolution ? "emerald" : "violet",
@@ -1003,7 +1030,7 @@ export default function PatientDetailPage() {
         type: consent.status === "signed" ? "Consentimento assinado" : "Consentimento registrado",
         title: consent.consent_type === "general_consent" ? "Termo de consentimento geral" : "Autorizacao/termo do paciente",
         description: consent.expires_at ? `Validade: ${formatDate(consent.expires_at)}.` : "Registro manual de consentimento ou autorizacao.",
-        badge: consent.status,
+        badge: consentStatusLabels[consent.status] || "Registrado",
         tone: consent.status === "signed" ? "emerald" : consent.status === "expired" ? "rose" : "amber",
         includeTime: false,
         onAction: () => setActiveTab("archive"),
@@ -1019,8 +1046,8 @@ export default function PatientDetailPage() {
         icon: Archive,
         type: "Documento registrado",
         title: document.title,
-        description: document.file_name ? `Metadado privado: ${document.file_name}.` : "Documento registrado como metadado privado.",
-        badge: document.category,
+        description: document.has_file && document.file_name ? `Arquivo privado: ${document.file_name}.` : "Documento registrado como metadado privado.",
+        badge: getDocumentCategoryLabel(document.category),
         tone: "slate",
         includeTime: !document.document_date,
         onAction: () => setActiveTab("archive"),
@@ -2043,7 +2070,7 @@ export default function PatientDetailPage() {
                                   <Badge className={cn("text-[9px] font-black uppercase tracking-widest h-5 px-2 border-0 shadow-sm", statusCfg.color)}>{statusCfg.label}</Badge>
                                 </div>
                                 <p className="text-xs font-medium text-slate-500 mt-0.5">
-                                  {session.duration_minutes} MIN · {session.session_type}
+                                  {session.duration_minutes} MIN · {getSessionTypeLabel(session.session_type)}
                                 </p>
                               </div>
                             </div>
@@ -2472,7 +2499,7 @@ export default function PatientDetailPage() {
                       </div>
                       <div className="text-right space-y-1">
                         <p className="text-[10px] font-black text-primary/40 uppercase tracking-widest">Tipo</p>
-                        <p className="text-base font-black text-primary capitalize">{viewingSession.session_type}</p>
+                        <p className="text-base font-black text-primary">{getSessionTypeLabel(viewingSession.session_type)}</p>
                       </div>
                     </div>
                   </>

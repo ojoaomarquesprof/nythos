@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  AlertCircle,
   CalendarClock,
   CheckCircle2,
   Edit,
@@ -70,6 +71,10 @@ const emptyGoalForm: GoalFormState = {
   targetDate: "",
   status: "active",
 };
+
+const modalLabelClassName = "text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground";
+const modalInputClassName = "h-11 rounded-2xl border-border/70 bg-white shadow-sm focus-visible:ring-primary/15";
+const modalTextareaClassName = "resize-none rounded-2xl border-border/70 bg-white shadow-sm focus-visible:ring-primary/15";
 
 const planStatusMeta: Record<PatientTreatmentPlanStatus, { label: string; className: string }> = {
   active: { label: "Ativo", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
@@ -563,38 +568,38 @@ export function TreatmentPlanManager({
       </Card>
 
       <Dialog open={planDialogOpen} onOpenChange={setPlanDialogOpen}>
-        <DialogContent className="max-h-[88vh] overflow-y-auto rounded-[28px] sm:max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="max-h-[92dvh] overflow-y-auto rounded-3xl border border-border/70 bg-white p-0 shadow-2xl sm:max-w-2xl">
+          <DialogHeader className="border-b border-border/60 bg-[linear-gradient(135deg,rgba(124,58,237,0.09),rgba(20,184,166,0.06))] px-6 py-5">
             <DialogTitle>{treatmentPlan ? "Editar plano terapêutico" : "Criar plano terapêutico"}</DialogTitle>
             <DialogDescription>
               Use campos objetivos. O conteúdo é salvo pelo fluxo clínico seguro do sistema.
             </DialogDescription>
           </DialogHeader>
-          <form className="space-y-4" onSubmit={handleSavePlan}>
+          <form className="space-y-4 p-6" onSubmit={handleSavePlan}>
             <div className="space-y-2">
-              <Label>Objetivo principal *</Label>
+              <Label className={modalLabelClassName}>Objetivo principal *</Label>
               <Textarea
                 required
-                className="min-h-24 rounded-2xl"
+                className={cn("min-h-24", modalTextareaClassName)}
                 value={planForm.mainGoal}
                 onChange={(event) => setPlanForm((prev) => ({ ...prev, mainGoal: event.target.value }))}
                 placeholder="Ex: desenvolver repertório de regulação emocional..."
               />
             </div>
             <div className="space-y-2">
-              <Label>Foco atual *</Label>
+              <Label className={modalLabelClassName}>Foco atual *</Label>
               <Textarea
                 required
-                className="min-h-20 rounded-2xl"
+                className={cn("min-h-20", modalTextareaClassName)}
                 value={planForm.currentFocus}
                 onChange={(event) => setPlanForm((prev) => ({ ...prev, currentFocus: event.target.value }))}
                 placeholder="Ex: manejo de ansiedade em situações sociais..."
               />
             </div>
             <div className="space-y-2">
-              <Label>Estratégias/intervenções</Label>
+              <Label className={modalLabelClassName}>Estrategias/intervencoes</Label>
               <Textarea
-                className="min-h-24 rounded-2xl"
+                className={cn("min-h-24", modalTextareaClassName)}
                 value={planForm.strategies}
                 onChange={(event) => setPlanForm((prev) => ({ ...prev, strategies: event.target.value }))}
                 placeholder="Técnicas, combinados clínicos ou intervenções em uso."
@@ -602,20 +607,21 @@ export function TreatmentPlanManager({
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Data de revisão</Label>
+                <Label className={modalLabelClassName}>Data de revisao</Label>
                 <Input
                   type="date"
+                  className={modalInputClassName}
                   value={planForm.reviewDate}
                   onChange={(event) => setPlanForm((prev) => ({ ...prev, reviewDate: event.target.value }))}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Status</Label>
+                <Label className={modalLabelClassName}>Status</Label>
                 <Select
                   value={planForm.status}
                   onValueChange={(value) => setPlanForm((prev) => ({ ...prev, status: value as PatientTreatmentPlanStatus }))}
                 >
-                  <SelectTrigger className="h-9 w-full rounded-xl bg-white">
+                  <SelectTrigger className={modalInputClassName}>
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -628,12 +634,17 @@ export function TreatmentPlanManager({
                 </Select>
               </div>
             </div>
-            {error && <p className="text-sm font-medium text-amber-700">{error}</p>}
+            {error && (
+              <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                <p>{error}</p>
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" className="rounded-2xl" onClick={() => setPlanDialogOpen(false)}>
+              <Button type="button" variant="ghost" className="rounded-2xl px-5 text-muted-foreground" onClick={() => setPlanDialogOpen(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" className="rounded-2xl" disabled={saving}>
+              <Button type="submit" className="rounded-2xl px-6 shadow-primary/20" disabled={saving}>
                 {saving ? "Salvando..." : "Salvar plano"}
               </Button>
             </div>
@@ -642,27 +653,28 @@ export function TreatmentPlanManager({
       </Dialog>
 
       <Dialog open={goalDialogOpen} onOpenChange={setGoalDialogOpen}>
-        <DialogContent className="max-h-[88vh] overflow-y-auto rounded-[28px] sm:max-w-xl">
-          <DialogHeader>
+        <DialogContent className="max-h-[92dvh] overflow-y-auto rounded-3xl border border-border/70 bg-white p-0 shadow-2xl sm:max-w-xl">
+          <DialogHeader className="border-b border-border/60 bg-[linear-gradient(135deg,rgba(124,58,237,0.09),rgba(20,184,166,0.06))] px-6 py-5">
             <DialogTitle>{goalForm.id ? "Editar objetivo" : "Novo objetivo terapêutico"}</DialogTitle>
             <DialogDescription>
               Registre uma meta simples e acompanhável dentro do plano.
             </DialogDescription>
           </DialogHeader>
-          <form className="space-y-4" onSubmit={handleSaveGoal}>
+          <form className="space-y-4 p-6" onSubmit={handleSaveGoal}>
             <div className="space-y-2">
-              <Label>Título *</Label>
+              <Label className={modalLabelClassName}>Titulo *</Label>
               <Input
                 required
+                className={modalInputClassName}
                 value={goalForm.title}
                 onChange={(event) => setGoalForm((prev) => ({ ...prev, title: event.target.value }))}
                 placeholder="Ex: praticar estratégia de respiração antes de provas"
               />
             </div>
             <div className="space-y-2">
-              <Label>Descrição</Label>
+              <Label className={modalLabelClassName}>Descricao</Label>
               <Textarea
-                className="min-h-24 rounded-2xl"
+                className={cn("min-h-24", modalTextareaClassName)}
                 value={goalForm.description}
                 onChange={(event) => setGoalForm((prev) => ({ ...prev, description: event.target.value }))}
                 placeholder="Detalhe breve da meta, se necessário."
@@ -670,20 +682,21 @@ export function TreatmentPlanManager({
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Prazo</Label>
+                <Label className={modalLabelClassName}>Prazo</Label>
                 <Input
                   type="date"
+                  className={modalInputClassName}
                   value={goalForm.targetDate}
                   onChange={(event) => setGoalForm((prev) => ({ ...prev, targetDate: event.target.value }))}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Status</Label>
+                <Label className={modalLabelClassName}>Status</Label>
                 <Select
                   value={goalForm.status}
                   onValueChange={(value) => setGoalForm((prev) => ({ ...prev, status: value as PatientTreatmentGoalStatus }))}
                 >
-                  <SelectTrigger className="h-9 w-full rounded-xl bg-white">
+                  <SelectTrigger className={modalInputClassName}>
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -696,12 +709,17 @@ export function TreatmentPlanManager({
                 </Select>
               </div>
             </div>
-            {error && <p className="text-sm font-medium text-amber-700">{error}</p>}
+            {error && (
+              <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                <p>{error}</p>
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" className="rounded-2xl" onClick={() => setGoalDialogOpen(false)}>
+              <Button type="button" variant="ghost" className="rounded-2xl px-5 text-muted-foreground" onClick={() => setGoalDialogOpen(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" className="rounded-2xl" disabled={saving}>
+              <Button type="submit" className="rounded-2xl px-6 shadow-primary/20" disabled={saving}>
                 {saving ? "Salvando..." : "Salvar objetivo"}
               </Button>
             </div>

@@ -27,6 +27,8 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -56,6 +58,10 @@ const CONTACT_TYPES = [
   { value: "caregiver", label: "Cuidador" },
   { value: "other", label: "Outro" },
 ];
+
+const fieldLabelClassName = "text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground";
+const fieldControlClassName = "h-11 rounded-2xl border-border/70 bg-white shadow-sm focus-visible:ring-primary/15";
+const textareaClassName = "min-h-24 resize-none rounded-2xl border-border/70 bg-white shadow-sm focus-visible:ring-primary/15";
 
 const defaultForm = {
   name: "",
@@ -384,27 +390,47 @@ export function CareNetworkCard({
       </CardContent>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl border border-border/70 bg-white p-0 shadow-2xl sm:max-w-2xl">
-          <DialogHeader className="border-b border-border/60 bg-slate-50/80 px-6 py-5">
-            <DialogTitle className="text-lg font-semibold">Adicionar contato de apoio</DialogTitle>
+        <DialogContent className="flex max-h-[92dvh] flex-col overflow-hidden rounded-3xl border border-border/70 bg-white p-0 shadow-2xl sm:max-w-2xl">
+          <DialogHeader className="border-b border-border/60 bg-[linear-gradient(135deg,rgba(124,58,237,0.09),rgba(20,184,166,0.06))] px-6 py-5">
+            <div className="flex items-start gap-3 pr-8">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <Users className="size-5" />
+              </span>
+              <div>
+                <DialogTitle className="text-xl font-semibold tracking-tight text-foreground">Adicionar contato de apoio</DialogTitle>
+                <DialogDescription className="mt-1 text-sm leading-relaxed">
+                  Organize responsaveis, escola, equipe multidisciplinar e autorizacoes de contato.
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <form onSubmit={handleAddContact} className="space-y-5 p-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="support-name">Nome *</Label>
+          <form onSubmit={handleAddContact} className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 space-y-4 overflow-y-auto px-6 py-5">
+              <section className="rounded-2xl border border-border/70 bg-white p-4">
+                <div className="mb-4 flex items-start gap-2">
+                  <UserRound className="mt-0.5 size-4 text-primary" />
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Dados principais</h3>
+                    <p className="text-xs text-muted-foreground">Identifique quem participa da rede de cuidado.</p>
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="support-name" className={fieldLabelClassName}>Nome *</Label>
                 <Input
                   id="support-name"
                   value={formData.name}
                   onChange={(event) => setFormData({ ...formData, name: event.target.value })}
                   required
-                  className="h-11 rounded-2xl"
+                  className={fieldControlClassName}
+                  placeholder="Nome completo"
                 />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Papel no caso *</Label>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className={fieldLabelClassName}>Papel no caso *</Label>
                 <Select value={formData.contactType} onValueChange={(value) => setFormData({ ...formData, contactType: value || "other" })}>
-                  <SelectTrigger className="h-11 rounded-2xl">
-                    <SelectValue />
+                  <SelectTrigger className={fieldControlClassName}>
+                    <SelectValue placeholder="Selecione o papel" />
                   </SelectTrigger>
                   <SelectContent>
                     {CONTACT_TYPES.map((type) => (
@@ -414,111 +440,145 @@ export function CareNetworkCard({
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="support-relationship">Relacao/vinculo</Label>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="support-relationship" className={fieldLabelClassName}>Relacao/vinculo</Label>
                 <Input
                   id="support-relationship"
                   value={formData.relationship}
                   onChange={(event) => setFormData({ ...formData, relationship: event.target.value })}
-                  className="h-11 rounded-2xl"
+                  className={fieldControlClassName}
+                  placeholder="Ex.: mae, escola, medico"
                 />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="support-organization">Organizacao</Label>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="support-organization" className={fieldLabelClassName}>Organizacao</Label>
                 <Input
                   id="support-organization"
                   value={formData.organization}
                   onChange={(event) => setFormData({ ...formData, organization: event.target.value })}
-                  className="h-11 rounded-2xl"
+                  className={fieldControlClassName}
+                  placeholder="Ex.: escola, clinica, hospital"
                 />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="support-phone">Telefone</Label>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-border/70 bg-slate-50/65 p-4">
+                <div className="mb-4 flex items-start gap-2">
+                  <Phone className="mt-0.5 size-4 text-primary" />
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Contato</h3>
+                    <p className="text-xs text-muted-foreground">Inclua apenas canais que podem ser usados pela clinica.</p>
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="support-phone" className={fieldLabelClassName}>Telefone</Label>
                 <Input
                   id="support-phone"
                   value={formData.phone}
                   onChange={(event) => setFormData({ ...formData, phone: event.target.value })}
-                  className="h-11 rounded-2xl"
+                  className={fieldControlClassName}
+                  placeholder="(00) 00000-0000"
                 />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="support-email">E-mail</Label>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="support-email" className={fieldLabelClassName}>E-mail</Label>
                 <Input
                   id="support-email"
                   type="email"
                   value={formData.email}
                   onChange={(event) => setFormData({ ...formData, email: event.target.value })}
-                  className="h-11 rounded-2xl"
+                  className={fieldControlClassName}
+                  placeholder="nome@email.com"
                 />
-              </div>
-            </div>
+                  </div>
+                </div>
+              </section>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="support-notes">Observacoes</Label>
-              <Textarea
-                id="support-notes"
-                value={formData.notes}
-                onChange={(event) => setFormData({ ...formData, notes: event.target.value })}
-                className="min-h-24 rounded-2xl"
-              />
-            </div>
+              <section className="rounded-2xl border border-border/70 bg-white p-4">
+                <div className="mb-4 flex items-start gap-2">
+                  <ShieldCheck className="mt-0.5 size-4 text-primary" />
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Autorizacoes</h3>
+                    <p className="text-xs text-muted-foreground">Controle se o contato pode ser acionado e se deve aparecer como preferencial.</p>
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <label className="flex items-center gap-3 rounded-2xl border border-border/70 bg-slate-50/70 p-3 text-sm font-medium">
+                    <input
+                      type="checkbox"
+                      checked={formData.canContact}
+                      onChange={(event) => setFormData({ ...formData, canContact: event.target.checked })}
+                      className="size-4"
+                    />
+                    Autorizado para contato
+                  </label>
+                  <label className="flex items-center gap-3 rounded-2xl border border-border/70 bg-slate-50/70 p-3 text-sm font-medium">
+                    <input
+                      type="checkbox"
+                      checked={formData.isPrimary}
+                      onChange={(event) => setFormData({ ...formData, isPrimary: event.target.checked })}
+                      className="size-4"
+                    />
+                    Preferencial
+                  </label>
+                  <label className="flex items-center gap-3 rounded-2xl border border-border/70 bg-slate-50/70 p-3 text-sm font-medium">
+                    <input
+                      type="checkbox"
+                      checked={formData.isActive}
+                      onChange={(event) => setFormData({ ...formData, isActive: event.target.checked })}
+                      className="size-4"
+                    />
+                    Ativo
+                  </label>
+                </div>
+                <div className="mt-4 space-y-1.5">
+                  <Label htmlFor="support-consent-date" className={fieldLabelClassName}>Data da autorizacao</Label>
+                  <Input
+                    id="support-consent-date"
+                    type="date"
+                    value={formData.consentDate}
+                    onChange={(event) => setFormData({ ...formData, consentDate: event.target.value })}
+                    className={fieldControlClassName}
+                  />
+                </div>
+              </section>
 
-            <div className="grid gap-3 md:grid-cols-3">
-              <label className="flex items-center gap-3 rounded-2xl border border-border/70 bg-slate-50/70 p-3 text-sm font-medium">
-                <input
-                  type="checkbox"
-                  checked={formData.canContact}
-                  onChange={(event) => setFormData({ ...formData, canContact: event.target.checked })}
-                  className="size-4"
+              <section className="rounded-2xl border border-border/70 bg-white p-4">
+                <div className="mb-4 flex items-start gap-2">
+                  <AlertCircle className="mt-0.5 size-4 text-primary" />
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Observacoes</h3>
+                    <p className="text-xs text-muted-foreground">Use somente informacoes relevantes para coordenacao do cuidado.</p>
+                  </div>
+                </div>
+                <Textarea
+                  id="support-notes"
+                  value={formData.notes}
+                  onChange={(event) => setFormData({ ...formData, notes: event.target.value })}
+                  className={textareaClassName}
+                  placeholder="Ex.: melhor horario para contato, combinados administrativos..."
                 />
-                Autorizado para contato
-              </label>
-              <label className="flex items-center gap-3 rounded-2xl border border-border/70 bg-slate-50/70 p-3 text-sm font-medium">
-                <input
-                  type="checkbox"
-                  checked={formData.isPrimary}
-                  onChange={(event) => setFormData({ ...formData, isPrimary: event.target.checked })}
-                  className="size-4"
-                />
-                Preferencial
-              </label>
-              <label className="flex items-center gap-3 rounded-2xl border border-border/70 bg-slate-50/70 p-3 text-sm font-medium">
-                <input
-                  type="checkbox"
-                  checked={formData.isActive}
-                  onChange={(event) => setFormData({ ...formData, isActive: event.target.checked })}
-                  className="size-4"
-                />
-                Ativo
-              </label>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="support-consent-date">Data da autorizacao</Label>
-              <Input
-                id="support-consent-date"
-                type="date"
-                value={formData.consentDate}
-                onChange={(event) => setFormData({ ...formData, consentDate: event.target.value })}
-                className="h-11 rounded-2xl"
-              />
-            </div>
+              </section>
 
             {error && (
-              <p className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                {error}
-              </p>
+              <div className="flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                <p>{error}</p>
+              </div>
             )}
+            </div>
 
-            <div className="flex justify-end gap-3 pt-2">
-              <Button type="button" variant="ghost" className="rounded-2xl" onClick={() => setOpen(false)}>
+            <DialogFooter className="border-t border-border/60 bg-slate-50/85 px-6 py-4">
+              <Button type="button" variant="ghost" className="rounded-2xl px-5 text-muted-foreground" onClick={() => setOpen(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" className="rounded-2xl" disabled={saving}>
-                {saving ? "Salvando..." : "Cadastrar"}
+              <Button type="submit" className="rounded-2xl px-6 shadow-primary/20" disabled={saving}>
+                {saving ? "Salvando..." : "Adicionar contato"}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

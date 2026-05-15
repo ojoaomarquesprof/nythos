@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { formatCurrency, formatDate, formatTime, SESSION_STATUS } from "@/lib/constants";
+import { formatCurrency, formatDate, formatTime, SESSION_STATUS, SESSION_TYPES } from "@/lib/constants";
 import type { Session } from "@/types/database";
 
 interface SessionListProps {
@@ -92,7 +92,7 @@ export function SessionList({
                         </Badge>
                       </div>
                       <p className="mt-1 truncate text-xs text-muted-foreground">
-                        {session.duration_minutes} min · {session.session_type}
+                        {session.duration_minutes} min · {SESSION_TYPES[session.session_type as keyof typeof SESSION_TYPES]?.label || "Tipo nao informado"}
                         {session.session_price && ` · ${formatCurrency(session.session_price)}`}
                       </p>
                     </div>

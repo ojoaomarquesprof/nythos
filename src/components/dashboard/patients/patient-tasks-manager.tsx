@@ -375,10 +375,10 @@ export function PatientTasksManager({ patientId, initialTasks }: Props) {
           <DialogHeader className="px-6 pt-6 pb-4 bg-gradient-to-br from-primary/10 to-transparent">
             <DialogTitle className="text-xl font-bold text-primary flex items-center gap-2">
               <Plus className="w-5 h-5" />
-              Nova Tarefa
+              Nova tarefa terapeutica
             </DialogTitle>
             <p className="text-xs text-muted-foreground mt-0.5">
-              A tarefa será exibida no portal do paciente.
+              Defina uma atividade clara para o paciente acompanhar no portal.
             </p>
           </DialogHeader>
 
@@ -496,9 +496,9 @@ export function PatientTasksManager({ patientId, initialTasks }: Props) {
                 className="gradient-primary text-white rounded-full px-8 font-black shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all active:scale-95 disabled:opacity-60 disabled:transform-none flex items-center gap-2"
               >
                 {isPending ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> Criando…</>
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Criando...</>
                 ) : (
-                  <><Plus className="w-4 h-4" /> Criar Tarefa</>
+                  <><Plus className="w-4 h-4" /> Criar tarefa</>
                 )}
               </Button>
             </DialogFooter>

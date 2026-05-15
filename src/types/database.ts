@@ -688,6 +688,7 @@ export type Database = {
           title: string;
           description_encrypted: string | null;
           description?: string | null;
+          has_file?: boolean;
           storage_path: string | null;
           file_name: string | null;
           mime_type: string | null;
