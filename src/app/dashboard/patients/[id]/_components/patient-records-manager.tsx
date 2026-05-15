@@ -510,7 +510,7 @@ export function PatientRecordsManager({
             description="Guarde o status de autorizacoes e termos importantes do paciente."
           />
           <form onSubmit={handleCreateConsent} className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 space-y-4 overflow-y-auto px-6 py-5">
+            <div className="min-h-0 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
               <FormSection icon={Shield} title="Dados principais" description="Escolha o tipo de autorizacao e a situacao atual.">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-1.5">
@@ -592,7 +592,7 @@ export function PatientRecordsManager({
                 </div>
               )}
             </div>
-            <DialogFooter className="border-t border-border/60 bg-slate-50/85 px-6 py-4">
+            <DialogFooter className="border-t border-border/60 bg-slate-50/85 px-4 py-4 sm:px-6">
               <Button type="button" variant="ghost" className="rounded-2xl px-5 text-muted-foreground" onClick={() => setConsentOpen(false)}>Cancelar</Button>
               <Button type="submit" className="rounded-2xl px-6 shadow-primary/20" disabled={saving}>{saving ? "Salvando..." : "Registrar consentimento"}</Button>
             </DialogFooter>
@@ -618,7 +618,7 @@ export function PatientRecordsManager({
             description="Anexe arquivos em area privada ou registre uma referencia manual quando nao houver arquivo."
           />
           <form onSubmit={handleCreateDocument} className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 space-y-4 overflow-y-auto px-6 py-5">
+            <div className="min-h-0 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
               <FormSection icon={FileText} title="Dados do documento" description="Identifique o documento para facilitar consultas futuras.">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-1.5 md:col-span-2">
@@ -726,7 +726,7 @@ export function PatientRecordsManager({
                 </div>
               )}
             </div>
-            <DialogFooter className="border-t border-border/60 bg-slate-50/85 px-6 py-4">
+            <DialogFooter className="border-t border-border/60 bg-slate-50/85 px-4 py-4 sm:px-6">
               <Button type="button" variant="ghost" className="rounded-2xl px-5 text-muted-foreground" onClick={() => setDocumentOpen(false)}>Cancelar</Button>
               <Button type="submit" className="rounded-2xl px-6 shadow-primary/20" disabled={saving}>{saving ? "Salvando..." : "Adicionar documento"}</Button>
             </DialogFooter>

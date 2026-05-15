@@ -112,7 +112,7 @@ export function CashFlowChart() {
       <CardContent className="p-5">
         {loading ? (
           <div className="space-y-5">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 min-[430px]:grid-cols-3">
               {[1, 2, 3].map((item) => (
                 <div key={item} className="h-16 animate-pulse rounded-2xl bg-muted" />
               ))}
@@ -137,7 +137,7 @@ export function CashFlowChart() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 min-[430px]:grid-cols-3">
               <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3">
                 <p className="text-xs font-medium text-emerald-700">Entradas</p>
                 <p className="mt-1 truncate text-sm font-semibold text-emerald-800">

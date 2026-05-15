@@ -96,6 +96,14 @@ function formatDateShort(date: Date) {
   });
 }
 
+function formatWeekdayCompact(date: Date) {
+  return date
+    .toLocaleDateString("pt-BR", { weekday: "short" })
+    .replace(".", "")
+    .slice(0, 3)
+    .toUpperCase();
+}
+
 function getPeriodLabel(view: "day" | "week" | "month", currentDate: Date, visibleDays: Date[]) {
   if (view === "day") return formatDateLong(currentDate);
   if (view === "month") {
@@ -228,6 +236,22 @@ export default function SchedulePage() {
   const todaySessions = schedule.sessions.filter((session) => new Date(session.scheduled_at).toDateString() === new Date().toDateString());
   const externalBlocks = schedule.sessions.filter((session) => session.is_external_google).length;
   const clinicalSessions = schedule.sessions.filter((session) => !session.is_external_google).length;
+  const selectedDaySessions = useMemo(
+    () =>
+      schedule.sessions.filter(
+        (session) =>
+          new Date(session.scheduled_at).toDateString() === schedule.currentDate.toDateString()
+      ),
+    [schedule.currentDate, schedule.sessions]
+  );
+  const mobileUpcomingSessions = useMemo(() => {
+    const pivot = new Date(schedule.currentDate);
+    pivot.setHours(0, 0, 0, 0);
+
+    return schedule.sessions
+      .filter((session) => getSessionEnd(session).getTime() >= pivot.getTime())
+      .slice(0, 4);
+  }, [schedule.currentDate, schedule.sessions]);
 
   const selectedItem = schedule.selectedSessionDetails as ScheduleItem | null;
   const selectedIsExternal = !!selectedItem?.is_external_google;
@@ -345,7 +369,7 @@ export default function SchedulePage() {
   }
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-96px)] min-h-[640px] w-full max-w-[1800px] flex-col gap-4 overflow-hidden px-3 py-3 md:h-[calc(100vh-84px)] md:px-5 md:py-4">
+    <div className="mx-auto flex h-auto min-h-0 w-full max-w-[1800px] flex-col gap-4 overflow-visible px-3 py-3 md:px-5 md:py-4 lg:h-[calc(100vh-84px)] lg:min-h-[640px] lg:overflow-hidden">
       {calendar.syncBanner && (
         <div
           className={cn(
@@ -395,10 +419,10 @@ export default function SchedulePage() {
             </div>
           </div>
 
-          <div className="relative flex flex-wrap gap-2 md:justify-end">
+          <div className="relative flex flex-col gap-2 sm:flex-row sm:flex-wrap md:justify-end">
             <Button
               variant="outline"
-              className="h-10 rounded-2xl bg-white/80"
+              className="h-10 w-full rounded-2xl bg-white/80 sm:w-auto"
               onClick={() => {
                 schedule.setCurrentDate(new Date());
                 schedule.setSelectedDate(new Date());
@@ -409,7 +433,7 @@ export default function SchedulePage() {
             {calendar.googleConnected && (
               <Button
                 variant="outline"
-                className="h-10 rounded-2xl border-teal-200 bg-white/80 text-teal-700 hover:bg-teal-50"
+                className="h-10 w-full rounded-2xl border-teal-200 bg-white/80 text-teal-700 hover:bg-teal-50 sm:w-auto"
                 onClick={calendar.handleGoogleSync}
                 disabled={calendar.syncing}
               >
@@ -418,7 +442,7 @@ export default function SchedulePage() {
               </Button>
             )}
             <SubscriptionGate>
-              <Button onClick={() => schedule.setShowNewSession(true)} className="h-10 rounded-2xl shadow-primary/20">
+              <Button onClick={() => schedule.setShowNewSession(true)} className="h-10 w-full rounded-2xl shadow-primary/20 sm:w-auto">
                 <Plus className="size-4" />
                 Agendar sessão
               </Button>
@@ -428,6 +452,203 @@ export default function SchedulePage() {
       </section>
 
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <section className="space-y-4 lg:hidden">
+          <div className="rounded-3xl border border-border/70 bg-white/90 p-4 shadow-[0_14px_35px_rgba(41,31,67,0.06)] ring-1 ring-white/80">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  Agenda do dia
+                </p>
+                <h2 className="mt-1 text-lg font-semibold capitalize text-foreground">
+                  {formatDateLong(schedule.currentDate)}
+                </h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {selectedDaySessions.length > 0
+                    ? `${selectedDaySessions.length} item(ns) para este dia`
+                    : "Sem compromissos para este dia"}
+                </p>
+              </div>
+              <div className="flex items-center rounded-2xl border border-border/70 bg-muted/35 p-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 rounded-xl"
+                  onClick={() => {
+                    const previousDay = new Date(schedule.currentDate);
+                    previousDay.setDate(previousDay.getDate() - 1);
+                    schedule.setCurrentDate(previousDay);
+                    schedule.setSelectedDate(previousDay);
+                    schedule.setView("day");
+                  }}
+                >
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 rounded-xl"
+                  onClick={() => {
+                    const nextDay = new Date(schedule.currentDate);
+                    nextDay.setDate(nextDay.getDate() + 1);
+                    schedule.setCurrentDate(nextDay);
+                    schedule.setSelectedDate(nextDay);
+                    schedule.setView("day");
+                  }}
+                >
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="mt-4 flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+              {weekDays.map((day) => {
+                const isSelected = day.toDateString() === schedule.currentDate.toDateString();
+                const isToday = day.toDateString() === new Date().toDateString();
+                const count = schedule.sessions.filter(
+                  (session) => new Date(session.scheduled_at).toDateString() === day.toDateString()
+                ).length;
+
+                return (
+                  <button
+                    key={day.toISOString()}
+                    type="button"
+                    onClick={() => {
+                      schedule.setCurrentDate(day);
+                      schedule.setSelectedDate(day);
+                      schedule.setView("day");
+                    }}
+                    className={cn(
+                      "flex min-w-[72px] shrink-0 flex-col items-center rounded-2xl border px-3 py-2 text-center transition-all",
+                      isSelected
+                        ? "border-primary/20 bg-primary/10 text-primary shadow-sm"
+                        : "border-border/70 bg-white/75 text-muted-foreground"
+                    )}
+                  >
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.14em]">
+                      {formatWeekdayCompact(day)}
+                    </span>
+                    <span
+                      className={cn(
+                        "mt-2 flex size-8 items-center justify-center rounded-full text-sm font-semibold",
+                        isSelected
+                          ? "gradient-primary text-white"
+                          : isToday
+                            ? "bg-primary/10 text-primary"
+                            : "text-foreground"
+                      )}
+                    >
+                      {day.getDate()}
+                    </span>
+                    <span className="mt-2 text-[10px] font-medium">
+                      {count > 0 ? `${count} item(ns)` : "Livre"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-border/70 bg-white/90 shadow-[0_14px_35px_rgba(41,31,67,0.06)] ring-1 ring-white/80">
+            <div className="flex items-center justify-between border-b border-border/60 px-4 py-4">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">SessÃµes do dia</h3>
+                <p className="text-xs text-muted-foreground">Toque para abrir os detalhes.</p>
+              </div>
+              <Badge variant="outline" className="rounded-full border-border/70 bg-white px-2.5 py-1 text-[10px] font-semibold">
+                {selectedDaySessions.length}
+              </Badge>
+            </div>
+
+            <div className="space-y-3 p-4">
+              {selectedDaySessions.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border/80 bg-slate-50/70 p-5 text-center">
+                  <CalendarCheck2 className="mx-auto mb-2 size-5 text-muted-foreground/65" />
+                  <p className="text-sm font-medium text-foreground">Nenhum item neste dia</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Use o botÃ£o acima para agendar uma nova sessÃ£o.
+                  </p>
+                </div>
+              ) : (
+                selectedDaySessions.map((session) => {
+                  const styles = getSessionStyle(session);
+
+                  return (
+                    <button
+                      type="button"
+                      key={session.id}
+                      className={cn(
+                        "flex w-full flex-col gap-3 rounded-2xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5",
+                        styles.card
+                      )}
+                      onClick={() => {
+                        schedule.setSelectedSessionDetails(session);
+                        schedule.setShowSessionDetails(true);
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className={cn("size-2 rounded-full", styles.dot)} />
+                            <p className="truncate text-sm font-semibold">{getSessionTitle(session)}</p>
+                          </div>
+                          <p className="mt-1 text-xs opacity-80">{getSessionSubtitle(session)}</p>
+                        </div>
+                        <Badge variant="outline" className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", styles.badge)}>
+                          {session.is_external_google ? "Google" : getStatusLabel(session)}
+                        </Badge>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold opacity-85">
+                        <span>{getSessionTimeRange(session)}</span>
+                        {!session.is_external_google && (
+                          <>
+                            <span className="size-1 rounded-full bg-current/35" />
+                            <span>{getSessionTypeLabel(session.session_type)}</span>
+                          </>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-border/70 bg-white/90 shadow-[0_14px_35px_rgba(41,31,67,0.06)] ring-1 ring-white/80">
+            <div className="border-b border-border/60 px-4 py-4">
+              <h3 className="text-sm font-semibold text-foreground">PrÃ³ximos eventos</h3>
+              <p className="text-xs text-muted-foreground">Resumo compacto para as prÃ³ximas datas carregadas.</p>
+            </div>
+
+            <div className="space-y-2 p-4">
+              {mobileUpcomingSessions.length === 0 ? (
+                <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
+                  Nenhum prÃ³ximo evento encontrado nesta faixa da agenda.
+                </p>
+              ) : (
+                mobileUpcomingSessions.map((session) => (
+                  <button
+                    type="button"
+                    key={`upcoming-${session.id}`}
+                    className="flex w-full items-center justify-between gap-3 rounded-2xl border border-border/70 bg-white/80 px-3 py-3 text-left transition hover:border-primary/20 hover:bg-primary/[0.03]"
+                    onClick={() => {
+                      schedule.setSelectedSessionDetails(session);
+                      schedule.setShowSessionDetails(true);
+                    }}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">{getSessionTitle(session)}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {formatDateShort(new Date(session.scheduled_at))} · {getSessionTimeRange(session)}
+                      </p>
+                    </div>
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+
         <aside className="hidden min-h-0 flex-col gap-4 lg:flex">
           <div className="rounded-3xl border border-border/70 bg-white/85 p-4 shadow-[0_14px_35px_rgba(41,31,67,0.06)] ring-1 ring-white/80">
             <div className="mb-4 flex items-center justify-between">
@@ -553,7 +774,7 @@ export default function SchedulePage() {
           </div>
         </aside>
 
-        <main className="flex min-h-0 flex-col overflow-hidden rounded-3xl border border-border/70 bg-white/90 shadow-[0_18px_50px_rgba(41,31,67,0.08)] ring-1 ring-white/80">
+        <main className="hidden min-h-0 flex-col overflow-hidden rounded-3xl border border-border/70 bg-white/90 shadow-[0_18px_50px_rgba(41,31,67,0.08)] ring-1 ring-white/80 lg:flex">
           <header className="flex shrink-0 flex-col gap-3 border-b border-border/60 bg-white/85 px-3 py-3 backdrop-blur md:flex-row md:items-center md:justify-between md:px-4">
             <div className="flex min-w-0 items-center gap-2">
               <div className="flex items-center rounded-2xl border border-border/70 bg-muted/35 p-1">
@@ -816,7 +1037,7 @@ export default function SchedulePage() {
         }}
       >
         <DialogContent className="max-h-[92dvh] overflow-y-auto border-primary/10 bg-white/95 p-0 shadow-[0_24px_70px_rgba(41,31,67,0.18)] sm:max-w-2xl">
-          <div className="border-b border-border/60 bg-[linear-gradient(135deg,rgba(124,58,237,0.08),rgba(20,184,166,0.08))] px-5 py-5">
+          <div className="border-b border-border/60 bg-[linear-gradient(135deg,rgba(124,58,237,0.08),rgba(20,184,166,0.08))] px-4 py-4 sm:px-5 sm:py-5">
             <div className="flex items-start gap-3 pr-8">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                 <CalendarDays className="size-5" />
@@ -830,7 +1051,7 @@ export default function SchedulePage() {
             </div>
           </div>
 
-          <div className="space-y-5 px-5 py-5">
+          <div className="space-y-5 px-4 py-4 sm:px-5 sm:py-5">
             <section className="rounded-2xl border border-border/70 bg-slate-50/60 p-4">
               <div className="mb-4 flex items-center gap-2">
                 <UserRound className="size-4 text-primary" />
@@ -1028,7 +1249,7 @@ export default function SchedulePage() {
             )}
           </div>
 
-          <DialogFooter className="mx-0 mb-0 rounded-none bg-slate-50/90 px-5 py-4">
+          <DialogFooter className="mx-0 mb-0 rounded-none bg-slate-50/90 px-4 py-4 sm:px-5">
             <Button variant="outline" className="rounded-2xl" onClick={() => schedule.setShowNewSession(false)} disabled={schedule.saving}>
               Cancelar
             </Button>
@@ -1046,10 +1267,10 @@ export default function SchedulePage() {
           if (!open) schedule.setSelectedSessionDetails(null);
         }}
       >
-        <DialogContent className="border-primary/10 bg-white/95 p-0 shadow-[0_24px_70px_rgba(41,31,67,0.18)] sm:max-w-xl">
+        <DialogContent className="max-h-[92dvh] overflow-y-auto border-primary/10 bg-white/95 p-0 shadow-[0_24px_70px_rgba(41,31,67,0.18)] sm:max-w-xl">
           <div
             className={cn(
-              "border-b border-border/60 px-5 py-5",
+              "border-b border-border/60 px-4 py-4 sm:px-5 sm:py-5",
               selectedIsExternal
                 ? "bg-[linear-gradient(135deg,rgba(20,184,166,0.12),rgba(14,165,233,0.08))]"
                 : "bg-[linear-gradient(135deg,rgba(124,58,237,0.10),rgba(255,255,255,0.75))]"
@@ -1076,7 +1297,7 @@ export default function SchedulePage() {
           </div>
 
           {selectedItem && (
-            <div className="space-y-4 px-5 py-5">
+            <div className="space-y-4 px-4 py-4 sm:px-5 sm:py-5">
               <div className="rounded-2xl border border-border/70 bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -1152,7 +1373,7 @@ export default function SchedulePage() {
             </div>
           )}
 
-          <DialogFooter className="mx-0 mb-0 rounded-none bg-slate-50/90 px-5 py-4">
+          <DialogFooter className="mx-0 mb-0 rounded-none bg-slate-50/90 px-4 py-4 sm:px-5">
             {!selectedIsExternal && selectedItem?.status !== "cancelled" && (
               <Button
                 variant="outline"

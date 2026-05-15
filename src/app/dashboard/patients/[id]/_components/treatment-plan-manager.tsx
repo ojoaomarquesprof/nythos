@@ -575,7 +575,7 @@ export function TreatmentPlanManager({
               Use campos objetivos. O conteúdo é salvo pelo fluxo clínico seguro do sistema.
             </DialogDescription>
           </DialogHeader>
-          <form className="space-y-4 p-6" onSubmit={handleSavePlan}>
+          <form className="space-y-4 p-4 sm:p-6" onSubmit={handleSavePlan}>
             <div className="space-y-2">
               <Label className={modalLabelClassName}>Objetivo principal *</Label>
               <Textarea
@@ -640,7 +640,7 @@ export function TreatmentPlanManager({
                 <p>{error}</p>
               </div>
             )}
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="ghost" className="rounded-2xl px-5 text-muted-foreground" onClick={() => setPlanDialogOpen(false)}>
                 Cancelar
               </Button>
@@ -660,7 +660,7 @@ export function TreatmentPlanManager({
               Registre uma meta simples e acompanhável dentro do plano.
             </DialogDescription>
           </DialogHeader>
-          <form className="space-y-4 p-6" onSubmit={handleSaveGoal}>
+          <form className="space-y-4 p-4 sm:p-6" onSubmit={handleSaveGoal}>
             <div className="space-y-2">
               <Label className={modalLabelClassName}>Titulo *</Label>
               <Input
@@ -715,7 +715,7 @@ export function TreatmentPlanManager({
                 <p>{error}</p>
               </div>
             )}
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="ghost" className="rounded-2xl px-5 text-muted-foreground" onClick={() => setGoalDialogOpen(false)}>
                 Cancelar
               </Button>

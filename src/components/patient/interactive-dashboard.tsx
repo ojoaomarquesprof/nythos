@@ -87,8 +87,8 @@ function DiaryForm({ patientId, onClose, onSaved }: { patientId: string; onClose
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-md glass-panel rounded-3xl p-6 shadow-2xl shadow-violet-900/20 space-y-5">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 backdrop-blur-sm sm:items-center sm:p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="glass-panel w-full max-w-md max-h-[85dvh] space-y-5 overflow-y-auto rounded-[28px] p-4 shadow-2xl shadow-violet-900/20 sm:rounded-3xl sm:p-6">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-black text-[oklch(0.22_0.02_280)] flex items-center gap-2">
             <BookHeart className="w-5 h-5 text-[oklch(0.55_0.18_340)]" /> Nova Entrada
@@ -129,9 +129,9 @@ function DiaryForm({ patientId, onClose, onSaved }: { patientId: string; onClose
 
           {error && <p className="text-xs text-rose-600 font-semibold bg-rose-50 px-3 py-2 rounded-xl">{error}</p>}
 
-          <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="flex-1 h-11 rounded-xl border border-[oklch(0.92_0.01_290)] text-sm font-bold text-[oklch(0.5_0.02_280)] hover:bg-slate-50 transition-colors">Cancelar</button>
-            <button type="submit" disabled={pending} className="flex-[1.5] h-11 rounded-xl gradient-primary text-white font-black text-sm shadow-lg shadow-violet-500/25 hover:-translate-y-0.5 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
+          <div className="flex flex-col-reverse gap-3 sm:flex-row">
+            <button type="button" onClick={onClose} className="h-11 flex-1 rounded-xl border border-[oklch(0.92_0.01_290)] text-sm font-bold text-[oklch(0.5_0.02_280)] transition-colors hover:bg-slate-50">Cancelar</button>
+            <button type="submit" disabled={pending} className="flex h-11 flex-[1.5] items-center justify-center gap-2 rounded-xl gradient-primary text-sm font-black text-white shadow-lg shadow-violet-500/25 transition-all hover:-translate-y-0.5 disabled:opacity-60">
               {pending ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvando…</> : "Salvar Registro"}
             </button>
           </div>
@@ -257,11 +257,11 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
         <div className="absolute -bottom-40 -right-40 w-[520px] h-[520px] rounded-full bg-[oklch(0.72_0.18_280)]/15 blur-3xl animate-pulse [animation-delay:1.5s]" />
       </div>
 
-      <div className="relative z-10 max-w-2xl mx-auto px-4 py-8 pb-20 space-y-6">
+      <div className="relative z-10 mx-auto max-w-2xl space-y-6 px-4 py-6 pb-24 sm:py-8">
 
         {/* Header */}
-        <header className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+        <header className="flex items-start justify-between gap-4 sm:items-center">
+          <div className="flex min-w-0 items-center gap-3">
             <div className="relative shrink-0">
               <div className="w-12 h-12 rounded-2xl gradient-primary flex items-center justify-center shadow-lg shadow-violet-500/30">
                 <Heart className="w-6 h-6 text-white fill-white/30" />
@@ -270,7 +270,7 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
                 <Sparkles className="w-2.5 h-2.5 text-white" />
               </div>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-medium text-[oklch(0.55_0.04_280)] uppercase tracking-wider">Área do Paciente · Nythos</p>
               <h1 className="text-xl font-bold text-[oklch(0.22_0.02_280)]">Olá, {firstName} 👋</h1>
             </div>
@@ -421,7 +421,7 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
                       Relatado
                     </span>
                   </div>
-                  <div className="mt-3 grid grid-cols-4 gap-2 text-center">
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
                     {[
                       ["Humor", entry.mood_score],
                       ["Ansiedade", entry.anxiety_score],
@@ -512,8 +512,8 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
       )}
 
       {showMoodCheckinForm && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && setShowMoodCheckinForm(false)}>
-          <div className="w-full max-w-md glass-panel rounded-3xl p-6 shadow-2xl shadow-violet-900/20 space-y-5">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 backdrop-blur-sm sm:items-center sm:p-4" onClick={(e) => e.target === e.currentTarget && setShowMoodCheckinForm(false)}>
+          <div className="glass-panel w-full max-w-md max-h-[85dvh] space-y-5 overflow-y-auto rounded-[28px] p-4 shadow-2xl shadow-violet-900/20 sm:rounded-3xl sm:p-6">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-black text-[oklch(0.22_0.02_280)] flex items-center gap-2">
                 <TrendingUp className="w-5 h-5 text-[oklch(0.55_0.2_280)]" /> Check-in
@@ -544,9 +544,9 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
               ))}
               <textarea value={moodForm.notes} onChange={e => setMoodForm(f => ({...f, notes: e.target.value}))} rows={2} placeholder="Algo importante sobre hoje? (opcional)" className="w-full px-4 py-3 rounded-2xl bg-white/70 border border-[oklch(0.92_0.01_290)] text-sm text-[oklch(0.22_0.02_280)] resize-none focus:outline-none focus:ring-2 focus:ring-[oklch(0.55_0.2_280)]/20 transition-all" />
               {formError && <p className="text-xs text-rose-600 font-semibold bg-rose-50 px-3 py-2 rounded-xl">{formError}</p>}
-              <div className="flex gap-3">
-                <button type="button" onClick={() => setShowMoodCheckinForm(false)} className="flex-1 h-11 rounded-xl border border-[oklch(0.92_0.01_290)] text-sm font-bold text-[oklch(0.5_0.02_280)] hover:bg-slate-50 transition-colors">Cancelar</button>
-                <button type="submit" disabled={moodPending} className="flex-[1.5] h-11 rounded-xl gradient-primary text-white font-black text-sm shadow-lg shadow-violet-500/25 hover:-translate-y-0.5 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
+              <div className="flex flex-col-reverse gap-3 sm:flex-row">
+                <button type="button" onClick={() => setShowMoodCheckinForm(false)} className="h-11 flex-1 rounded-xl border border-[oklch(0.92_0.01_290)] text-sm font-bold text-[oklch(0.5_0.02_280)] transition-colors hover:bg-slate-50">Cancelar</button>
+                <button type="submit" disabled={moodPending} className="flex h-11 flex-[1.5] items-center justify-center gap-2 rounded-xl gradient-primary text-sm font-black text-white shadow-lg shadow-violet-500/25 transition-all hover:-translate-y-0.5 disabled:opacity-60">
                   {moodPending ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvando...</> : "Salvar Check-in"}
                 </button>
               </div>
@@ -556,8 +556,8 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
       )}
 
       {respondingTask && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && setRespondingTask(null)}>
-          <div className="w-full max-w-md glass-panel rounded-3xl p-6 shadow-2xl shadow-violet-900/20 space-y-5">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 backdrop-blur-sm sm:items-center sm:p-4" onClick={(e) => e.target === e.currentTarget && setRespondingTask(null)}>
+          <div className="glass-panel w-full max-w-md max-h-[85dvh] space-y-5 overflow-y-auto rounded-[28px] p-4 shadow-2xl shadow-violet-900/20 sm:rounded-3xl sm:p-6">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-black text-[oklch(0.22_0.02_280)] flex items-center gap-2">
                 <MessageSquare className="w-5 h-5 text-[oklch(0.55_0.2_280)]" /> Responder tarefa
@@ -568,9 +568,9 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
             <form onSubmit={handleTaskResponseSubmit} className="space-y-4">
               <textarea value={taskResponse} onChange={e => setTaskResponse(e.target.value)} rows={5} placeholder="Escreva sua resposta ou relato breve..." className="w-full px-4 py-3 rounded-2xl bg-white/70 border border-[oklch(0.92_0.01_290)] text-sm text-[oklch(0.22_0.02_280)] resize-none focus:outline-none focus:ring-2 focus:ring-[oklch(0.55_0.2_280)]/20 transition-all" />
               {formError && <p className="text-xs text-rose-600 font-semibold bg-rose-50 px-3 py-2 rounded-xl">{formError}</p>}
-              <div className="flex gap-3">
-                <button type="button" onClick={() => setRespondingTask(null)} className="flex-1 h-11 rounded-xl border border-[oklch(0.92_0.01_290)] text-sm font-bold text-[oklch(0.5_0.02_280)] hover:bg-slate-50 transition-colors">Cancelar</button>
-                <button type="submit" disabled={responsePending || !taskResponse.trim()} className="flex-[1.5] h-11 rounded-xl gradient-primary text-white font-black text-sm shadow-lg shadow-violet-500/25 hover:-translate-y-0.5 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
+              <div className="flex flex-col-reverse gap-3 sm:flex-row">
+                <button type="button" onClick={() => setRespondingTask(null)} className="h-11 flex-1 rounded-xl border border-[oklch(0.92_0.01_290)] text-sm font-bold text-[oklch(0.5_0.02_280)] transition-colors hover:bg-slate-50">Cancelar</button>
+                <button type="submit" disabled={responsePending || !taskResponse.trim()} className="flex h-11 flex-[1.5] items-center justify-center gap-2 rounded-xl gradient-primary text-sm font-black text-white shadow-lg shadow-violet-500/25 transition-all hover:-translate-y-0.5 disabled:opacity-60">
                   {responsePending ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando...</> : "Enviar resposta"}
                 </button>
               </div>

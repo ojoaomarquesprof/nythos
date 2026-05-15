@@ -391,7 +391,7 @@ export function CareNetworkCard({
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="flex max-h-[92dvh] flex-col overflow-hidden rounded-3xl border border-border/70 bg-white p-0 shadow-2xl sm:max-w-2xl">
-          <DialogHeader className="border-b border-border/60 bg-[linear-gradient(135deg,rgba(124,58,237,0.09),rgba(20,184,166,0.06))] px-6 py-5">
+          <DialogHeader className="border-b border-border/60 bg-[linear-gradient(135deg,rgba(124,58,237,0.09),rgba(20,184,166,0.06))] px-4 py-4 sm:px-6 sm:py-5">
             <div className="flex items-start gap-3 pr-8">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                 <Users className="size-5" />
@@ -405,7 +405,7 @@ export function CareNetworkCard({
             </div>
           </DialogHeader>
           <form onSubmit={handleAddContact} className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 space-y-4 overflow-y-auto px-6 py-5">
+            <div className="min-h-0 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
               <section className="rounded-2xl border border-border/70 bg-white p-4">
                 <div className="mb-4 flex items-start gap-2">
                   <UserRound className="mt-0.5 size-4 text-primary" />
@@ -505,7 +505,7 @@ export function CareNetworkCard({
                     <p className="text-xs text-muted-foreground">Controle se o contato pode ser acionado e se deve aparecer como preferencial.</p>
                   </div>
                 </div>
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   <label className="flex items-center gap-3 rounded-2xl border border-border/70 bg-slate-50/70 p-3 text-sm font-medium">
                     <input
                       type="checkbox"
@@ -571,7 +571,7 @@ export function CareNetworkCard({
             )}
             </div>
 
-            <DialogFooter className="border-t border-border/60 bg-slate-50/85 px-6 py-4">
+            <DialogFooter className="border-t border-border/60 bg-slate-50/85 px-4 py-4 sm:px-6">
               <Button type="button" variant="ghost" className="rounded-2xl px-5 text-muted-foreground" onClick={() => setOpen(false)}>
                 Cancelar
               </Button>

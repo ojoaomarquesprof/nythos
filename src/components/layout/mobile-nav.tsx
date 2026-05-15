@@ -23,8 +23,8 @@ export function MobileNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/80 backdrop-blur-xl safe-bottom md:hidden">
-      <div className="flex items-center justify-around px-2 py-1">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border/70 bg-background/88 backdrop-blur-2xl md:hidden">
+      <div className="mx-auto grid max-w-md grid-cols-5 gap-1 px-3 py-2 safe-bottom">
         {navItems.map((item) => {
           const isActive =
             pathname === item.href ||
@@ -35,8 +35,9 @@ export function MobileNav() {
             <Link
               key={item.href}
               href={item.href}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
-                "flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl transition-all duration-300",
+                "flex min-w-0 flex-col items-center gap-1 rounded-2xl px-2 py-2.5 text-center transition-all duration-300",
                 isActive
                   ? "text-primary scale-105"
                   : "text-muted-foreground hover:text-foreground"
@@ -44,7 +45,7 @@ export function MobileNav() {
             >
               <div
                 className={cn(
-                  "relative flex items-center justify-center w-10 h-7 rounded-full transition-all duration-300",
+                  "relative flex h-8 w-11 items-center justify-center rounded-full transition-all duration-300",
                   isActive && "bg-primary/10"
                 )}
               >
@@ -55,7 +56,7 @@ export function MobileNav() {
               </div>
               <span
                 className={cn(
-                  "text-[10px] font-medium transition-all",
+                  "truncate text-[10px] font-medium leading-none transition-all",
                   isActive && "font-semibold"
                 )}
               >

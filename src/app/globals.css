@@ -151,6 +151,7 @@
   }
   body {
     @apply bg-background text-foreground;
+    overflow-x: hidden;
     background-image:
       radial-gradient(circle at 12% -8%, oklch(0.93 0.04 295 / 55%), transparent 36%),
       radial-gradient(circle at 100% 0%, oklch(0.95 0.05 165 / 45%), transparent 34%),

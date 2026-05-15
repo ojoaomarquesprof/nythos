@@ -526,7 +526,7 @@ export function PatientEngagementCard({
       </CardContent>
 
       <Dialog open={tasksDialogOpen} onOpenChange={setTasksDialogOpen}>
-        <DialogContent className="max-w-md bg-white rounded-[32px] p-6 shadow-2xl border border-slate-100">
+        <DialogContent className="max-h-[85dvh] overflow-hidden rounded-[32px] border border-slate-100 bg-white p-4 shadow-2xl sm:max-w-md sm:p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
               <ListChecks className="w-5 h-5 text-violet-500" />
@@ -539,7 +539,7 @@ export function PatientEngagementCard({
             </p>
           </DialogHeader>
 
-          <div className="max-h-[60vh] overflow-y-auto pr-1 space-y-3 mt-4">
+          <div className="mt-4 max-h-[60vh] space-y-3 overflow-y-auto pr-1">
             {(stats?.tasksList?.filter((task) => {
               if (tasksFilter === "pending") return task.status !== "completed";
               if (tasksFilter === "completed") return task.status === "completed";
@@ -624,7 +624,7 @@ export function PatientEngagementCard({
       </Dialog>
 
       <Dialog open={diaryDialogOpen} onOpenChange={setDiaryDialogOpen}>
-        <DialogContent className="max-w-md bg-white rounded-[32px] p-6 shadow-2xl border border-slate-100">
+        <DialogContent className="max-h-[85dvh] overflow-hidden rounded-[32px] border border-slate-100 bg-white p-4 shadow-2xl sm:max-w-md sm:p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
               <BookHeart className="w-5 h-5 text-violet-500" />
@@ -663,7 +663,7 @@ export function PatientEngagementCard({
             </div>
           )}
 
-          <div className="max-h-[60vh] overflow-y-auto pr-1 space-y-4 mt-3">
+          <div className="mt-3 max-h-[60vh] space-y-4 overflow-y-auto pr-1">
             {filteredDiary.length === 0 ? (
               <div className="text-center py-10 text-muted-foreground">
                 <Smile className="w-8 h-8 text-slate-300 mx-auto mb-2" />

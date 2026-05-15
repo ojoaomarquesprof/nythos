@@ -233,7 +233,7 @@ function OverviewPanel({
 
 function DetailRow({ label, value }: { label: string; value?: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-border/50 py-2.5 last:border-0">
+    <div className="flex flex-col gap-1.5 border-b border-border/50 py-2.5 last:border-0 [&>span:last-child]:max-w-full [&>span:last-child]:text-left sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:[&>span:last-child]:max-w-[60%] sm:[&>span:last-child]:text-right">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <span className="max-w-[60%] text-right text-xs font-semibold text-foreground">{value || "—"}</span>
     </div>
@@ -298,7 +298,7 @@ function NextActionRow({
         variant={priority === "success" ? "outline" : priority === "high" || priority === "medium" ? "default" : "outline"}
         size="sm"
         className={cn(
-          "h-8 shrink-0 rounded-2xl px-3 text-xs",
+          "h-8 w-full shrink-0 rounded-2xl px-3 text-xs sm:w-auto",
           priority === "success" && "border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50",
           priority === "low" && "bg-white"
         )}
@@ -399,7 +399,7 @@ function GuidedSessionCard({
                   </div>
                 </div>
                 {item.onAction && item.actionLabel && (
-                  <Button variant="outline" size="sm" className="h-8 shrink-0 rounded-2xl bg-white px-3 text-xs" onClick={item.onAction}>
+                  <Button variant="outline" size="sm" className="h-8 w-full shrink-0 rounded-2xl bg-white px-3 text-xs sm:w-auto" onClick={item.onAction}>
                     {item.actionLabel}
                   </Button>
                 )}
@@ -1624,7 +1624,7 @@ export default function PatientDetailPage() {
                 )}
               </div>
 
-              <h1 className="mt-3 truncate text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+              <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
                 {patient.full_name}
               </h1>
 
@@ -1649,28 +1649,28 @@ export default function PatientDetailPage() {
                 )}
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button className="h-9 rounded-2xl" onClick={() => router.push("/dashboard/schedule")}>
+              <div className="mt-4 grid grid-cols-1 gap-2 min-[430px]:grid-cols-2 lg:flex lg:flex-wrap">
+                <Button className="h-9 w-full justify-start rounded-2xl min-[430px]:justify-center lg:w-auto lg:justify-center" onClick={() => router.push("/dashboard/schedule")}>
                   <Calendar className="size-4" />
                   Agendar sessão
                 </Button>
-                <Button variant="outline" className="h-9 rounded-2xl bg-white/80" onClick={() => setActiveTab("notes")}>
+                <Button variant="outline" className="h-9 w-full justify-start rounded-2xl bg-white/80 min-[430px]:justify-center lg:w-auto lg:justify-center" onClick={() => setActiveTab("notes")}>
                   <FileText className="size-4" />
                   Registrar evolução
                 </Button>
-                <Button variant="outline" className="h-9 rounded-2xl bg-white/80" onClick={() => setActiveTab("anamnesis")}>
+                <Button variant="outline" className="h-9 w-full justify-start rounded-2xl bg-white/80 min-[430px]:justify-center lg:w-auto lg:justify-center" onClick={() => setActiveTab("anamnesis")}>
                   <Shield className="size-4" />
                   Solicitar anamnese
                 </Button>
-                <Button variant="outline" className="h-9 rounded-2xl bg-white/80" onClick={() => setActiveTab("tasks")}>
+                <Button variant="outline" className="h-9 w-full justify-start rounded-2xl bg-white/80 min-[430px]:justify-center lg:w-auto lg:justify-center" onClick={() => setActiveTab("tasks")}>
                   <Bell className="size-4" />
                   Link do paciente
                 </Button>
-                <Button variant="outline" className="h-9 rounded-2xl bg-white/80" onClick={() => setActiveTab("finance")}>
+                <Button variant="outline" className="h-9 w-full justify-start rounded-2xl bg-white/80 min-[430px]:justify-center lg:w-auto lg:justify-center" onClick={() => setActiveTab("finance")}>
                   <Wallet className="size-4" />
                   Financeiro
                 </Button>
-                <Button variant="ghost" className="h-9 rounded-2xl text-muted-foreground hover:bg-white/70 hover:text-foreground" onClick={() => setProfileDialogOpen(true)}>
+                <Button variant="ghost" className="h-9 w-full justify-start rounded-2xl text-muted-foreground hover:bg-white/70 hover:text-foreground min-[430px]:justify-center lg:w-auto lg:justify-center" onClick={() => setProfileDialogOpen(true)}>
                   <User className="size-4" />
                   Cadastro
                 </Button>
@@ -1759,7 +1759,7 @@ export default function PatientDetailPage() {
                   <TabsTrigger
                     key={tab.value}
                     value={tab.value}
-                    className="h-8 flex-none rounded-2xl px-3 text-xs font-semibold data-active:bg-white data-active:text-primary data-active:shadow-sm md:w-full md:justify-center 2xl:w-auto"
+                    className="h-10 flex-none rounded-2xl px-3.5 text-xs font-semibold data-active:bg-white data-active:text-primary data-active:shadow-sm md:h-9 md:w-full md:justify-center 2xl:w-auto"
                   >
                     <Icon className="size-4" />
                     <span>{tab.label}</span>
@@ -1912,7 +1912,7 @@ export default function PatientDetailPage() {
                   <OverviewPanel title="Humor e sintomas" icon={Activity}>
                     {latestMoodCheckin ? (
                       <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
                           <DetailRow label="Humor" value={`${latestMoodCheckin.mood_score ?? "—"}/5`} />
                           <DetailRow label="Ansiedade" value={`${latestMoodCheckin.anxiety_score ?? "—"}/5`} />
                           <DetailRow label="Sono" value={`${latestMoodCheckin.sleep_quality ?? "—"}/5`} />
@@ -1962,7 +1962,7 @@ export default function PatientDetailPage() {
                         }
                       />
                     </div>
-                    <div className="mt-4 grid grid-cols-2 gap-2">
+                    <div className="mt-4 grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
                       <Button variant="outline" className="h-9 rounded-2xl bg-white" onClick={() => setActiveTab("team")}>
                         Ver rede
                       </Button>

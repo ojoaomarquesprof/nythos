@@ -372,7 +372,7 @@ export function PatientTasksManager({ patientId, initialTasks }: Props) {
       {/* ── New Task Dialog ─────────────────────────────────────────────────── */}
       <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setForm(defaultForm); setFormError(""); } }}>
         <DialogContent className="sm:max-w-lg rounded-[32px] glass-panel border-white/40 shadow-2xl shadow-violet-900/10 p-0 overflow-hidden">
-          <DialogHeader className="px-6 pt-6 pb-4 bg-gradient-to-br from-primary/10 to-transparent">
+          <DialogHeader className="bg-gradient-to-br from-primary/10 to-transparent px-4 pb-4 pt-5 sm:px-6 sm:pt-6">
             <DialogTitle className="text-xl font-bold text-primary flex items-center gap-2">
               <Plus className="w-5 h-5" />
               Nova tarefa terapeutica
@@ -382,7 +382,7 @@ export function PatientTasksManager({ patientId, initialTasks }: Props) {
             </p>
           </DialogHeader>
 
-          <form ref={formRef} onSubmit={handleCreate} className="px-6 pb-6 space-y-4">
+          <form ref={formRef} onSubmit={handleCreate} className="space-y-4 px-4 pb-4 sm:px-6 sm:pb-6">
             {/* Título */}
             <div className="space-y-1.5">
               <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70">
@@ -412,7 +412,7 @@ export function PatientTasksManager({ patientId, initialTasks }: Props) {
             </div>
 
             {/* Categoria + Prioridade */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70">
                   Categoria

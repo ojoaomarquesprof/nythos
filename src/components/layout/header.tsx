@@ -180,24 +180,24 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/75 shadow-[0_10px_28px_rgba(41,31,67,0.05)] supports-backdrop-filter:backdrop-blur-2xl">
-      <div className="mx-auto flex w-full max-w-7xl items-center gap-3 px-4 py-3 md:px-6 md:py-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/70 bg-white/65 shadow-[var(--shadow-sm)] md:hidden">
+      <div className="mx-auto flex w-full max-w-7xl items-center gap-2 px-3 py-2.5 md:gap-3 md:px-6 md:py-4">
+        <div className="flex min-w-0 items-center gap-2.5 md:gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/70 bg-white/65 shadow-[var(--shadow-sm)] md:hidden">
             <img
               src="/logo-icon.png"
               alt="Nythos Logo"
-              className="h-8 w-8 object-contain"
+              className="h-7 w-7 object-contain"
             />
           </div>
 
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-black uppercase leading-none tracking-[0.2em] text-primary/55">
+              <span className="text-[10px] font-black uppercase leading-none tracking-[0.16em] text-primary/55 md:text-[11px] md:tracking-[0.2em]">
                 {greeting}
               </span>
               <span className="hidden h-2 w-2 rounded-full bg-accent shadow-[0_0_0_6px_rgba(134,181,160,0.12)] sm:inline-flex" />
             </div>
-            <h2 className="mt-1 truncate text-lg font-bold leading-tight tracking-tight text-foreground md:text-xl">
+            <h2 className="mt-1 truncate text-base font-bold leading-tight tracking-tight text-foreground sm:text-lg md:text-xl">
               {userName}
             </h2>
             <p className="hidden text-xs text-muted-foreground sm:block">
@@ -225,12 +225,12 @@ export function Header() {
           </button>
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5 md:gap-2">
           <button
             type="button"
             aria-label="Busca global em preparação"
             title="Busca global em preparação"
-            className="group rounded-2xl border border-white/70 bg-white/70 p-2.5 text-muted-foreground shadow-[var(--shadow-sm)] transition-all duration-200 hover:border-primary/15 hover:bg-white/90 hover:text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20 active:scale-[0.98] lg:hidden"
+            className="group hidden rounded-2xl border border-white/70 bg-white/70 p-2.5 text-muted-foreground shadow-[var(--shadow-sm)] transition-all duration-200 hover:border-primary/15 hover:bg-white/90 hover:text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20 active:scale-[0.98] min-[430px]:inline-flex lg:hidden"
           >
             <Search className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" />
           </button>
@@ -247,7 +247,7 @@ export function Header() {
             <PopoverContent
               align="end"
               sideOffset={10}
-              className="w-[22rem] overflow-hidden rounded-[26px] border-border/70 bg-popover/95 p-0"
+              className="w-[min(22rem,calc(100vw-1rem))] overflow-hidden rounded-[26px] border-border/70 bg-popover/95 p-0"
             >
               <PopoverHeader className="flex flex-row items-center justify-between border-b border-border/60 bg-muted/25 px-4 py-3">
                 <div>
@@ -365,7 +365,7 @@ export function Header() {
             </div>
           </div>
 
-          <Avatar className="h-10 w-10 ring-2 ring-primary/20 md:hidden">
+          <Avatar className="h-9 w-9 ring-2 ring-primary/20 md:hidden">
             {profile?.avatar_url && (
               <AvatarImage src={profile.avatar_url} alt={profile.full_name || ""} />
             )}
