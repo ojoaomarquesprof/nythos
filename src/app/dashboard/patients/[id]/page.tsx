@@ -49,6 +49,10 @@ import {
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { SESSION_STATUS, SESSION_TYPES, formatCurrency, formatDate, formatTime } from "@/lib/constants";
+import {
+  getConsentStatusLabel,
+  getDocumentCategoryLabel,
+} from "@/lib/patient-documents/presentation";
 import { CareNetworkCard } from "@/components/dashboard/patients/care-network-card";
 import { ProtocolTrackerCard } from "@/components/dashboard/patients/protocol-tracker-card";
 import { AbcRecordCard } from "@/components/dashboard/patients/abc-record-card";
@@ -79,25 +83,6 @@ const patientStatusConfig: Record<string, { label: string; className: string }> 
     label: "Arquivado",
     className: "border-slate-200 bg-slate-50 text-slate-600",
   },
-};
-
-const consentStatusLabels: Record<string, string> = {
-  pending: "Pendente",
-  signed: "Assinado",
-  revoked: "Revogado",
-  expired: "Expirado",
-};
-
-const documentCategoryLabels: Record<string, string> = {
-  consent: "Termo",
-  report: "Relatorio",
-  assessment: "Laudo/avaliacao",
-  certificate: "Atestado",
-  referral: "Encaminhamento",
-  school_document: "Documento escolar",
-  receipt: "Recibo",
-  image: "Imagem",
-  other: "Outro",
 };
 
 function getInitials(name: string) {
@@ -132,10 +117,6 @@ function getSessionDateLabel(session?: Session | null) {
 
 function getSessionTypeLabel(type?: string | null) {
   return SESSION_TYPES[type as keyof typeof SESSION_TYPES]?.label || "Tipo nao informado";
-}
-
-function getDocumentCategoryLabel(category?: string | null) {
-  return documentCategoryLabels[category || ""] || "Documento";
 }
 
 function SummaryCard({
@@ -1030,7 +1011,7 @@ export default function PatientDetailPage() {
         type: consent.status === "signed" ? "Consentimento assinado" : "Consentimento registrado",
         title: consent.consent_type === "general_consent" ? "Termo de consentimento geral" : "Autorizacao/termo do paciente",
         description: consent.expires_at ? `Validade: ${formatDate(consent.expires_at)}.` : "Registro manual de consentimento ou autorizacao.",
-        badge: consentStatusLabels[consent.status] || "Registrado",
+        badge: getConsentStatusLabel(consent.status),
         tone: consent.status === "signed" ? "emerald" : consent.status === "expired" ? "rose" : "amber",
         includeTime: false,
         onAction: () => setActiveTab("archive"),

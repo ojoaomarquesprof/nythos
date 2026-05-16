@@ -42,41 +42,17 @@ import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/constants";
 import {
   PATIENT_DOCUMENT_ACCEPT,
-  PATIENT_DOCUMENT_ALLOWED_EXTENSIONS,
-  PATIENT_DOCUMENT_ALLOWED_MIME_TYPES,
-  PATIENT_DOCUMENT_MAX_SIZE_BYTES,
   formatPatientDocumentFileSize,
 } from "@/lib/patient-documents/file-rules";
-
-const CONSENT_TYPES = [
-  { value: "general_consent", label: "Consentimento geral" },
-  { value: "online_care", label: "Atendimento online" },
-  { value: "legal_guardian", label: "Autorizacao do responsavel" },
-  { value: "school_contact", label: "Contato com escola" },
-  { value: "multidisciplinary_contact", label: "Contato com equipe multidisciplinar" },
-  { value: "patient_portal", label: "Acesso ao portal do paciente" },
-  { value: "third_party_sharing", label: "Compartilhamento com terceiros" },
-  { value: "other", label: "Outro" },
-];
-
-const CONSENT_STATUS = [
-  { value: "pending", label: "Pendente" },
-  { value: "signed", label: "Assinado" },
-  { value: "revoked", label: "Revogado" },
-  { value: "expired", label: "Expirado" },
-];
-
-const DOCUMENT_CATEGORIES = [
-  { value: "consent", label: "Termo" },
-  { value: "report", label: "Relatorio" },
-  { value: "assessment", label: "Laudo/avaliacao" },
-  { value: "certificate", label: "Atestado" },
-  { value: "referral", label: "Encaminhamento" },
-  { value: "school_document", label: "Documento escolar" },
-  { value: "receipt", label: "Recibo" },
-  { value: "image", label: "Imagem" },
-  { value: "other", label: "Outro" },
-];
+import {
+  CONSENT_STATUS_OPTIONS,
+  CONSENT_TYPE_OPTIONS,
+  DOCUMENT_CATEGORY_OPTIONS,
+  getConsentStatusClass,
+  labelForOption,
+  toPatientDocumentListMeta,
+} from "@/lib/patient-documents/presentation";
+import { validatePatientDocumentSelection } from "@/lib/patient-documents/validation";
 
 const fieldLabelClassName = "text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground";
 const fieldControlClassName = "h-11 rounded-2xl border-border/70 bg-white shadow-sm focus-visible:ring-primary/15";
@@ -99,33 +75,8 @@ const defaultDocumentForm = {
   documentDate: "",
 };
 
-function labelFor(options: Array<{ value: string; label: string }>, value?: string | null) {
-  return options.find((item) => item.value === value)?.label || "Registro";
-}
-
-function consentStatusClass(status: string) {
-  if (status === "signed") return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  if (status === "pending") return "border-amber-200 bg-amber-50 text-amber-700";
-  if (status === "expired") return "border-rose-200 bg-rose-50 text-rose-700";
-  return "border-slate-200 bg-slate-50 text-slate-600";
-}
-
 function validateDocumentFile(file: File) {
-  if (file.size > PATIENT_DOCUMENT_MAX_SIZE_BYTES) {
-    return "O arquivo excede o limite de 20 MB.";
-  }
-
-  if (!PATIENT_DOCUMENT_ALLOWED_MIME_TYPES.includes(file.type as any)) {
-    return "Tipo de arquivo nao permitido. Envie PDF, imagem PNG/JPG/WebP, DOC ou DOCX.";
-  }
-
-  const extension = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")).toLowerCase() : "";
-  const allowedExtensions = PATIENT_DOCUMENT_ALLOWED_EXTENSIONS[file.type] || [];
-  if (!allowedExtensions.includes(extension)) {
-    return "A extensao do arquivo nao corresponde ao tipo enviado.";
-  }
-
-  return null;
+  return validatePatientDocumentSelection(file);
 }
 
 function EmptyBlock({ icon: Icon, title, description }: { icon: React.ElementType; title: string; description: string }) {
@@ -352,7 +303,7 @@ export function PatientRecordsManager({
                 <div key={consent.id} className="group rounded-3xl border border-border/70 bg-white/85 p-4 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-semibold text-foreground">{labelFor(CONSENT_TYPES, consent.consent_type)}</p>
+                      <p className="text-sm font-semibold text-foreground">{labelForOption(CONSENT_TYPE_OPTIONS, consent.consent_type)}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {consent.related_person_name || "Paciente/responsavel"}
                         {consent.version ? ` · versao ${consent.version}` : ""}
@@ -368,8 +319,8 @@ export function PatientRecordsManager({
                     </Button>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <Badge variant="outline" className={cn("rounded-full text-[10px]", consentStatusClass(consent.status))}>
-                      {labelFor(CONSENT_STATUS, consent.status)}
+                    <Badge variant="outline" className={cn("rounded-full text-[10px]", getConsentStatusClass(consent.status))}>
+                      {labelForOption(CONSENT_STATUS_OPTIONS, consent.status)}
                     </Badge>
                     {consent.signed_at && (
                       <Badge variant="outline" className="rounded-full border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
@@ -429,7 +380,9 @@ export function PatientRecordsManager({
             />
           ) : (
             <div className="grid gap-3 md:grid-cols-2">
-              {documents.map((document) => (
+              {documents.map((document) => {
+                const meta = toPatientDocumentListMeta(document);
+                return (
                 <div key={document.id} className="group rounded-3xl border border-border/70 bg-white/85 p-4 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 gap-3">
@@ -437,10 +390,10 @@ export function PatientRecordsManager({
                         <FileText className="size-5" />
                       </div>
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-foreground">{document.title}</p>
+                        <p className="truncate text-sm font-semibold text-foreground">{meta.title}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {labelFor(DOCUMENT_CATEGORIES, document.category)}
-                          {document.file_name ? ` · ${document.file_name}` : ""}
+                          {meta.categoryLabel}
+                          {meta.fileName ? ` · ${meta.fileName}` : ""}
                         </p>
                       </div>
                     </div>
@@ -455,15 +408,15 @@ export function PatientRecordsManager({
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Badge variant="outline" className="rounded-full border-slate-200 bg-slate-50 text-[10px] text-slate-600">
-                      {document.has_file ? "Arquivo anexado" : "Somente metadados"}
+                      {meta.statusLabel}
                     </Badge>
-                    {document.document_date && (
+                    {meta.documentDate && (
                       <Badge variant="outline" className="rounded-full border-sky-200 bg-sky-50 text-[10px] text-sky-700">
                         <Calendar className="mr-1 size-3" />
-                        {formatDate(document.document_date)}
+                        {formatDate(meta.documentDate)}
                       </Badge>
                     )}
-                    {document.has_file && (
+                    {meta.hasFile && (
                       <Badge variant="outline" className="rounded-full border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
                         <CheckCircle2 className="mr-1 size-3" />
                         Privado
@@ -475,13 +428,13 @@ export function PatientRecordsManager({
                       </Badge>
                     )}
                   </div>
-                  {document.description && (
+                  {meta.description && (
                     <p className="mt-3 line-clamp-2 rounded-2xl bg-slate-50 px-3 py-2 text-xs text-muted-foreground">
-                      {document.description}
+                      {meta.description}
                     </p>
                   )}
                   <div className="mt-4 flex flex-wrap justify-end gap-2">
-                    {document.has_file && (
+                    {meta.hasFile && (
                       <Button
                         type="button"
                         variant="outline"
@@ -496,7 +449,8 @@ export function PatientRecordsManager({
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
@@ -520,7 +474,7 @@ export function PatientRecordsManager({
                     <SelectValue placeholder="Selecione o tipo" />
                   </SelectTrigger>
                   <SelectContent>
-                    {CONSENT_TYPES.map((type) => (
+                    {CONSENT_TYPE_OPTIONS.map((type) => (
                       <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
                     ))}
                   </SelectContent>
@@ -533,7 +487,7 @@ export function PatientRecordsManager({
                     <SelectValue placeholder="Selecione o status" />
                   </SelectTrigger>
                   <SelectContent>
-                    {CONSENT_STATUS.map((status) => (
+                    {CONSENT_STATUS_OPTIONS.map((status) => (
                       <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
                     ))}
                   </SelectContent>
@@ -639,7 +593,7 @@ export function PatientRecordsManager({
                         <SelectValue placeholder="Selecione a categoria" />
                       </SelectTrigger>
                       <SelectContent>
-                        {DOCUMENT_CATEGORIES.map((category) => (
+                        {DOCUMENT_CATEGORY_OPTIONS.map((category) => (
                           <SelectItem key={category.value} value={category.value}>{category.label}</SelectItem>
                         ))}
                       </SelectContent>
