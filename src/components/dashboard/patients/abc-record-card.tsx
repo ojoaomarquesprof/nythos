@@ -3,17 +3,17 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSubscription } from "@/hooks/use-subscription";
-import { 
-  Activity, 
-  Plus, 
-  Calendar, 
-  Clock, 
+import {
+  Activity,
+  Plus,
+  Calendar,
+  Clock,
   Trash2,
   ChevronDown,
   ChevronUp,
   AlertTriangle,
   History,
-  Download
+  Download,
 } from "lucide-react";
 import { usePdfExport } from "@/hooks/use-pdf-export";
 import type { Profile, Patient } from "@/types/database";
@@ -24,6 +24,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,11 +46,11 @@ interface AbcRecord {
   created_at: string;
 }
 
-export function AbcRecordCard({ 
-  patientId, 
-  patient, 
-  profile 
-}: { 
+export function AbcRecordCard({
+  patientId,
+  patient,
+  profile,
+}: {
   patientId: string;
   patient?: Patient | null;
   profile?: Profile | null;
@@ -80,8 +81,7 @@ export function AbcRecordCard({
 
   async function fetchAbcRecords() {
     setLoading(true);
-    const { data, error } = await supabase
-      .rpc("get_abc_records_decrypted", { p_patient_id: patientId });
+    const { data, error } = await supabase.rpc("get_abc_records_decrypted", { p_patient_id: patientId });
 
     if (!error && data) {
       setRecords(data);
@@ -93,7 +93,9 @@ export function AbcRecordCard({
     e.preventDefault();
     setSaving(true);
 
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) {
       setSaving(false);
       return;
@@ -112,13 +114,13 @@ export function AbcRecordCard({
 
     if (!error) {
       setOpen(false);
-      setFormData({ 
-        date: new Date().toISOString().split("T")[0], 
-        antecedent: "", 
-        behavior: "", 
-        consequence: "", 
-        intensity: 5, 
-        duration: "" 
+      setFormData({
+        date: new Date().toISOString().split("T")[0],
+        antecedent: "",
+        behavior: "",
+        consequence: "",
+        intensity: 5,
+        duration: "",
       });
       fetchAbcRecords();
     }
@@ -127,37 +129,36 @@ export function AbcRecordCard({
 
   async function handleDelete(id: string) {
     if (!confirm("Tem certeza que deseja excluir este registro?")) return;
-    
-    const { error } = await supabase
-      .from("abc_records")
-      .delete()
-      .eq("id", id);
+
+    const { error } = await supabase.from("abc_records").delete().eq("id", id);
 
     if (!error) {
-      setRecords(records.filter(r => r.id !== id));
+      setRecords(records.filter((r) => r.id !== id));
     }
   }
 
   async function handleExportPdf() {
     if (!profile || !records.length || !patient) return;
-    
+
     const patientDetails = [
       `Paciente: ${patient.full_name}`,
       patient.cpf ? `CPF: ${patient.cpf}` : null,
       patient.date_of_birth ? `Data de Nasc.: ${formatDate(patient.date_of_birth)}` : null,
-      `Data do Relatório: ${new Date().toLocaleDateString("pt-BR")}`
-    ].filter(Boolean).join(" | ");
+      `Data do RelatÃ³rio: ${new Date().toLocaleDateString("pt-BR")}`,
+    ]
+      .filter(Boolean)
+      .join(" | ");
 
     const tableBody = records.map((r: any) => [
       formatDate(r.occurrence_date),
       r.behavior,
       r.antecedent,
       r.consequence,
-      r.intensity.toString()
+      r.intensity.toString(),
     ]);
 
     await exportPdf({
-      title: "Registro de Análise do Comportamento (ABC)",
+      title: "Registro de AnÃ¡lise do Comportamento (ABC)",
       subtitle: patientDetails,
       profile,
       fileName: `abc_${patient.full_name.toLowerCase().replace(/\s+/g, "_")}.pdf`,
@@ -165,62 +166,62 @@ export function AbcRecordCard({
         {
           table: {
             headerRows: 1,
-            widths: ['auto', 'auto', '*', '*', 'auto'],
+            widths: ["auto", "auto", "*", "*", "auto"],
             body: [
               [
-                { text: 'Data', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
-                { text: 'Comportamento', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
-                { text: 'Antecedente (A)', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
-                { text: 'Consequência (C)', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
-                { text: 'Intensidade', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] }
+                { text: "Data", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
+                { text: "Comportamento", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
+                { text: "Antecedente (A)", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
+                { text: "ConsequÃªncia (C)", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
+                { text: "Intensidade", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
               ],
-              ...tableBody.map(row => row.map(cell => ({ text: cell, margin: [5, 5] })))
-            ]
+              ...tableBody.map((row) => row.map((cell) => ({ text: cell, margin: [5, 5] }))),
+            ],
           },
           layout: {
             fillColor: function (rowIndex: number) {
-              return (rowIndex % 2 === 0 && rowIndex > 0) ? '#f8fafc' : null;
+              return rowIndex % 2 === 0 && rowIndex > 0 ? "#f8fafc" : null;
             },
-            hLineColor: '#cbd5e1',
-            vLineColor: '#cbd5e1'
-          }
-        }
-      ]
+            hLineColor: "#cbd5e1",
+            vLineColor: "#cbd5e1",
+          },
+        },
+      ],
     });
   }
 
   return (
-    <Card className="glass-panel border-0 shadow-lg overflow-hidden rounded-[32px] animate-fade-in">
-      <CardHeader className="pb-4 bg-white/30 backdrop-blur-sm border-b border-white/40">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full">
+    <Card className="glass-panel animate-fade-in overflow-hidden rounded-[32px] border-0 shadow-lg">
+      <CardHeader className="border-b border-white/40 bg-white/30 pb-4 backdrop-blur-sm">
+        <div className="flex w-full flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-rose-100 flex items-center justify-center shrink-0">
-              <Activity className="w-5 h-5 text-rose-600" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rose-100">
+              <Activity className="h-5 w-5 text-rose-600" />
             </div>
             <div>
-              <CardTitle className="text-lg font-bold text-rose-900 leading-tight">Registro Comportamental (ABC)</CardTitle>
-              <CardDescription className="text-xs mt-0.5">
-                Análise de Antecedentes, Comportamentos e Consequências.
+              <CardTitle className="text-lg font-bold leading-tight text-rose-900">Registro Comportamental (ABC)</CardTitle>
+              <CardDescription className="mt-0.5 text-xs">
+                AnÃ¡lise de Antecedentes, Comportamentos e ConsequÃªncias.
               </CardDescription>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-2 self-end sm:self-auto">
-            <Button 
-              size="sm" 
-              variant="outline" 
-              className="h-9 px-4 rounded-full border-rose-200 text-rose-600 hover:bg-rose-50 transition-all"
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 rounded-full border-rose-200 px-4 text-rose-600 transition-all hover:bg-rose-50"
               onClick={handleExportPdf}
               disabled={records.length === 0 || !profile || !patient || isExportingPdf}
             >
-              <Download className="w-4 h-4 mr-2" />
+              <Download className="mr-2 h-4 w-4" />
               <span className="hidden sm:inline">PDF</span>
             </Button>
 
             <Dialog open={open} onOpenChange={setOpen}>
-              <Button 
-                size="sm" 
-                className="bg-rose-600 hover:bg-rose-700 text-white h-9 px-5 rounded-full shadow-lg shadow-rose-200 transition-all active:scale-95" 
+              <Button
+                size="sm"
+                className="h-9 rounded-full bg-rose-600 px-5 text-white shadow-lg shadow-rose-200 transition-all active:scale-95 hover:bg-rose-700"
                 onClick={() => {
                   if (!hasSubscription && !subLoading) {
                     router.push("/dashboard/settings/billing");
@@ -229,195 +230,250 @@ export function AbcRecordCard({
                   }
                 }}
               >
-                <Plus className="w-4 h-4 mr-2" />
+                <Plus className="mr-2 h-4 w-4" />
                 <span>Novo</span>
               </Button>
-              <DialogContent className="sm:max-w-lg rounded-[32px] border-0 shadow-2xl">
-                <DialogHeader className="p-4">
-                  <DialogTitle className="text-xl font-bold text-rose-900">Novo Registro ABC</DialogTitle>
+              <DialogContent className="flex max-h-[92dvh] w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-[28px] border border-rose-100/70 bg-white p-0 shadow-2xl sm:max-w-2xl sm:rounded-[32px]">
+                <DialogHeader className="border-b border-rose-100/70 bg-[linear-gradient(135deg,rgba(251,113,133,0.12),rgba(255,255,255,0.92))] px-4 py-4 sm:px-6 sm:py-5">
+                  <div className="flex items-start gap-3 pr-8">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
+                      <Activity className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <DialogTitle className="text-xl font-bold text-rose-900">Novo Registro ABC</DialogTitle>
+                      <p className="mt-1 text-sm leading-relaxed text-slate-600">
+                        Registre contexto, resposta observada e consequencia de forma clara e objetiva.
+                      </p>
+                    </div>
+                  </div>
                 </DialogHeader>
-                <form onSubmit={handleAddRecord} className="space-y-5 p-4 pt-0">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <Label className="text-sm font-bold text-slate-700">Data *</Label>
-                      <Input
-                        type="date"
-                        value={formData.date}
-                        onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                        required
-                        className="glass-input-field h-12 bg-slate-50/50"
+
+                <form onSubmit={handleAddRecord} className="flex min-h-0 flex-1 flex-col">
+                  <div className="min-h-0 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+                    <section className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
+                      <div className="mb-4">
+                        <h3 className="text-sm font-semibold text-slate-900">Dados do registro</h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Defina quando o evento ocorreu e, se fizer sentido, a duracao aproximada.
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <Label className="text-sm font-semibold text-slate-700">Data *</Label>
+                          <Input
+                            type="date"
+                            value={formData.date}
+                            onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                            required
+                            className="h-11 rounded-2xl border-slate-200 bg-white shadow-sm"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-sm font-semibold text-slate-700">Duracao (min)</Label>
+                          <Input
+                            type="number"
+                            placeholder="Ex: 5"
+                            value={formData.duration}
+                            onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
+                            className="h-11 rounded-2xl border-slate-200 bg-white shadow-sm"
+                          />
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="rounded-3xl border border-rose-100 bg-rose-50/60 p-4">
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-900">Intensidade</h3>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Ajuste a intensidade percebida no momento do episodio.
+                          </p>
+                        </div>
+                        <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-full bg-white px-3 text-sm font-black text-rose-600 shadow-sm">
+                          {formData.intensity}
+                        </span>
+                      </div>
+                      <Slider
+                        value={[formData.intensity]}
+                        onValueChange={(val: any) =>
+                          setFormData({ ...formData, intensity: Array.isArray(val) ? val[0] : val })
+                        }
+                        max={10}
+                        min={1}
+                        step={1}
+                        className="py-2"
                       />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-sm font-bold text-slate-700">Duração (min)</Label>
-                      <Input
-                        type="number"
-                        placeholder="Ex: 5"
-                        value={formData.duration}
-                        onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-                        className="glass-input-field h-12 bg-slate-50/50"
-                      />
-                    </div>
+                    </section>
+
+                    <section className="rounded-3xl border border-slate-200 bg-white p-4">
+                      <div className="mb-4">
+                        <h3 className="text-sm font-semibold text-slate-900">Analise ABC</h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Descreva o antes, o comportamento observado e a consequencia imediata.
+                        </p>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="space-y-1.5">
+                          <Label className="text-sm font-semibold text-slate-700">Antecedente (A) *</Label>
+                          <Textarea
+                            placeholder="O que aconteceu imediatamente antes?"
+                            className="min-h-[88px] rounded-2xl border-slate-200 bg-slate-50/70 py-3 shadow-sm transition-all focus:border-rose-300"
+                            value={formData.antecedent}
+                            onChange={(e) => setFormData({ ...formData, antecedent: e.target.value })}
+                            required
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label className="text-sm font-semibold text-slate-700">Comportamento (B) *</Label>
+                          <Textarea
+                            placeholder="Descreva com objetividade o que o paciente fez."
+                            className="min-h-[88px] rounded-2xl border-rose-100 bg-rose-50/40 py-3 shadow-sm transition-all focus:border-rose-300"
+                            value={formData.behavior}
+                            onChange={(e) => setFormData({ ...formData, behavior: e.target.value })}
+                            required
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label className="text-sm font-semibold text-slate-700">Consequencia (C) *</Label>
+                          <Textarea
+                            placeholder="O que aconteceu depois? Houve alguma intervencao?"
+                            className="min-h-[88px] rounded-2xl border-slate-200 bg-slate-50/70 py-3 shadow-sm transition-all focus:border-rose-300"
+                            value={formData.consequence}
+                            onChange={(e) => setFormData({ ...formData, consequence: e.target.value })}
+                            required
+                          />
+                        </div>
+                      </div>
+                    </section>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between items-center mb-2">
-                      <Label className="text-sm font-bold text-slate-700">Intensidade (1 a 10)</Label>
-                      <span className="text-sm font-black text-rose-600 bg-rose-50 px-3 py-1 rounded-full">{formData.intensity}</span>
-                    </div>
-                    <Slider
-                      value={[formData.intensity]}
-                      onValueChange={(val: any) => setFormData({ ...formData, intensity: Array.isArray(val) ? val[0] : val })}
-                      max={10}
-                      min={1}
-                      step={1}
-                      className="py-4"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-sm font-bold text-slate-700">Antecedente (A)</Label>
-                    <Textarea
-                      placeholder="O que aconteceu imediatamente antes?"
-                      className="rounded-2xl border-slate-200 focus:border-primary transition-all shadow-sm bg-slate-50/50 min-h-[80px] py-4"
-                      value={formData.antecedent}
-                      onChange={(e) => setFormData({ ...formData, antecedent: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-sm font-bold text-slate-700">Comportamento (B)</Label>
-                    <Textarea
-                      placeholder="Descrição clara do que o paciente fez"
-                      className="rounded-2xl border-rose-100 focus:border-rose-300 transition-all shadow-sm bg-rose-50/30 min-h-[80px] py-4"
-                      value={formData.behavior}
-                      onChange={(e) => setFormData({ ...formData, behavior: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-sm font-bold text-slate-700">Consequência (C)</Label>
-                    <Textarea
-                      placeholder="O que aconteceu após / Qual foi a intervenção?"
-                      className="rounded-2xl border-slate-200 focus:border-primary transition-all shadow-sm bg-slate-50/50 min-h-[80px] py-4"
-                      value={formData.consequence}
-                      onChange={(e) => setFormData({ ...formData, consequence: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  <div className="flex gap-3 pt-4">
+                  <DialogFooter className="border-t border-slate-200 bg-white/95 px-4 py-4 backdrop-blur sm:px-6">
                     <Button
                       type="button"
                       variant="ghost"
-                      className="flex-1 rounded-full h-12"
+                      className="h-11 rounded-2xl px-5 text-slate-600 hover:bg-slate-100"
                       onClick={() => setOpen(false)}
                     >
                       Cancelar
                     </Button>
                     <Button
                       type="submit"
-                      className="flex-1 bg-rose-600 hover:bg-rose-700 text-white rounded-full h-12 font-bold shadow-lg shadow-rose-200"
+                      className="h-11 rounded-2xl bg-rose-600 px-6 font-bold text-white shadow-lg shadow-rose-200 hover:bg-rose-700"
                       disabled={saving}
                     >
-                      {saving ? "Salvando..." : "Registrar"}
+                      {saving ? "Salvando..." : "Registrar ABC"}
                     </Button>
-                  </div>
+                  </DialogFooter>
                 </form>
               </DialogContent>
             </Dialog>
           </div>
         </div>
       </CardHeader>
-      
+
       <CardContent className="p-8">
         {loading ? (
           <div className="space-y-4">
             {[1, 2].map((i: number) => (
-              <div key={i} className="animate-pulse h-20 bg-white/40 rounded-[24px] border border-white/60" />
+              <div key={i} className="h-20 animate-pulse rounded-[24px] border border-white/60 bg-white/40" />
             ))}
           </div>
         ) : records.length === 0 ? (
-          <div className="py-12 text-center border border-dashed rounded-[32px] bg-white/5 flex flex-col items-center">
-            <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center mx-auto mb-3">
-              <History className="w-6 h-6 text-rose-200" />
+          <div className="flex flex-col items-center rounded-[32px] border border-dashed bg-white/5 py-12 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-rose-50">
+              <History className="h-6 w-6 text-rose-200" />
             </div>
-            <p className="text-sm text-slate-400 font-medium">Nenhum registro comportamental.</p>
+            <p className="text-sm font-medium text-slate-400">Nenhum registro comportamental.</p>
           </div>
         ) : (
           <div className="space-y-4">
             {records.map((r: any) => {
               const isExpanded = expandedId === r.id;
               return (
-                <div 
-                  key={r.id} 
+                <div
+                  key={r.id}
                   className={cn(
-                    "rounded-[24px] border transition-all overflow-hidden",
-                    isExpanded ? "bg-white/60 border-rose-200 shadow-md" : "bg-white/40 border-white/60 hover:bg-white/60"
+                    "overflow-hidden rounded-[24px] border transition-all",
+                    isExpanded ? "border-rose-200 bg-white/60 shadow-md" : "border-white/60 bg-white/40 hover:bg-white/60",
                   )}
                 >
-                  <div 
-                    className="p-5 flex items-center justify-between cursor-pointer"
+                  <div
+                    className="flex cursor-pointer items-center justify-between p-5"
                     onClick={() => setExpandedId(isExpanded ? null : r.id)}
                   >
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className={cn(
-                        "w-12 h-12 rounded-2xl flex items-center justify-center text-sm font-black shadow-sm",
-                        r.intensity >= 8 ? "bg-red-100 text-red-600" : 
-                        r.intensity >= 5 ? "bg-amber-100 text-amber-600" : 
-                        "bg-emerald-100 text-emerald-600"
-                      )}>
+                    <div className="flex min-w-0 items-center gap-4">
+                      <div
+                        className={cn(
+                          "flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-black shadow-sm",
+                          r.intensity >= 8
+                            ? "bg-red-100 text-red-600"
+                            : r.intensity >= 5
+                              ? "bg-amber-100 text-amber-600"
+                              : "bg-emerald-100 text-emerald-600",
+                        )}
+                      >
                         {r.intensity}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-bold text-slate-800 truncate leading-tight mb-1">{r.behavior}</p>
+                        <p className="mb-1 truncate text-sm font-bold leading-tight text-slate-800">{r.behavior}</p>
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-slate-400 uppercase font-black tracking-widest">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                             {formatDate(r.occurrence_date)}
                           </span>
                           {r.duration_minutes && (
-                            <span className="flex items-center gap-1 text-[10px] text-slate-400 font-black tracking-widest">
-                              · <Clock className="w-3 h-3" /> {r.duration_minutes} MIN
+                            <span className="flex items-center gap-1 text-[10px] font-black tracking-widest text-slate-400">
+                              Â· <Clock className="h-3 w-3" /> {r.duration_minutes} MIN
                             </span>
                           )}
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center gap-1">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="w-9 h-9 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50"
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 rounded-full text-slate-400 hover:bg-red-50 hover:text-red-500"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDelete(r.id);
                         }}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="h-4 w-4" />
                       </Button>
-                      <div className="w-9 h-9 rounded-full bg-slate-100/50 flex items-center justify-center">
-                        {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100/50">
+                        {isExpanded ? (
+                          <ChevronUp className="h-4 w-4 text-slate-500" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-slate-500" />
+                        )}
                       </div>
                     </div>
                   </div>
 
                   {isExpanded && (
-                    <div className="px-5 pb-5 pt-0 space-y-4 animate-in slide-in-from-top-1 duration-200">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <div className="p-4 rounded-2xl bg-white/50 border border-white/60">
-                          <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-2 opacity-60">Antecedente (A)</p>
-                          <p className="text-xs leading-relaxed font-medium text-slate-700">{r.antecedent}</p>
+                    <div className="animate-in slide-in-from-top-1 space-y-4 px-5 pb-5 pt-0 duration-200">
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                        <div className="rounded-2xl border border-white/60 bg-white/50 p-4">
+                          <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-rose-600 opacity-60">
+                            Antecedente (A)
+                          </p>
+                          <p className="text-xs font-medium leading-relaxed text-slate-700">{r.antecedent}</p>
                         </div>
-                        <div className="p-4 rounded-2xl bg-rose-50/50 border border-rose-100">
-                          <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-2">Comportamento (B)</p>
-                          <p className="text-xs leading-relaxed font-bold text-slate-800">{r.behavior}</p>
+                        <div className="rounded-2xl border border-rose-100 bg-rose-50/50 p-4">
+                          <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-rose-600">
+                            Comportamento (B)
+                          </p>
+                          <p className="text-xs font-bold leading-relaxed text-slate-800">{r.behavior}</p>
                         </div>
-                        <div className="p-4 rounded-2xl bg-white/50 border border-white/60">
-                          <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-2 opacity-60">Consequência (C)</p>
-                          <p className="text-xs leading-relaxed font-medium text-slate-700">{r.consequence}</p>
+                        <div className="rounded-2xl border border-white/60 bg-white/50 p-4">
+                          <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-rose-600 opacity-60">
+                            ConsequÃªncia (C)
+                          </p>
+                          <p className="text-xs font-medium leading-relaxed text-slate-700">{r.consequence}</p>
                         </div>
                       </div>
                     </div>
