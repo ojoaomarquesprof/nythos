@@ -6,6 +6,9 @@ import type { ExternalCalendarEvent, Patient, Profile, Session } from "@/types/d
 
 type ScheduleItem = (Session & { patient?: Patient }) & {
   has_session_evolution?: boolean;
+  billing_status?: string | null;
+  billing_amount?: number | string | null;
+  financial_entry_id?: string | null;
   is_external_google?: boolean;
   external_title?: string | null;
   external_description?: string | null;
@@ -53,6 +56,7 @@ export function useScheduleData() {
     duration_minutes: "50",
     session_type: "individual",
     session_price: "",
+    billing_mode: "single" as "single" | "free",
     location: "office",
     is_recurring: false,
     recurrence_period: "weekly",
@@ -203,6 +207,9 @@ export function useScheduleData() {
           session_type: "online",
           session_notes_encrypted: null,
           has_session_evolution: false,
+          billing_status: null,
+          billing_amount: null,
+          financial_entry_id: null,
           session_price: null,
           location: event.location ? "office" : "online",
           is_recurring: false,

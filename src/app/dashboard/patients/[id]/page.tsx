@@ -598,6 +598,19 @@ export default function PatientDetailPage() {
     return Boolean((session as any)?.has_session_evolution || session?.session_notes_encrypted);
   }
 
+  function isCourtesySession(session?: Session | null) {
+    if (!session || session.session_price === null || session.session_price === undefined) return false;
+    const amount = Number(session.session_price);
+    return Number.isFinite(amount) && amount <= 0;
+  }
+
+  function getBillingStatusLabel(status?: string | null) {
+    if (status === "pending") return "Pendente";
+    if (status === "confirmed") return "Confirmada";
+    if (status === "cancelled") return "Cancelada";
+    return null;
+  }
+
   function getSessionEvolutionFormState(session: Session) {
     let evolution = { notes: "", mood_happy_sad: 5, mood_anxious_calm: 5 };
 
@@ -2609,6 +2622,36 @@ export default function PatientDetailPage() {
                         return null;
                       }
                     })()}
+
+                    <div className="rounded-3xl border border-white/60 bg-white/40 p-6 shadow-sm">
+                      <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-primary/40">
+                        <Wallet className="size-4" />
+                        Cobrança
+                      </div>
+                      {(() => {
+                        const billingEntry = patientCashFlow.find((entry) => entry.session_id === viewingSession.id);
+                        const isCourtesy = isCourtesySession(viewingSession);
+
+                        return (
+                          <>
+                            <p className={cn("text-base font-black", isCourtesy ? "text-slate-600" : "text-emerald-700")}>
+                              {isCourtesy
+                                ? "Cortesia / sem cobrança"
+                                : `Sessão avulsa${viewingSession.session_price != null ? ` · ${formatCurrency(Number(viewingSession.session_price))}` : ""}`}
+                            </p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              {isCourtesy
+                                ? "Não gera cobrança ao marcar como realizada."
+                                : billingEntry
+                                  ? `Financeiro: ${getBillingStatusLabel(billingEntry.status) ?? billingEntry.status} · ${formatCurrency(Number(billingEntry.amount))}`
+                                  : viewingSession.status === "completed"
+                                    ? "Sessão realizada. Confira o lançamento no financeiro."
+                                    : "A cobrança será gerada como pendente ao realizar."}
+                            </p>
+                          </>
+                        );
+                      })()}
+                    </div>
 
                     <div className="grid grid-cols-2 gap-8 bg-white/40 p-6 rounded-3xl border border-white/60">
                       <div className="space-y-1">

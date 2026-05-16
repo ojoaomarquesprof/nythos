@@ -7,9 +7,11 @@ import {
   Building2,
   CalendarCheck2,
   CalendarDays,
+  Check,
   CheckCircle,
   ChevronLeft,
   ChevronRight,
+  ChevronsUpDown,
   CircleDollarSign,
   Clock3,
   FileText,
@@ -17,6 +19,7 @@ import {
   MapPin,
   Plus,
   RefreshCw,
+  Search,
   ShieldCheck,
   Sparkles,
   Unlink,
@@ -33,6 +36,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SubscriptionGate } from "@/components/auth/subscription-gate";
 import { cn } from "@/lib/utils";
 import { SESSION_STATUS, formatCurrency, formatTime } from "@/lib/constants";
@@ -83,6 +87,29 @@ const statusStyles: Record<string, { card: string; badge: string; dot: string }>
 };
 
 type ScheduleItem = NonNullable<ReturnType<typeof useScheduleData>["selectedSessionDetails"]>;
+type SchedulePatient = ReturnType<typeof useScheduleData>["patients"][number];
+
+function normalizeSearchValue(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function digitsOnly(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function getPatientSecondaryInfo(patient: SchedulePatient) {
+  const parts = [
+    patient.email?.trim(),
+    patient.phone?.trim(),
+    patient.cpf?.trim() ? `CPF ${patient.cpf.trim()}` : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return parts.slice(0, 2).join(" · ");
+}
 
 function formatDateLong(date: Date) {
   return date.toLocaleDateString("pt-BR", {
@@ -171,6 +198,20 @@ function getEvolutionStatusLabel(session: ScheduleItem) {
   return hasSessionEvolution(session) ? "Evolução registrada" : "Evolução pendente";
 }
 
+function isCourtesySession(session: ScheduleItem) {
+  if (session.is_external_google) return false;
+  if (session.session_price === null || session.session_price === undefined) return false;
+  const amount = Number(session.session_price);
+  return Number.isFinite(amount) && amount <= 0;
+}
+
+function getBillingStatusLabel(status?: string | null) {
+  if (status === "pending") return "Pendente";
+  if (status === "confirmed") return "Confirmada";
+  if (status === "cancelled") return "Cancelada";
+  return null;
+}
+
 function FieldShell({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={cn("space-y-1.5", className)}>{children}</div>;
 }
@@ -180,6 +221,248 @@ function nativeSelectClassName(className?: string) {
     "h-10 w-full rounded-xl border border-border/70 bg-white/80 px-3 text-sm font-medium text-foreground shadow-sm outline-none transition-all",
     "hover:border-primary/20 focus:border-primary/40 focus:bg-white focus:ring-4 focus:ring-primary/10",
     className
+  );
+}
+
+function PatientCombobox({
+  patients,
+  selectedPatient,
+  value,
+  onSelect,
+  onCreatePatient,
+}: {
+  patients: SchedulePatient[];
+  selectedPatient: SchedulePatient | null;
+  value: string;
+  onSelect: (patientId: string) => void;
+  onCreatePatient: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const listboxId = React.useId();
+
+  const indexedPatients = useMemo(
+    () =>
+      patients.map((patient) => ({
+        patient,
+        searchText: normalizeSearchValue(
+          [patient.full_name, patient.email, patient.phone, patient.cpf].filter(Boolean).join(" ")
+        ),
+        digitsText: digitsOnly([patient.phone, patient.cpf].filter(Boolean).join(" ")),
+      })),
+    [patients]
+  );
+
+  const filteredPatients = useMemo(() => {
+    const normalizedQuery = normalizeSearchValue(search);
+    const digitQuery = digitsOnly(search);
+
+    if (!normalizedQuery && !digitQuery) {
+      return patients;
+    }
+
+    return indexedPatients
+      .filter(({ searchText, digitsText }) => {
+        const matchesText = normalizedQuery ? searchText.includes(normalizedQuery) : false;
+        const matchesDigits = digitQuery ? digitsText.includes(digitQuery) : false;
+        return matchesText || matchesDigits;
+      })
+      .map(({ patient }) => patient);
+  }, [indexedPatients, patients, search]);
+
+  useEffect(() => {
+    if (!open) {
+      setSearch("");
+      setActiveIndex(0);
+      return;
+    }
+
+    const selectedIndex = filteredPatients.findIndex((patient) => patient.id === value);
+    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+
+    const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [filteredPatients, open, value]);
+
+  function handleSelect(patientId: string) {
+    onSelect(patientId);
+    setOpen(false);
+  }
+
+  function handleTriggerKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setSearch("");
+      setOpen(true);
+      return;
+    }
+
+    if (event.key === "Backspace" || event.key === "Delete") {
+      if (value) {
+        event.preventDefault();
+        onSelect("");
+      }
+      return;
+    }
+
+    if (event.key.length === 1 && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      setSearch(event.key);
+      setOpen(true);
+    }
+  }
+
+  function handleInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (!filteredPatients.length) return;
+      setActiveIndex((current) => (current + 1) % filteredPatients.length);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!filteredPatients.length) return;
+      setActiveIndex((current) => (current - 1 + filteredPatients.length) % filteredPatients.length);
+      return;
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const activePatient = filteredPatients[activeIndex];
+      if (activePatient) {
+        handleSelect(activePatient.id);
+      }
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setOpen(false);
+    }
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        type="button"
+        aria-expanded={open}
+        className={cn(
+          "flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-border/70 bg-white/80 px-3 py-2 text-left shadow-sm outline-none transition-all",
+          "hover:border-primary/20 focus-visible:border-primary/40 focus-visible:bg-white focus-visible:ring-4 focus-visible:ring-primary/10"
+        )}
+        onKeyDown={handleTriggerKeyDown}
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/8 text-primary">
+            <Search className="size-4" />
+          </span>
+          <span className="min-w-0">
+            {selectedPatient ? (
+              <>
+                <span className="block truncate text-sm font-medium text-foreground">{selectedPatient.full_name}</span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {getPatientSecondaryInfo(selectedPatient) || "Paciente selecionado"}
+                </span>
+              </>
+            ) : (
+              <span className="block truncate text-sm text-muted-foreground">
+                Buscar paciente por nome, e-mail ou telefone...
+              </span>
+            )}
+          </span>
+        </span>
+        <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sideOffset={8}
+        className="w-[min(30rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border-border/70 bg-white/95 p-0 shadow-[0_24px_70px_rgba(41,31,67,0.18)]"
+      >
+        <div className="border-b border-border/60 p-3">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              ref={inputRef}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={handleInputKeyDown}
+              role="combobox"
+              aria-expanded={open}
+              aria-controls={listboxId}
+              aria-autocomplete="list"
+              placeholder="Buscar paciente por nome, e-mail ou telefone..."
+              className={cn(
+                "h-9 w-full min-w-0 rounded-xl border border-input/90 bg-background/80 px-3 py-1.5 pl-9 text-base outline-none transition-[border-color,box-shadow,background-color] placeholder:text-muted-foreground",
+                "focus-visible:border-ring focus-visible:bg-background focus-visible:ring-4 focus-visible:ring-ring/25 md:text-sm"
+              )}
+            />
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">Busque por nome, e-mail, telefone ou CPF.</p>
+        </div>
+
+        <div id={listboxId} role="listbox" className="max-h-72 overflow-y-auto p-2">
+          {filteredPatients.length ? (
+            filteredPatients.map((patient, index) => {
+              const isSelected = patient.id === value;
+              const isActive = index === activeIndex;
+              const secondaryInfo = getPatientSecondaryInfo(patient);
+
+              return (
+                <button
+                  key={patient.id}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
+                    isActive ? "bg-primary/10 ring-1 ring-primary/15" : "hover:bg-slate-50",
+                    isSelected && "border border-primary/15"
+                  )}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => handleSelect(patient.id)}
+                >
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium text-foreground">{patient.full_name}</span>
+                      {patient.session_price != null && (
+                        <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                          {formatCurrency(Number(patient.session_price))}
+                        </span>
+                      )}
+                    </span>
+                    <span className="mt-1 truncate text-xs text-muted-foreground">
+                      {secondaryInfo || "Sem e-mail, telefone ou CPF cadastrado"}
+                    </span>
+                  </span>
+                  {isSelected && <Check className="size-4 shrink-0 text-primary" />}
+                </button>
+              );
+            })
+          ) : (
+            <div className="flex flex-col items-start gap-3 px-3 py-4">
+              <div>
+                <p className="text-sm font-medium text-foreground">Nenhum paciente encontrado.</p>
+                <p className="text-xs text-muted-foreground">Tente buscar por nome, e-mail, telefone ou CPF.</p>
+              </div>
+              <button
+                type="button"
+                className="text-sm font-medium text-primary transition-colors hover:text-primary/80"
+                onClick={() => {
+                  setOpen(false);
+                  onCreatePatient();
+                }}
+              >
+                Cadastrar novo paciente
+              </button>
+            </div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -276,6 +559,44 @@ export default function SchedulePage() {
     [schedule.patients, schedule.newSession.patient_id]
   );
   const suggestedPrice = selectedPatient?.session_price ?? schedule.profile?.session_price_default ?? null;
+  const billingMode = schedule.newSession.billing_mode ?? "single";
+  const sessionPriceValue =
+    schedule.newSession.session_price?.trim() !== ""
+      ? Number(schedule.newSession.session_price)
+      : suggestedPrice;
+  const isFreeSession = billingMode === "free";
+  const chargeAmount = isFreeSession ? 0 : Number(sessionPriceValue ?? 0);
+
+  function setBillingMode(nextMode: "single" | "free") {
+    schedule.setNewSession({
+      ...schedule.newSession,
+      billing_mode: nextMode,
+      session_price:
+        nextMode === "free"
+          ? "0"
+          : suggestedPrice != null
+            ? String(suggestedPrice)
+            : "",
+    });
+  }
+
+  function applySelectedPatient(patientId: string) {
+    const patient = schedule.patients.find((item) => item.id === patientId);
+    const resolvedPrice = patient?.session_price ?? schedule.profile?.session_price_default ?? null;
+
+    schedule.setNewSession({
+      ...schedule.newSession,
+      patient_id: patientId,
+      session_price:
+        schedule.newSession.billing_mode === "free"
+          ? "0"
+          : schedule.newSession.session_price?.trim() !== ""
+            ? schedule.newSession.session_price
+            : resolvedPrice != null
+              ? String(resolvedPrice)
+              : "",
+    });
+  }
 
   async function handleCreateSession() {
     if (!schedule.therapistId) {
@@ -287,10 +608,12 @@ export default function SchedulePage() {
     schedule.setSaving(true);
     try {
       const duration = parseInt(schedule.newSession.duration_minutes, 10);
-      const rawPrice =
-        schedule.newSession.session_price?.trim() !== ""
-          ? Number(schedule.newSession.session_price)
-          : (suggestedPrice ?? null);
+      const rawPrice = isFreeSession ? 0 : chargeAmount;
+
+      if (!isFreeSession && (!Number.isFinite(rawPrice) || rawPrice <= 0)) {
+        setScheduleError("Sessão avulsa precisa ter valor maior que zero. Para não cobrar, selecione cortesia.");
+        return;
+      }
 
       const result = await createScheduleSessions({
         therapistId: schedule.therapistId,
@@ -300,6 +623,7 @@ export default function SchedulePage() {
         durationMinutes: Number.isNaN(duration) ? 50 : duration,
         sessionType: schedule.newSession.session_type,
         sessionPrice: rawPrice,
+        billingMode,
         location: schedule.newSession.location,
         isRecurring: schedule.newSession.is_recurring,
         recurrencePeriod: schedule.newSession.recurrence_period as "weekly" | "monthly",
@@ -338,6 +662,7 @@ export default function SchedulePage() {
         duration_minutes: "50",
         session_type: "individual",
         session_price: "",
+        billing_mode: "single",
         location: "office",
         is_recurring: false,
         recurrence_period: "weekly",
@@ -1128,8 +1453,8 @@ export default function SchedulePage() {
           if (!open) setScheduleError(null);
         }}
       >
-        <DialogContent className="max-h-[92dvh] overflow-y-auto border-primary/10 bg-white/95 p-0 shadow-[0_24px_70px_rgba(41,31,67,0.18)] sm:max-w-2xl">
-          <div className="border-b border-border/60 bg-[linear-gradient(135deg,rgba(124,58,237,0.08),rgba(20,184,166,0.08))] px-4 py-4 sm:px-5 sm:py-5">
+        <DialogContent className="flex max-h-[90dvh] w-[calc(100vw-1rem)] flex-col overflow-hidden border-primary/10 bg-white/95 p-0 shadow-[0_24px_70px_rgba(41,31,67,0.18)] sm:max-w-2xl">
+          <div className="shrink-0 border-b border-border/60 bg-[linear-gradient(135deg,rgba(124,58,237,0.08),rgba(20,184,166,0.08))] px-4 py-4 sm:px-5 sm:py-5">
             <div className="flex items-start gap-3 pr-8">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                 <CalendarDays className="size-5" />
@@ -1143,7 +1468,7 @@ export default function SchedulePage() {
             </div>
           </div>
 
-          <div className="space-y-5 px-4 py-4 sm:px-5 sm:py-5">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:space-y-5 sm:px-5 sm:py-5">
             <section className="rounded-2xl border border-border/70 bg-slate-50/60 p-4">
               <div className="mb-4 flex items-center gap-2">
                 <UserRound className="size-4 text-primary" />
@@ -1151,32 +1476,19 @@ export default function SchedulePage() {
               </div>
               <FieldShell>
                 <Label>Paciente</Label>
-                <select
-                  className={nativeSelectClassName()}
+                <PatientCombobox
+                  patients={schedule.patients}
+                  selectedPatient={selectedPatient}
                   value={schedule.newSession.patient_id}
-                  onChange={(e) => {
-                    const patientId = e.target.value;
-                    const patient = schedule.patients.find((p) => p.id === patientId);
-                    const resolvedPrice = patient?.session_price ?? schedule.profile?.session_price_default ?? null;
-                    schedule.setNewSession({
-                      ...schedule.newSession,
-                      patient_id: patientId,
-                      session_price:
-                        schedule.newSession.session_price?.trim() !== ""
-                          ? schedule.newSession.session_price
-                          : resolvedPrice != null
-                            ? String(resolvedPrice)
-                            : "",
-                    });
+                  onSelect={(patientId) => {
+                    setScheduleError(null);
+                    applySelectedPatient(patientId);
                   }}
-                >
-                  <option value="">Selecione um paciente</option>
-                  {schedule.patients.map((patient) => (
-                    <option key={patient.id} value={patient.id}>
-                      {patient.full_name}
-                    </option>
-                  ))}
-                </select>
+                  onCreatePatient={() => {
+                    schedule.setShowNewSession(false);
+                    router.push("/dashboard/patients/new");
+                  }}
+                />
               </FieldShell>
             </section>
 
@@ -1221,9 +1533,9 @@ export default function SchedulePage() {
             <section className="rounded-2xl border border-border/70 bg-white p-4">
               <div className="mb-4 flex items-center gap-2">
                 <MapPin className="size-4 text-primary" />
-                <h3 className="text-sm font-semibold text-foreground">Tipo, local e valor</h3>
+                <h3 className="text-sm font-semibold text-foreground">Tipo e local</h3>
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <FieldShell>
                   <Label>Tipo de sessão</Label>
                   <select
@@ -1249,20 +1561,102 @@ export default function SchedulePage() {
                     <option value="online">Online</option>
                   </select>
                 </FieldShell>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-primary/15 bg-white p-4 shadow-sm">
+              <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                <div className="flex min-w-0 items-start gap-2">
+                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <CircleDollarSign className="size-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-foreground">Cobrança</h3>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      Gera pendência apenas quando a sessão for realizada.
+                    </p>
+                  </div>
+                </div>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "w-fit max-w-full justify-self-start whitespace-nowrap rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em] sm:justify-self-end",
+                    isFreeSession
+                      ? "border-slate-200 bg-slate-50 text-slate-600"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  )}
+                >
+                  {isFreeSession ? "Sem cobrança" : "Cobrança ao realizar"}
+                </Badge>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-[minmax(0,1.1fr)_minmax(220px,0.9fr)]">
+                <div className="space-y-2">
+                  <Label>Tipo de cobrança</Label>
+                  <div className="grid gap-2 min-[430px]:grid-cols-2">
+                    <Button
+                      type="button"
+                      variant={billingMode === "single" ? "default" : "outline"}
+                      className={cn(
+                        "h-auto min-h-14 w-full min-w-0 flex-col items-start gap-1 whitespace-normal rounded-2xl px-3 py-2 text-left",
+                        billingMode === "single"
+                          ? "bg-primary text-primary-foreground"
+                          : "border-border/70 bg-white text-foreground hover:bg-primary/5"
+                      )}
+                      onClick={() => setBillingMode("single")}
+                    >
+                      <span className="w-full whitespace-normal text-sm font-semibold leading-4">Sessão avulsa</span>
+                      <span className={cn("w-full whitespace-normal break-words text-[11px] leading-4", billingMode === "single" ? "text-primary-foreground/80" : "text-muted-foreground")}>
+                        Gera pendência depois
+                      </span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={billingMode === "free" ? "default" : "outline"}
+                      className={cn(
+                        "h-auto min-h-14 w-full min-w-0 flex-col items-start gap-1 whitespace-normal rounded-2xl px-3 py-2 text-left",
+                        billingMode === "free"
+                          ? "bg-slate-800 text-white hover:bg-slate-800/90"
+                          : "border-border/70 bg-white text-foreground hover:bg-slate-50"
+                      )}
+                      onClick={() => setBillingMode("free")}
+                    >
+                      <span className="w-full whitespace-normal text-sm font-semibold leading-4">Cortesia</span>
+                      <span className={cn("w-full whitespace-normal break-words text-[11px] leading-4", billingMode === "free" ? "text-white/80" : "text-muted-foreground")}>
+                        Sem lançamento financeiro
+                      </span>
+                    </Button>
+                  </div>
+                </div>
+
                 <FieldShell>
-                  <Label>Preço da sessão</Label>
+                  <Label>Valor da sessão</Label>
                   <Input
                     type="number"
-                    min={0}
+                    min={isFreeSession ? 0 : 0.01}
                     step={0.01}
                     placeholder={suggestedPrice != null ? `${suggestedPrice}` : "Padrão"}
                     value={schedule.newSession.session_price}
-                    onChange={(e) => schedule.setNewSession({ ...schedule.newSession, session_price: e.target.value })}
-                    className="rounded-xl bg-white"
+                    onChange={(e) =>
+                      schedule.setNewSession({
+                        ...schedule.newSession,
+                        session_price: e.target.value,
+                      })
+                    }
+                    disabled={isFreeSession}
+                    className="rounded-xl bg-white disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-muted-foreground"
                   />
-                  {suggestedPrice != null && (
+                  {isFreeSession ? (
                     <p className="text-[11px] font-medium text-muted-foreground">
-                      Sugerido: {formatCurrency(Number(suggestedPrice))}
+                      Cortesia salva com valor 0 e não gera cobrança ao realizar.
+                    </p>
+                  ) : suggestedPrice != null ? (
+                    <p className="text-[11px] font-medium text-muted-foreground">
+                      Sugerido pelo paciente/perfil: {formatCurrency(Number(suggestedPrice))}
+                    </p>
+                  ) : (
+                    <p className="text-[11px] font-medium text-muted-foreground">
+                      Informe um valor maior que zero para sessão avulsa.
                     </p>
                   )}
                 </FieldShell>
@@ -1341,7 +1735,7 @@ export default function SchedulePage() {
             )}
           </div>
 
-          <DialogFooter className="mx-0 mb-0 rounded-none bg-slate-50/90 px-4 py-4 sm:px-5">
+          <DialogFooter className="mx-0 mb-0 shrink-0 rounded-none border-t border-border/60 bg-slate-50/95 px-4 py-3 sm:px-5 sm:py-4">
             <Button variant="outline" className="rounded-2xl" onClick={() => schedule.setShowNewSession(false)} disabled={schedule.saving}>
               Cancelar
             </Button>
@@ -1440,10 +1834,23 @@ export default function SchedulePage() {
                   <div className="rounded-2xl border border-border/70 bg-slate-50/60 p-4">
                     <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                       <CircleDollarSign className="size-4" />
-                      Valor
+                      Cobrança
                     </div>
-                    <p className="text-sm font-semibold text-foreground">
-                      {selectedItem.session_price != null ? formatCurrency(Number(selectedItem.session_price)) : "Não informado"}
+                    <p className={cn("text-sm font-semibold", isCourtesySession(selectedItem) ? "text-slate-600" : "text-emerald-700")}>
+                      {isCourtesySession(selectedItem)
+                        ? "Cortesia / sem cobrança"
+                        : `Sessão avulsa${selectedItem.session_price != null ? ` · ${formatCurrency(Number(selectedItem.session_price))}` : ""}`}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {isCourtesySession(selectedItem)
+                        ? "Não será gerada cobrança ao marcar como realizada."
+                        : selectedItem.billing_status
+                          ? `Financeiro: ${getBillingStatusLabel(selectedItem.billing_status) ?? selectedItem.billing_status}${
+                              selectedItem.billing_amount != null ? ` · ${formatCurrency(Number(selectedItem.billing_amount))}` : ""
+                            }`
+                          : selectedItem.status === "completed"
+                            ? "Sessão realizada. Confira o lançamento no financeiro."
+                            : "A cobrança será gerada como pendente ao realizar."}
                     </p>
                   </div>
                 )}

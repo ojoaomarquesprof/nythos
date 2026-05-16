@@ -27,6 +27,7 @@ export interface CreateSessionPayload {
   durationMinutes?: number;
   sessionType?: string;
   sessionPrice?: number | null;
+  billingMode?: "single" | "free";
   location?: string;
   isRecurring?: boolean;
   recurrencePeriod?: "weekly" | "monthly";
@@ -92,6 +93,7 @@ const ALLOWED_CREATE_SESSION_KEYS = [
   "durationMinutes",
   "sessionType",
   "sessionPrice",
+  "billingMode",
   "location",
   "isRecurring",
   "recurrencePeriod",
@@ -118,6 +120,7 @@ type ValidatedCreatePayload = {
   duration: number;
   sessionType: string;
   sessionPrice: number | null;
+  billingMode: "single" | "free";
   location: string;
   isRecurring: boolean;
   recurrencePeriod: "weekly" | "monthly";
@@ -175,6 +178,18 @@ function parseCreatePayload(payload: CreateSessionPayload): { ok: true; value: V
     return { ok: false, error: "Preço de sessão inválido." };
   }
 
+  const billingMode = payload.billingMode ?? (price === 0 ? "free" : "single");
+  if (!["single", "free"].includes(billingMode)) {
+    return { ok: false, error: "Tipo de cobrança inválido." };
+  }
+
+  if (billingMode === "single" && (price === null || price <= 0)) {
+    return {
+      ok: false,
+      error: "Sessão avulsa precisa ter valor maior que zero. Para não cobrar, selecione cortesia.",
+    };
+  }
+
   const sessionType = String(payload.sessionType ?? "individual").trim();
   if (!ALLOWED_SESSION_TYPES.has(sessionType)) {
     return { ok: false, error: "Tipo de sessão inválido." };
@@ -198,7 +213,8 @@ function parseCreatePayload(payload: CreateSessionPayload): { ok: true; value: V
       scheduledTime: timeRaw,
       duration,
       sessionType,
-      sessionPrice: price,
+      sessionPrice: billingMode === "free" ? 0 : price,
+      billingMode,
       location,
       isRecurring,
       recurrencePeriod,

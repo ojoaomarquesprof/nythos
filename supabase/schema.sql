@@ -1551,6 +1551,9 @@ BEGIN
         || jsonb_build_object(
           'session_notes_encrypted', NULL,
           'has_session_evolution', NULLIF(s.session_notes_encrypted, '') IS NOT NULL,
+          'billing_status', cf.status,
+          'billing_amount', cf.amount,
+          'financial_entry_id', cf.id,
           'patient',
             CASE
               WHEN p.id IS NULL THEN NULL
@@ -1570,6 +1573,13 @@ BEGIN
   )
   INTO v_sessions
   FROM public.sessions s
+  LEFT JOIN LATERAL (
+    SELECT id, status, amount
+    FROM public.cash_flow
+    WHERE session_id = s.id
+    ORDER BY created_at DESC
+    LIMIT 1
+  ) cf ON TRUE
   LEFT JOIN public.patients p
     ON p.id = s.patient_id
    AND p.user_id = s.user_id
