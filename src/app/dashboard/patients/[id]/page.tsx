@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Phone,
@@ -69,6 +69,20 @@ import { EvolutionNotesForm } from "./_components/evolution-notes-form";
 import { PatientFinances } from "./_components/patient-finances";
 import { TreatmentPlanManager, TreatmentPlanOverviewCard } from "./_components/treatment-plan-manager";
 import { PatientRecordsManager } from "./_components/patient-records-manager";
+
+const PATIENT_TAB_VALUES = new Set([
+  "overview",
+  "sessions",
+  "notes",
+  "tasks",
+  "plan",
+  "anamnesis",
+  "behavior",
+  "protocols",
+  "team",
+  "finance",
+  "archive",
+]);
 
 const patientStatusConfig: Record<string, { label: string; className: string }> = {
   active: {
@@ -542,6 +556,7 @@ export default function PatientDetailPage() {
     rescheduleWeekDays,
     handleAddNote,
     handleStatusChange,
+    handleCompleteSession,
     handleStartEditingSession,
     handleSaveSessionEdit,
     handleCancelSession,
@@ -568,8 +583,65 @@ export default function PatientDetailPage() {
     { value: "archive", label: "Arquivos", icon: Archive },
   ];
 
+  const handledSessionDeepLinkRef = useRef<string | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (tab && PATIENT_TAB_VALUES.has(tab)) {
+      setActiveTab(tab);
+    }
+  }, []);
+
+  function hasSessionEvolution(session?: Session | null) {
+    return Boolean((session as any)?.has_session_evolution || session?.session_notes_encrypted);
+  }
+
+  function getSessionEvolutionFormState(session: Session) {
+    let evolution = { notes: "", mood_happy_sad: 5, mood_anxious_calm: 5 };
+
+    try {
+      if (session.session_notes_encrypted) {
+        const parsed = JSON.parse(session.session_notes_encrypted);
+        evolution = {
+          notes: parsed.notes || session.session_notes_encrypted || "",
+          mood_happy_sad: parsed.mood_happy_sad || 5,
+          mood_anxious_calm: parsed.mood_anxious_calm || 5,
+        };
+      }
+    } catch (e) {
+      evolution.notes = session.session_notes_encrypted || "";
+    }
+
+    return evolution;
+  }
+
+  function openSessionEvolution(session: Session, edit = false) {
+    setActiveTab("sessions");
+    setViewingSession(session);
+    setSessionEditForm(getSessionEvolutionFormState(session));
+    setIsEditingSession(edit && session.status === "completed");
+    setShowSessionModal(true);
+  }
+
+  useEffect(() => {
+    if (loading) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const sessionDeepLinkId = params.get("sessionId");
+    const shouldOpenEvolutionFromLink = params.get("evolution") === "1";
+    if (!sessionDeepLinkId) return;
+
+    const deepLinkKey = `${sessionDeepLinkId}:${shouldOpenEvolutionFromLink ? "evolution" : "view"}`;
+    if (handledSessionDeepLinkRef.current === deepLinkKey) return;
+
+    const linkedSession = sessions.find((session) => session.id === sessionDeepLinkId);
+    if (!linkedSession) return;
+
+    handledSessionDeepLinkRef.current = deepLinkKey;
+    openSessionEvolution(linkedSession, shouldOpenEvolutionFromLink);
+  }, [loading, sessions]);
 
   if (loading) {
     return (
@@ -635,7 +707,7 @@ export default function PatientDetailPage() {
         : "Sem link";
   const latestEvolutionSession =
     [...sessions]
-      .filter((s) => s.status === "completed" && s.session_notes_encrypted)
+      .filter((s) => s.status === "completed" && hasSessionEvolution(s))
       .sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime())[0] ?? null;
   let latestEvolutionText = "";
   if (latestEvolutionSession?.session_notes_encrypted) {
@@ -696,7 +768,7 @@ export default function PatientDetailPage() {
     !!patient.access_token_revoked_at ||
     (!!patient.access_token_expires_at && new Date(patient.access_token_expires_at) < now);
   const lastSessionNeedsEvolution =
-    lastSession?.status === "completed" && !lastSession.session_notes_encrypted ? lastSession : null;
+    lastSession?.status === "completed" && !hasSessionEvolution(lastSession) ? lastSession : null;
   const clinicalSummaryItems = [
     patient.diagnosis_encrypted
       ? {
@@ -730,7 +802,8 @@ export default function PatientDetailPage() {
       const date = toDate(session.scheduled_at);
       if (!date) return [];
       const statusCfg = SESSION_STATUS[session.status as keyof typeof SESSION_STATUS];
-      const hasEvolution = !!session.session_notes_encrypted;
+      const hasEvolution = hasSessionEvolution(session);
+      const isCompleted = session.status === "completed";
       const isFuture = session.status === "scheduled" && date >= now;
       const eventType =
         session.status === "cancelled"
@@ -749,9 +822,11 @@ export default function PatientDetailPage() {
           ? "Sessão com evolução registrada."
           : session.status === "scheduled"
             ? `${session.duration_minutes ?? 50} min · ${getSessionTypeLabel(session.session_type)}`
-            : "Sessão sem evolução registrada.",
-        badge: hasEvolution ? "Evolução registrada" : statusCfg?.label ?? session.status,
-        tone: session.status === "cancelled" ? "rose" : isFuture ? "sky" : hasEvolution ? "emerald" : "violet",
+            : isCompleted
+              ? "Sessão realizada com evolução pendente."
+              : "Sessão sem evolução registrada.",
+        badge: hasEvolution ? "Evolução registrada" : isCompleted ? "Evolução pendente" : statusCfg?.label ?? session.status,
+        tone: session.status === "cancelled" ? "rose" : isFuture ? "sky" : hasEvolution ? "emerald" : isCompleted ? "amber" : "violet",
         onAction: () => {
           setViewingSession(session);
           setIsEditingSession(false);
@@ -1101,7 +1176,7 @@ export default function PatientDetailPage() {
           detail: latestEvolutionSession ? getSessionDateLabel(latestEvolutionSession) : "Evolucao registrada.",
           state: "success",
           actionLabel: "Abrir",
-          onAction: () => setActiveTab("notes"),
+          onAction: () => openSessionEvolution(latestEvolutionSession, false),
         }
       : lastSessionNeedsEvolution
         ? {
@@ -1110,7 +1185,7 @@ export default function PatientDetailPage() {
             detail: `A sessao de ${getSessionDateLabel(lastSessionNeedsEvolution)} ainda nao tem evolucao registrada.`,
             state: "attention",
             actionLabel: "Registrar",
-            onAction: () => setActiveTab("notes"),
+            onAction: () => openSessionEvolution(lastSessionNeedsEvolution, true),
           }
         : {
             icon: FileText,
@@ -1205,7 +1280,7 @@ export default function PatientDetailPage() {
           detail: `Fechamento pendente para ${getSessionDateLabel(lastSessionNeedsEvolution)}.`,
           state: "attention",
           actionLabel: "Registrar",
-          onAction: () => setActiveTab("notes"),
+          onAction: () => openSessionEvolution(lastSessionNeedsEvolution, true),
         }
       : latestEvolutionSession
         ? {
@@ -1214,7 +1289,7 @@ export default function PatientDetailPage() {
             detail: `Ultimo registro em ${getSessionDateLabel(latestEvolutionSession)}.`,
             state: "success",
             actionLabel: "Prontuario",
-            onAction: () => setActiveTab("notes"),
+            onAction: () => openSessionEvolution(latestEvolutionSession, false),
           }
         : {
             icon: FileText,
@@ -1376,7 +1451,7 @@ export default function PatientDetailPage() {
       reason: `A sessão de ${getSessionDateLabel(lastSessionNeedsEvolution)} ainda não tem evolução registrada.`,
       priority: "high",
       actionLabel: "Registrar",
-      onAction: () => setActiveTab("notes"),
+      onAction: () => openSessionEvolution(lastSessionNeedsEvolution, true),
     });
   }
 
@@ -1507,7 +1582,7 @@ export default function PatientDetailPage() {
 
   const handleExportNotes = async () => {
     if (!profile || !patient.notes_encrypted) return;
-    const completedSessions = sessions.filter(s => s.status === "completed" && s.session_notes_encrypted);
+    const completedSessions = sessions.filter(s => s.status === "completed" && hasSessionEvolution(s));
     const contentBody: any[] = [];
     if (patient.notes_encrypted) {
       contentBody.push({ text: "Notas Gerais", style: "header" });
@@ -1635,9 +1710,13 @@ export default function PatientDetailPage() {
                   <Calendar className="size-4" />
                   Agendar sessão
                 </Button>
-                <Button variant="outline" className="h-9 w-full justify-start rounded-2xl bg-white/80 min-[430px]:justify-center lg:w-auto lg:justify-center" onClick={() => setActiveTab("notes")}>
+                <Button
+                  variant="outline"
+                  className="h-9 w-full justify-start rounded-2xl bg-white/80 min-[430px]:justify-center lg:w-auto lg:justify-center"
+                  onClick={() => lastSessionNeedsEvolution ? openSessionEvolution(lastSessionNeedsEvolution, true) : setActiveTab("notes")}
+                >
                   <FileText className="size-4" />
-                  Registrar evolução
+                  {lastSessionNeedsEvolution ? "Registrar evolução" : "Prontuário"}
                 </Button>
                 <Button variant="outline" className="h-9 w-full justify-start rounded-2xl bg-white/80 min-[430px]:justify-center lg:w-auto lg:justify-center" onClick={() => setActiveTab("anamnesis")}>
                   <Shield className="size-4" />
@@ -1788,8 +1867,12 @@ export default function PatientDetailPage() {
                         title="Nenhum resumo clínico registrado ainda."
                         description="Registre uma evolução para facilitar a leitura rápida do caso."
                         action={
-                          <Button size="sm" className="h-8 rounded-2xl" onClick={() => setActiveTab("notes")}>
-                            Registrar evolução
+                          <Button
+                            size="sm"
+                            className="h-8 rounded-2xl"
+                            onClick={() => lastSessionNeedsEvolution ? openSessionEvolution(lastSessionNeedsEvolution, true) : setActiveTab("notes")}
+                          >
+                            {lastSessionNeedsEvolution ? "Registrar evolução" : "Prontuário"}
                           </Button>
                         }
                       />
@@ -1805,7 +1888,12 @@ export default function PatientDetailPage() {
                       maxItems={4}
                       dense
                       actions={[
-                        { label: "Registrar evolucao", icon: FileText, onClick: () => setActiveTab("notes"), variant: "default" },
+                        {
+                          label: lastSessionNeedsEvolution ? "Registrar evolução" : "Prontuário",
+                          icon: FileText,
+                          onClick: () => lastSessionNeedsEvolution ? openSessionEvolution(lastSessionNeedsEvolution, true) : setActiveTab("notes"),
+                          variant: "default",
+                        },
                         { label: "Ver plano", icon: Target, onClick: () => setActiveTab("plan") },
                         { label: "Ver tarefas", icon: ListChecks, onClick: () => setActiveTab("tasks") },
                       ]}
@@ -1820,7 +1908,12 @@ export default function PatientDetailPage() {
                         maxItems={4}
                         dense
                         actions={[
-                          { label: "Evolucao", icon: FileText, onClick: () => setActiveTab("notes"), variant: "default" },
+                          {
+                            label: lastSessionNeedsEvolution ? "Registrar evolução" : "Prontuário",
+                            icon: FileText,
+                            onClick: () => lastSessionNeedsEvolution ? openSessionEvolution(lastSessionNeedsEvolution, true) : setActiveTab("notes"),
+                            variant: "default",
+                          },
                           { label: "Tarefas", icon: ListChecks, onClick: () => setActiveTab("tasks") },
                           { label: "Agenda", icon: Calendar, onClick: () => router.push("/dashboard/schedule") },
                         ]}
@@ -1960,9 +2053,15 @@ export default function PatientDetailPage() {
             <TabsContent value="sessions" className="mt-0 space-y-3 w-full">
               <SessionList
                 sessions={sessions}
-                scheduledOnlySessions={scheduledOnlySessions}
                 isExportingPdf={isExportingPdf}
+                isSaving={isSaving}
                 handleExportSessions={handleExportSessions}
+                handleCompleteSession={handleCompleteSession}
+                onViewSession={(session) => {
+                  setViewingSession(session);
+                  setIsEditingSession(false);
+                  setShowSessionModal(true);
+                }}
                 setRescheduleSession={setRescheduleSession}
                 setRescheduleDate={setRescheduleDate}
                 setRescheduleTime={setRescheduleTime}
@@ -2347,7 +2446,7 @@ export default function PatientDetailPage() {
               <div className="p-8 border-b border-primary/10 bg-white/50 flex items-center justify-between shrink-0">
                 <div>
                   <h2 className="text-2xl font-black text-primary tracking-tight uppercase leading-none">
-                    {isEditingSession ? "Editar Sessão" : "Detalhes da Sessão"}
+                    {isEditingSession ? "Evolução da sessão" : "Detalhes da Sessão"}
                   </h2>
                   <p className="text-xs font-bold text-muted-foreground/60 mt-1 uppercase tracking-widest">
                     {formatDate(viewingSession.scheduled_at)} às {formatTime(viewingSession.scheduled_at)}
@@ -2358,14 +2457,16 @@ export default function PatientDetailPage() {
                     <Badge className={cn("rounded-full px-4 py-1 text-[10px] font-black uppercase tracking-widest border-0", SESSION_STATUS[viewingSession.status as keyof typeof SESSION_STATUS]?.color)}>
                       {SESSION_STATUS[viewingSession.status as keyof typeof SESSION_STATUS]?.label}
                     </Badge>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="w-10 h-10 rounded-full bg-primary/5 text-primary hover:bg-primary/10 transition-all"
-                      onClick={handleStartEditingSession}
-                    >
-                      <Edit className="w-4 h-4" />
-                    </Button>
+                    {viewingSession.status === "completed" && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="w-10 h-10 rounded-full bg-primary/5 text-primary hover:bg-primary/10 transition-all"
+                        onClick={handleStartEditingSession}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>
@@ -2373,10 +2474,35 @@ export default function PatientDetailPage() {
               <div className="p-8 space-y-8 overflow-y-auto flex-1">
                 {isEditingSession ? (
                   <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+                    <div className="rounded-3xl border border-primary/10 bg-white/60 p-5 shadow-sm">
+                      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-[11px] font-black uppercase tracking-widest text-primary/60">Evolução da sessão</p>
+                          <p className="mt-1 text-sm font-semibold text-primary">{patient.full_name}</p>
+                        </div>
+                        <Badge className="rounded-full border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                          Realizada
+                        </Badge>
+                      </div>
+                      <div className="grid gap-3 text-sm sm:grid-cols-2">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-primary/40">Data e horário</p>
+                          <p className="mt-1 font-semibold text-slate-700">
+                            {formatDate(viewingSession.scheduled_at)} às {formatTime(viewingSession.scheduled_at)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-primary/40">Duração e modalidade</p>
+                          <p className="mt-1 font-semibold text-slate-700">
+                            {viewingSession.duration_minutes ?? 50} min · {getSessionTypeLabel(viewingSession.session_type)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                     <div className="space-y-3">
                       <Label className="text-[11px] font-black text-primary/60 uppercase ml-2 tracking-widest flex items-center gap-2">
                         <Edit className="w-4 h-4" />
-                        Evolução Clínica
+                        Evolução da sessão
                       </Label>
                       <Textarea 
                         className="min-h-[180px] rounded-[24px] border-primary/20 bg-white/50 p-6 text-sm leading-relaxed focus:bg-white transition-all shadow-inner resize-none"
@@ -2431,7 +2557,18 @@ export default function PatientDetailPage() {
                     <div className="space-y-4">
                       <Label className="text-[11px] font-black text-primary/60 uppercase ml-2 tracking-widest flex items-center gap-2">
                         <FileText className="w-4 h-4" />
-                        Evolução Clínica
+                        Evolução da sessão
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "rounded-full px-2 py-0 text-[9px] font-black",
+                            hasSessionEvolution(viewingSession)
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              : "border-amber-200 bg-amber-50 text-amber-700"
+                          )}
+                        >
+                          {hasSessionEvolution(viewingSession) ? "Registrada" : "Pendente"}
+                        </Badge>
                       </Label>
                       <div className="bg-white/40 p-6 rounded-3xl border border-white/60 shadow-sm italic text-sm leading-relaxed text-slate-700">
                         {(() => {
@@ -2487,7 +2624,7 @@ export default function PatientDetailPage() {
                 )}
               </div>
               
-              <div className="p-6 bg-white/50 border-t border-primary/10 flex justify-between items-center px-8 shrink-0">
+              <div className="p-6 bg-white/50 border-t border-primary/10 flex flex-wrap justify-between gap-3 items-center px-8 shrink-0">
                 {isEditingSession ? (
                   <>
                     <Button 
@@ -2499,7 +2636,7 @@ export default function PatientDetailPage() {
                     </Button>
                     <Button 
                       onClick={handleSaveSessionEdit}
-                      disabled={isSaving}
+                      disabled={isSaving || !sessionEditForm.notes.trim() || viewingSession.status !== "completed"}
                       className="rounded-full px-12 h-12 font-black gradient-primary text-white shadow-lg active:scale-95 transition-all"
                     >
                       {isSaving ? "SALVANDO..." : "SALVAR ALTERAÇÕES"}
@@ -2516,6 +2653,31 @@ export default function PatientDetailPage() {
                       <Download className="w-4 h-4 mr-2" />
                       EXPORTAR PDF
                     </Button>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {viewingSession.status === "scheduled" && (
+                        <Button
+                          onClick={async () => {
+                            const completed = await handleCompleteSession(viewingSession);
+                            if (completed) setShowSessionModal(false);
+                          }}
+                          disabled={isSaving}
+                          className="rounded-full px-6 h-10 font-black bg-emerald-600 text-white hover:bg-emerald-700"
+                        >
+                          <CheckCircle2 className="w-4 h-4 mr-2" />
+                          MARCAR REALIZADA
+                        </Button>
+                      )}
+                      {viewingSession.status === "completed" && (
+                        <Button
+                          variant="outline"
+                          onClick={handleStartEditingSession}
+                          className="rounded-full px-6 h-10 font-bold border-primary/20 text-primary hover:bg-primary/5"
+                        >
+                          <FileText className="w-4 h-4 mr-2" />
+                          {hasSessionEvolution(viewingSession) ? "EDITAR EVOLUÇÃO" : "REGISTRAR EVOLUÇÃO"}
+                        </Button>
+                      )}
+                    </div>
                     <Button 
                       variant="ghost" 
                       onClick={() => setShowSessionModal(false)}

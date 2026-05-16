@@ -1,5 +1,5 @@
 import React from "react";
-import { Calendar, Clock, Download, X } from "lucide-react";
+import { Calendar, CheckCircle2, ChevronRight, Clock, Download, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,9 +9,11 @@ import type { Session } from "@/types/database";
 
 interface SessionListProps {
   sessions: Session[];
-  scheduledOnlySessions: Session[];
   isExportingPdf: boolean;
+  isSaving: boolean;
   handleExportSessions: () => Promise<void>;
+  handleCompleteSession: (session: Session) => Promise<boolean>;
+  onViewSession: (session: Session) => void;
   setRescheduleSession: (session: Session | null) => void;
   setRescheduleDate: (date: string) => void;
   setRescheduleTime: (time: string) => void;
@@ -22,9 +24,11 @@ interface SessionListProps {
 
 export function SessionList({
   sessions,
-  scheduledOnlySessions,
   isExportingPdf,
+  isSaving,
   handleExportSessions,
+  handleCompleteSession,
+  onViewSession,
   setRescheduleSession,
   setRescheduleDate,
   setRescheduleTime,
@@ -36,9 +40,9 @@ export function SessionList({
     <>
       <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-white/75 p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-base font-semibold text-foreground">Sessões agendadas</h2>
+          <h2 className="text-base font-semibold text-foreground">Sessões</h2>
           <p className="text-sm text-muted-foreground">
-            Próximos atendimentos deste paciente.
+            Atendimentos agendados, realizados e históricos deste paciente.
           </p>
         </div>
         <Button
@@ -53,13 +57,13 @@ export function SessionList({
         </Button>
       </div>
 
-      {scheduledOnlySessions.length === 0 ? (
+      {sessions.length === 0 ? (
         <Card className="rounded-3xl border border-dashed border-border/80 bg-white/70 shadow-none">
           <CardContent className="py-12 text-center">
             <div className="mx-auto mb-3 flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <Clock className="size-5" />
             </div>
-            <p className="text-sm font-medium text-foreground">Nenhuma sessão agendada</p>
+            <p className="text-sm font-medium text-foreground">Nenhuma sessão registrada</p>
             <p className="mt-1 text-sm text-muted-foreground">
               Use a ação de agendamento no topo para criar o próximo atendimento.
             </p>
@@ -67,8 +71,10 @@ export function SessionList({
         </Card>
       ) : (
         <div className="space-y-2.5">
-          {scheduledOnlySessions.map((session: Session) => {
+          {sessions.map((session: Session) => {
             const statusCfg = SESSION_STATUS[session.status as keyof typeof SESSION_STATUS] || SESSION_STATUS.scheduled;
+            const canManageScheduledSession = session.status === "scheduled";
+            const hasEvolution = Boolean((session as any).has_session_evolution || session.session_notes_encrypted);
             return (
               <Card key={session.id} className="rounded-2xl border border-border/70 bg-white/85 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
                 <CardContent className="p-4">
@@ -90,13 +96,47 @@ export function SessionList({
                           <span className={cn("mr-1 size-1.5 rounded-full", statusCfg.dot)} />
                           {statusCfg.label}
                         </Badge>
+                        {session.status === "completed" && (
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "h-5 rounded-full text-[10px] font-semibold",
+                              hasEvolution
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                : "border-amber-200 bg-amber-50 text-amber-700"
+                            )}
+                          >
+                            {hasEvolution ? "Evolução registrada" : "Evolução pendente"}
+                          </Badge>
+                        )}
                       </div>
                       <p className="mt-1 truncate text-xs text-muted-foreground">
                         {session.duration_minutes} min · {SESSION_TYPES[session.session_type as keyof typeof SESSION_TYPES]?.label || "Tipo nao informado"}
-                        {session.session_price && ` · ${formatCurrency(session.session_price)}`}
+                        {session.session_price != null && ` · ${formatCurrency(session.session_price)}`}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-1.5 sm:flex-nowrap">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 rounded-xl border-border/70 bg-white text-xs text-foreground hover:bg-slate-50"
+                        onClick={() => onViewSession(session)}
+                      >
+                        <ChevronRight className="size-3.5" />
+                        Detalhes
+                      </Button>
+                      {canManageScheduledSession && (
+                        <Button
+                          size="sm"
+                          className="h-8 rounded-xl bg-emerald-600 text-xs text-white hover:bg-emerald-700"
+                          onClick={() => handleCompleteSession(session)}
+                          disabled={isSaving}
+                        >
+                          <CheckCircle2 className="size-3.5" />
+                          Realizada
+                        </Button>
+                      )}
+                      {canManageScheduledSession && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -108,10 +148,13 @@ export function SessionList({
                           setRescheduleTime(date.toTimeString().slice(0, 5));
                           setShowRescheduleModal(true);
                         }}
+                        disabled={isSaving}
                       >
                         <Calendar className="size-3.5" />
                         Remarcar
                       </Button>
+                      )}
+                      {canManageScheduledSession && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -120,10 +163,12 @@ export function SessionList({
                           setCancellingSession(session);
                           setShowCancelSeriesModal(true);
                         }}
+                        disabled={isSaving}
                       >
                         <X className="size-3.5" />
                         Cancelar
                       </Button>
+                      )}
                     </div>
                   </div>
                 </CardContent>

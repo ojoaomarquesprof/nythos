@@ -52,6 +52,21 @@ export interface CancelSessionResult {
   error?: string;
 }
 
+export interface CompleteSessionPayload {
+  sessionId: string;
+  allowFutureCompletion?: boolean;
+}
+
+export interface CompleteSessionResult {
+  success: boolean;
+  billingCreated?: boolean;
+  billingAlreadyExists?: boolean;
+  billingSkippedReason?: "courtesy_or_zero_value";
+  needsEvolution?: boolean;
+  requiresConfirmation?: boolean;
+  error?: string;
+}
+
 type TherapistGoogleProfile = {
   google_access_token: string | null;
   google_refresh_token: string | null;
@@ -93,6 +108,7 @@ const ALLOWED_SESSION_TYPES = new Set([
 ]);
 
 const ALLOWED_CANCEL_SESSION_KEYS = ["sessionId"] as const;
+const ALLOWED_COMPLETE_SESSION_KEYS = ["sessionId", "allowFutureCompletion"] as const;
 
 type ValidatedCreatePayload = {
   therapistId: string;
@@ -202,6 +218,47 @@ function parseCancelPayload(payload: CancelSessionPayload): { ok: true; sessionI
   }
 
   return { ok: true, sessionId: payload.sessionId.trim() };
+}
+
+function parseCompletePayload(payload: CompleteSessionPayload): { ok: true; sessionId: string; allowFutureCompletion: boolean } | { ok: false; error: string } {
+  if (!isPlainObject(payload) || !hasOnlyAllowedKeys(payload, ALLOWED_COMPLETE_SESSION_KEYS)) {
+    return { ok: false, error: "Payload inválido para conclusão da sessão." };
+  }
+
+  if (!isValidUuid(payload.sessionId)) {
+    return { ok: false, error: "Sessão inválida." };
+  }
+
+  return {
+    ok: true,
+    sessionId: payload.sessionId.trim(),
+    allowFutureCompletion: payload.allowFutureCompletion === true,
+  };
+}
+
+function resolveBillingAmount(...values: Array<number | string | null | undefined>): number {
+  for (const value of values) {
+    if (value === null || value === undefined || value === "") continue;
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  return 0;
+}
+
+function getSessionDueDate(scheduledAt: string): string {
+  const date = new Date(scheduledAt);
+  if (Number.isNaN(date.getTime())) {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${byType.year}-${byType.month}-${byType.day}`;
 }
 
 function addPeriod(date: Date, period: "weekly" | "monthly"): Date {
@@ -656,6 +713,188 @@ export async function cancelScheduleSession(
   } catch (err: unknown) {
     logSafeError("[cancelScheduleSession] Unexpected error", err);
     return { success: false, error: "Erro ao cancelar sessão." };
+  }
+}
+
+export async function completeScheduleSession(
+  payload: CompleteSessionPayload
+): Promise<CompleteSessionResult> {
+  try {
+    const parsedPayload = parseCompletePayload(payload);
+    if (!parsedPayload.ok) {
+      return { success: false, error: parsedPayload.error };
+    }
+
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return { success: false, error: "Sessão inválida." };
+
+    const { data: actorProfile } = await supabase
+      .from("profiles")
+      .select("id, employer_id, role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (!actorProfile) return { success: false, error: "Perfil não encontrado." };
+    if (!["therapist", "admin"].includes(actorProfile.role ?? "")) {
+      return { success: false, error: "Perfil sem permissão para finalizar sessões." };
+    }
+
+    const { data: session, error: sessionError } = await supabase
+      .from("sessions")
+      .select("id, user_id, patient_id, scheduled_at, status, session_price, session_notes_encrypted")
+      .eq("id", parsedPayload.sessionId)
+      .maybeSingle();
+
+    if (sessionError) {
+      logSafeError("[completeScheduleSession] Failed to load session", sessionError);
+      return { success: false, error: "Não foi possível carregar a sessão." };
+    }
+    if (!session) return { success: false, error: "Sessão não encontrada." };
+
+    const canWriteForTherapist =
+      actorProfile.id === session.user_id || actorProfile.employer_id === session.user_id;
+    if (!canWriteForTherapist) {
+      return { success: false, error: "Você não tem permissão para alterar esta sessão." };
+    }
+
+    if (session.status === "cancelled") {
+      return { success: false, error: "Sessão cancelada não pode ser marcada como realizada." };
+    }
+
+    const { data: existingBillingBefore, error: existingBillingError } = await supabase
+      .from("cash_flow")
+      .select("id")
+      .eq("session_id", session.id)
+      .limit(1)
+      .maybeSingle();
+
+    if (existingBillingError) {
+      logSafeError("[completeScheduleSession] Failed to check existing billing", existingBillingError);
+      return { success: false, error: "Não foi possível validar o financeiro da sessão." };
+    }
+
+    if (session.status === "completed") {
+      return {
+        success: true,
+        billingAlreadyExists: !!existingBillingBefore,
+        needsEvolution: !session.session_notes_encrypted,
+      };
+    }
+
+    if (session.status !== "scheduled") {
+      return { success: false, error: "Somente sessões agendadas podem ser marcadas como realizadas." };
+    }
+
+    const scheduledAt = new Date(session.scheduled_at);
+    if (
+      !parsedPayload.allowFutureCompletion &&
+      !Number.isNaN(scheduledAt.getTime()) &&
+      scheduledAt.getTime() > Date.now()
+    ) {
+      return {
+        success: false,
+        requiresConfirmation: true,
+        error: "Esta sessão ainda está no futuro. Confirme manualmente para marcar como realizada.",
+      };
+    }
+
+    const completedAt = new Date().toISOString();
+    const { data: updatedSession, error: updateError } = await supabase
+      .from("sessions")
+      .update({
+        status: "completed",
+        completed_at: completedAt,
+      })
+      .eq("id", session.id)
+      .eq("status", "scheduled")
+      .select("id, session_notes_encrypted")
+      .maybeSingle();
+
+    if (updateError) {
+      logSafeError("[completeScheduleSession] Failed to complete session", updateError);
+      return { success: false, error: "Não foi possível marcar a sessão como realizada." };
+    }
+
+    if (!updatedSession) {
+      return { success: false, error: "A sessão foi alterada por outra ação. Atualize e tente novamente." };
+    }
+
+    const { data: existingBillingAfter, error: billingAfterError } = await supabase
+      .from("cash_flow")
+      .select("id")
+      .eq("session_id", session.id)
+      .limit(1)
+      .maybeSingle();
+
+    if (billingAfterError) {
+      logSafeError("[completeScheduleSession] Failed to reload billing after completion", billingAfterError);
+      return { success: false, error: "Sessão realizada, mas não foi possível validar o lançamento financeiro." };
+    }
+
+    let billingCreated = !existingBillingBefore && !!existingBillingAfter;
+    let billingAlreadyExists = !!existingBillingBefore || (!!existingBillingAfter && !billingCreated);
+    let billingSkippedReason: CompleteSessionResult["billingSkippedReason"];
+
+    if (!existingBillingAfter) {
+      const [{ data: patient }, { data: therapistProfile }] = await Promise.all([
+        supabase
+          .from("patients")
+          .select("full_name, session_price")
+          .eq("id", session.patient_id)
+          .maybeSingle(),
+        supabase
+          .from("profiles")
+          .select("session_price_default")
+          .eq("id", session.user_id)
+          .maybeSingle(),
+      ]);
+
+      const amount = resolveBillingAmount(
+        session.session_price,
+        patient?.session_price,
+        therapistProfile?.session_price_default
+      );
+
+      if (amount > 0) {
+        const { error: insertBillingError } = await supabase.from("cash_flow").insert({
+          user_id: session.user_id,
+          session_id: session.id,
+          type: "income",
+          amount,
+          description: `Sessão realizada - ${patient?.full_name || "Paciente"}`,
+          category: "session",
+          status: "pending",
+          due_date: getSessionDueDate(session.scheduled_at),
+        });
+
+        if (insertBillingError) {
+          logSafeError("[completeScheduleSession] Failed to create fallback billing", insertBillingError);
+          return { success: false, error: "Sessão realizada, mas não foi possível criar a cobrança pendente." };
+        }
+        billingCreated = true;
+      } else {
+        billingSkippedReason = "courtesy_or_zero_value";
+      }
+    }
+
+    revalidatePath("/dashboard/schedule");
+    revalidatePath(`/dashboard/patients/${session.patient_id}`);
+    revalidatePath("/dashboard/finances");
+
+    return {
+      success: true,
+      billingCreated,
+      billingAlreadyExists,
+      billingSkippedReason,
+      needsEvolution: !updatedSession.session_notes_encrypted,
+    };
+  } catch (err: unknown) {
+    logSafeError("[completeScheduleSession] Unexpected error", err);
+    return { success: false, error: "Erro ao marcar sessão como realizada." };
   }
 }
 

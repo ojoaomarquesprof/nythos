@@ -5,6 +5,7 @@ import { SESSION_STATUS } from "@/lib/constants";
 import type { ExternalCalendarEvent, Patient, Profile, Session } from "@/types/database";
 
 type ScheduleItem = (Session & { patient?: Patient }) & {
+  has_session_evolution?: boolean;
   is_external_google?: boolean;
   external_title?: string | null;
   external_description?: string | null;
@@ -158,14 +159,11 @@ export function useScheduleData() {
     }
 
     const [sessionsRes, externalEventsRes, patientsRes, profileRes] = await Promise.all([
-      supabase
-        .from("sessions")
-        .select("id, user_id, patient_id, scheduled_at, duration_minutes, status, session_type, session_price, location, is_recurring, recurrence_rule, reminder_sent, google_event_id, created_at, updated_at, patient:patients(id, full_name, email, phone, session_price, status)")
-        .eq("user_id", therapistId)
-        .neq("status", "cancelled")
-        .gte("scheduled_at", start.toISOString())
-        .lt("scheduled_at", end.toISOString())
-        .order("scheduled_at", { ascending: true }),
+      supabase.rpc("get_schedule_sessions_with_evolution_status", {
+        p_therapist_id: therapistId,
+        p_starts_at: start.toISOString(),
+        p_ends_at: end.toISOString(),
+      }),
       supabase
         .from("external_calendar_events")
         .select("id, user_id, google_event_id, title, description, location, starts_at, ends_at, is_all_day, created_at, updated_at")
@@ -201,8 +199,10 @@ export function useScheduleData() {
           scheduled_at: event.starts_at,
           duration_minutes: durationMinutes,
           status: "scheduled",
+          completed_at: null,
           session_type: "online",
           session_notes_encrypted: null,
+          has_session_evolution: false,
           session_price: null,
           location: event.location ? "office" : "online",
           is_recurring: false,

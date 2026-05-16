@@ -1,5 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { completeScheduleSession } from "@/app/actions/schedule-sessions";
 import { createClient } from "@/lib/supabase/client";
 import { PatientService } from "@/services/patient-service";
 import { BillingService } from "@/services/billing-service";
@@ -254,6 +256,52 @@ export function usePatientData() {
     }
   };
 
+  const handleCompleteSession = async (session: Session): Promise<boolean> => {
+    if (session.status !== "scheduled") return false;
+
+    const scheduledAt = new Date(session.scheduled_at);
+    const isFuture = !Number.isNaN(scheduledAt.getTime()) && scheduledAt.getTime() > Date.now();
+    if (isFuture) {
+      const confirmed = window.confirm(
+        "Esta sessão ainda está no futuro. Deseja marcar como realizada mesmo assim?"
+      );
+      if (!confirmed) return false;
+    }
+
+    setIsSaving(true);
+    try {
+      const result = await completeScheduleSession({
+        sessionId: session.id,
+        allowFutureCompletion: isFuture,
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || "Falha ao marcar sessão como realizada.");
+      }
+
+      toast.success("Sessão marcada como realizada.");
+      if (result.billingCreated) {
+        toast.success("Cobrança pendente criada no financeiro.");
+      } else if (result.billingAlreadyExists) {
+        toast.info("Já existe um lançamento financeiro vinculado a esta sessão.");
+      } else if (result.billingSkippedReason === "courtesy_or_zero_value") {
+        toast.info("Sessão cortesia ou sem valor: cobrança não criada.");
+      }
+      if (result.needsEvolution) {
+        toast.info("Evolução ainda não registrada. Você pode registrar sem bloquear a finalização.");
+      }
+
+      await loadData();
+      window.dispatchEvent(new CustomEvent("notifications:refresh"));
+      return true;
+    } catch (err: any) {
+      showError("Erro ao finalizar sessão", err.message || "Erro inesperado.");
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleStartEditingSession = () => {
     if (!viewingSession) return;
     
@@ -277,12 +325,18 @@ export function usePatientData() {
 
   const handleSaveSessionEdit = async () => {
     if (!viewingSession || !patient) return;
+    const notes = sessionEditForm.notes.trim();
+    if (!notes) {
+      toast.info("Registre a evolução antes de salvar.");
+      return;
+    }
+
     setIsSaving(true);
 
     try {
       const { data: updatedSession, error } = await BillingService.updateSessionEvolution(
         viewingSession.id,
-        sessionEditForm.notes,
+        notes,
         sessionEditForm.mood_happy_sad,
         sessionEditForm.mood_anxious_calm
       );
@@ -301,6 +355,7 @@ export function usePatientData() {
       setViewingSession(updatedSession);
       
       setIsEditingSession(false);
+      toast.success("Evolução registrada para esta sessão.");
       window.dispatchEvent(new CustomEvent("notifications:refresh"));
     } catch (err: any) {
       showError("Erro ao salvar", err.message || "Erro inesperado.");
@@ -510,6 +565,7 @@ export function usePatientData() {
     loadData,
     handleAddNote,
     handleStatusChange,
+    handleCompleteSession,
     handleStartEditingSession,
     handleSaveSessionEdit,
     handleCancelSession,

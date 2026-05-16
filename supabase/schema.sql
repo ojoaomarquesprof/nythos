@@ -368,6 +368,7 @@ CREATE TABLE IF NOT EXISTS public.sessions (
   scheduled_at TIMESTAMPTZ NOT NULL,
   duration_minutes INTEGER DEFAULT 50,
   status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'completed', 'missed', 'cancelled')),
+  completed_at TIMESTAMPTZ,
   session_type TEXT DEFAULT 'individual' CHECK (session_type IN ('individual', 'couple', 'group', 'online', 'initial_assessment')),
   session_notes_encrypted TEXT,  -- Notas de evolução criptografadas
   session_price DECIMAL(10,2),  -- Preço desta sessão específica
@@ -674,6 +675,29 @@ CREATE TRIGGER on_auth_user_created
 -- TRIGGER: Criar entrada financeira ao marcar sessão como "completed"
 -- ============================================================
 
+CREATE OR REPLACE FUNCTION public.set_session_completed_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.status = 'completed' THEN
+    IF TG_OP = 'INSERT' THEN
+      NEW.completed_at := COALESCE(NEW.completed_at, NOW());
+    ELSIF OLD.status IS DISTINCT FROM 'completed' THEN
+      NEW.completed_at := COALESCE(NEW.completed_at, NOW());
+    END IF;
+  ELSIF NEW.status IS DISTINCT FROM 'completed' THEN
+    NEW.completed_at := NULL;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SET search_path = public, pg_temp;
+
+DROP TRIGGER IF EXISTS set_session_completed_at ON public.sessions;
+CREATE TRIGGER set_session_completed_at
+  BEFORE INSERT OR UPDATE OF status, completed_at ON public.sessions
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_session_completed_at();
+
 CREATE OR REPLACE FUNCTION public.handle_session_completed()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -681,44 +705,68 @@ DECLARE
   v_patient_name TEXT;
   v_guardian_id UUID;
 BEGIN
-  -- Só executa quando status muda para 'completed'
-  IF NEW.status = 'completed' AND (OLD.status IS NULL OR OLD.status != 'completed') THEN
-    -- Determinar preço: sessão > paciente > profile default
-    SELECT COALESCE(
-      NEW.session_price,
-      p.session_price,
-      pr.session_price_default
-    ), p.full_name
-    INTO v_price, v_patient_name
-    FROM public.patients p
-    JOIN public.profiles pr ON pr.id = NEW.user_id
-    WHERE p.id = NEW.patient_id;
-
-    -- Buscar responsável financeiro
-    SELECT id INTO v_guardian_id
-    FROM public.patient_guardians
-    WHERE patient_id = NEW.patient_id
-    AND is_financial_responsible = true
-    LIMIT 1;
-
-    -- Criar entrada financeira pendente
-    INSERT INTO public.cash_flow (user_id, session_id, type, amount, description, category, status, due_date, guardian_id)
-    VALUES (
-      NEW.user_id,
-      NEW.id,
-      'income',
-      COALESCE(v_price, 150.00),
-      'Sessão - ' || COALESCE(v_patient_name, 'Paciente'),
-      'session',
-      'pending',
-      CURRENT_DATE,
-      v_guardian_id
-    );
+  IF NEW.status <> 'completed' THEN
+    RETURN NEW;
   END IF;
+
+  IF TG_OP = 'UPDATE' THEN
+    IF OLD.status = 'completed' THEN
+      RETURN NEW;
+    END IF;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.cash_flow cf
+    WHERE cf.session_id = NEW.id
+  ) THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT
+    COALESCE(NEW.session_price, p.session_price, pr.session_price_default, 0),
+    p.full_name
+  INTO v_price, v_patient_name
+  FROM public.patients p
+  LEFT JOIN public.profiles pr ON pr.id = NEW.user_id
+  WHERE p.id = NEW.patient_id;
+
+  IF COALESCE(v_price, 0) <= 0 THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT id INTO v_guardian_id
+  FROM public.patient_guardians
+  WHERE patient_id = NEW.patient_id
+    AND is_financial_responsible = true
+  LIMIT 1;
+
+  INSERT INTO public.cash_flow (
+    user_id,
+    session_id,
+    type,
+    amount,
+    description,
+    category,
+    status,
+    due_date,
+    guardian_id
+  )
+  VALUES (
+    NEW.user_id,
+    NEW.id,
+    'income',
+    v_price,
+    'Sessão realizada - ' || COALESCE(v_patient_name, 'Paciente'),
+    'session',
+    'pending',
+    (NEW.scheduled_at AT TIME ZONE 'America/Sao_Paulo')::date,
+    v_guardian_id
+  );
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
 DROP TRIGGER IF EXISTS on_session_completed ON public.sessions;
 
@@ -1463,6 +1511,77 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
+CREATE OR REPLACE FUNCTION public.get_schedule_sessions_with_evolution_status(
+  p_therapist_id UUID,
+  p_starts_at TIMESTAMPTZ,
+  p_ends_at TIMESTAMPTZ
+)
+RETURNS JSONB AS $$
+DECLARE
+  v_actor_id UUID := auth.uid();
+  v_actor_employer_id UUID;
+  v_sessions JSONB;
+BEGIN
+  IF v_actor_id IS NULL THEN
+    RAISE EXCEPTION 'not_authorized' USING ERRCODE = '42501';
+  END IF;
+
+  IF p_therapist_id IS NULL
+    OR p_starts_at IS NULL
+    OR p_ends_at IS NULL
+    OR p_ends_at <= p_starts_at
+  THEN
+    RAISE EXCEPTION 'invalid_schedule_range' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT employer_id
+  INTO v_actor_employer_id
+  FROM public.profiles
+  WHERE id = v_actor_id;
+
+  IF p_therapist_id <> v_actor_id
+    AND COALESCE(v_actor_employer_id, '00000000-0000-0000-0000-000000000000'::UUID) <> p_therapist_id
+  THEN
+    RAISE EXCEPTION 'not_authorized' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT COALESCE(
+    jsonb_agg(
+      (to_jsonb(s) - 'session_notes_encrypted')
+        || jsonb_build_object(
+          'session_notes_encrypted', NULL,
+          'has_session_evolution', NULLIF(s.session_notes_encrypted, '') IS NOT NULL,
+          'patient',
+            CASE
+              WHEN p.id IS NULL THEN NULL
+              ELSE jsonb_build_object(
+                'id', p.id,
+                'full_name', p.full_name,
+                'email', p.email,
+                'phone', p.phone,
+                'session_price', p.session_price,
+                'status', p.status
+              )
+            END
+        )
+      ORDER BY s.scheduled_at ASC
+    ),
+    '[]'::jsonb
+  )
+  INTO v_sessions
+  FROM public.sessions s
+  LEFT JOIN public.patients p
+    ON p.id = s.patient_id
+   AND p.user_id = s.user_id
+  WHERE s.user_id = p_therapist_id
+    AND s.status <> 'cancelled'
+    AND s.scheduled_at >= p_starts_at
+    AND s.scheduled_at < p_ends_at;
+
+  RETURN v_sessions;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
 CREATE OR REPLACE FUNCTION public.get_patient_sessions_decrypted(p_patient_id UUID)
 RETURNS JSONB AS $$
 DECLARE
@@ -1477,7 +1596,9 @@ BEGIN
       to_jsonb(s)
         || jsonb_build_object(
           'session_notes_encrypted',
-          public.decrypt_sensitive_text(s.session_notes_encrypted)
+          public.decrypt_sensitive_text(s.session_notes_encrypted),
+          'has_session_evolution',
+          NULLIF(s.session_notes_encrypted, '') IS NOT NULL
         )
       ORDER BY s.scheduled_at DESC
     ),
@@ -1655,25 +1776,49 @@ CREATE OR REPLACE FUNCTION public.update_session_evolution_secure(
 RETURNS JSONB AS $$
 DECLARE
   v_patient_id UUID;
+  v_session_status TEXT;
   v_session JSONB;
 BEGIN
-  SELECT patient_id INTO v_patient_id
-  FROM public.sessions
-  WHERE id = p_session_id;
+  SELECT s.patient_id, s.status
+  INTO v_patient_id, v_session_status
+  FROM public.sessions s
+  INNER JOIN public.patients p
+    ON p.id = s.patient_id
+   AND p.user_id = s.user_id
+  WHERE s.id = p_session_id;
 
   IF v_patient_id IS NULL THEN
     RAISE EXCEPTION 'session_not_found' USING ERRCODE = '02000';
+  END IF;
+
+  IF v_session_status <> 'completed' THEN
+    RAISE EXCEPTION 'session_not_completed' USING ERRCODE = '22023';
   END IF;
 
   IF NOT public.current_professional_can_write_clinical_patient(v_patient_id) THEN
     RAISE EXCEPTION 'not_authorized' USING ERRCODE = '42501';
   END IF;
 
+  IF p_notes IS NULL OR btrim(p_notes) = '' THEN
+    RAISE EXCEPTION 'empty_note' USING ERRCODE = '22023';
+  END IF;
+
+  IF p_mood_happy_sad IS NULL
+    OR p_mood_happy_sad < 1
+    OR p_mood_happy_sad > 10
+    OR p_mood_anxious_calm IS NULL
+    OR p_mood_anxious_calm < 1
+    OR p_mood_anxious_calm > 10
+  THEN
+    RAISE EXCEPTION 'invalid_mood_score' USING ERRCODE = '22023';
+  END IF;
+
   UPDATE public.sessions
   SET
-    status = 'completed',
     session_notes_encrypted = jsonb_build_object(
-      'notes', COALESCE(p_notes, ''),
+      'note_type', 'session_evolution',
+      'session_id', p_session_id,
+      'notes', btrim(p_notes),
       'mood_happy_sad', p_mood_happy_sad,
       'mood_anxious_calm', p_mood_anxious_calm,
       'updated_at', NOW()
@@ -1683,7 +1828,9 @@ BEGIN
   SELECT to_jsonb(s)
     || jsonb_build_object(
       'session_notes_encrypted',
-      public.decrypt_sensitive_text(s.session_notes_encrypted)
+      public.decrypt_sensitive_text(s.session_notes_encrypted),
+      'has_session_evolution',
+      NULLIF(s.session_notes_encrypted, '') IS NOT NULL
     )
   INTO v_session
   FROM public.sessions s
@@ -2317,6 +2464,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
 REVOKE ALL ON FUNCTION public.get_patient_decrypted(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.get_schedule_sessions_with_evolution_status(UUID, TIMESTAMPTZ, TIMESTAMPTZ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_patient_sessions_decrypted(UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_patient_evaluations_decrypted(UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_abc_records_decrypted(UUID) FROM PUBLIC;
@@ -2369,6 +2517,7 @@ GRANT EXECUTE ON FUNCTION public.current_professional_can_write_clinical_patient
 GRANT EXECUTE ON FUNCTION public.backfill_google_calendar_tokens_encryption() TO service_role;
 
 GRANT EXECUTE ON FUNCTION public.get_patient_decrypted(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_schedule_sessions_with_evolution_status(UUID, TIMESTAMPTZ, TIMESTAMPTZ) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_patient_sessions_decrypted(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_patient_evaluations_decrypted(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_abc_records_decrypted(UUID) TO authenticated;

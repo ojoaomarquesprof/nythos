@@ -192,6 +192,7 @@ export type Database = {
           scheduled_at: string;
           duration_minutes: number | null;
           status: string;
+          completed_at: string | null;
           session_type: string | null;
           session_notes_encrypted: string | null;
           session_price: number | null;
@@ -210,6 +211,7 @@ export type Database = {
           scheduled_at: string;
           duration_minutes?: number | null;
           status?: string;
+          completed_at?: string | null;
           session_type?: string | null;
           session_notes_encrypted?: string | null;
           session_price?: number | null;
@@ -224,6 +226,7 @@ export type Database = {
           scheduled_at?: string;
           duration_minutes?: number | null;
           status?: string;
+          completed_at?: string | null;
           session_type?: string | null;
           session_notes_encrypted?: string | null;
           session_price?: number | null;
@@ -806,6 +809,50 @@ export type Database = {
       };
       regenerate_patient_access_link_secure: {
         Args: { p_patient_id: string };
+        Returns: Json;
+      };
+      get_patient_decrypted: {
+        Args: { p_patient_id: string };
+        Returns: Json;
+      };
+      get_schedule_sessions_with_evolution_status: {
+        Args: {
+          p_therapist_id: string;
+          p_starts_at: string;
+          p_ends_at: string;
+        };
+        Returns: Json;
+      };
+      get_patient_sessions_decrypted: {
+        Args: { p_patient_id: string };
+        Returns: Json;
+      };
+      get_patient_evaluations_decrypted: {
+        Args: { p_patient_id: string };
+        Returns: Json;
+      };
+      append_patient_clinical_note: {
+        Args: { p_patient_id: string; p_note: string };
+        Returns: Json;
+      };
+      update_session_evolution_secure: {
+        Args: {
+          p_session_id: string;
+          p_notes: string;
+          p_mood_happy_sad: number;
+          p_mood_anxious_calm: number;
+        };
+        Returns: Json;
+      };
+      create_patient_evaluation_secure: {
+        Args: {
+          p_patient_id: string;
+          p_protocol_name: string;
+          p_evaluation_date: string;
+          p_score?: string | null;
+          p_status?: string;
+          p_notes?: string | null;
+        };
         Returns: Json;
       };
       get_public_anamnesis_response: {

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   Building2,
@@ -11,6 +12,7 @@ import {
   ChevronRight,
   CircleDollarSign,
   Clock3,
+  FileText,
   Info,
   MapPin,
   Plus,
@@ -24,6 +26,7 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -33,7 +36,7 @@ import { Label } from "@/components/ui/label";
 import { SubscriptionGate } from "@/components/auth/subscription-gate";
 import { cn } from "@/lib/utils";
 import { SESSION_STATUS, formatCurrency, formatTime } from "@/lib/constants";
-import { cancelScheduleSession, createScheduleSessions } from "@/app/actions/schedule-sessions";
+import { cancelScheduleSession, completeScheduleSession, createScheduleSessions } from "@/app/actions/schedule-sessions";
 import { useCalendarSync } from "./_hooks/use-calendar-sync";
 import { useScheduleData } from "./_hooks/use-schedule-data";
 
@@ -159,6 +162,15 @@ function getSessionStyle(session: ScheduleItem) {
   return statusStyles[session.status] ?? statusStyles.scheduled;
 }
 
+function hasSessionEvolution(session: ScheduleItem) {
+  if (session.is_external_google) return false;
+  return Boolean(session.has_session_evolution || session.session_notes_encrypted);
+}
+
+function getEvolutionStatusLabel(session: ScheduleItem) {
+  return hasSessionEvolution(session) ? "Evolução registrada" : "Evolução pendente";
+}
+
 function FieldShell({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={cn("space-y-1.5", className)}>{children}</div>;
 }
@@ -172,10 +184,12 @@ function nativeSelectClassName(className?: string) {
 }
 
 export default function SchedulePage() {
+  const router = useRouter();
   const schedule = useScheduleData();
   const calendar = useCalendarSync(schedule.loadData);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [cancellingSession, setCancellingSession] = useState(false);
+  const [completingSession, setCompletingSession] = useState(false);
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
@@ -255,6 +269,8 @@ export default function SchedulePage() {
 
   const selectedItem = schedule.selectedSessionDetails as ScheduleItem | null;
   const selectedIsExternal = !!selectedItem?.is_external_google;
+  const canCompleteSelectedSession =
+    !!selectedItem && !selectedIsExternal && selectedItem.status === "scheduled";
   const selectedPatient = useMemo(
     () => schedule.patients.find((p) => p.id === schedule.newSession.patient_id) ?? null,
     [schedule.patients, schedule.newSession.patient_id]
@@ -365,6 +381,62 @@ export default function SchedulePage() {
       });
     } finally {
       setCancellingSession(false);
+    }
+  }
+
+  async function handleCompleteSession(allowFutureCompletion = false) {
+    if (!selectedItem?.id || selectedIsExternal) return;
+
+    const scheduledAt = new Date(selectedItem.scheduled_at);
+    const isFuture = !Number.isNaN(scheduledAt.getTime()) && scheduledAt.getTime() > Date.now();
+
+    if (isFuture && !allowFutureCompletion) {
+      const confirmed = window.confirm(
+        "Esta sessão ainda está no futuro. Deseja marcar como realizada mesmo assim?"
+      );
+      if (!confirmed) return;
+      return handleCompleteSession(true);
+    }
+
+    setCompletingSession(true);
+    try {
+      const result = await completeScheduleSession({
+        sessionId: selectedItem.id,
+        allowFutureCompletion,
+      });
+
+      if (result.requiresConfirmation) {
+        const confirmed = window.confirm(
+          "Esta sessão ainda está no futuro. Deseja marcar como realizada mesmo assim?"
+        );
+        if (!confirmed) return;
+        return handleCompleteSession(true);
+      }
+
+      if (!result.success) {
+        throw new Error(result.error || "Falha ao marcar sessão como realizada.");
+      }
+
+      toast.success("Sessão marcada como realizada.");
+      if (result.billingCreated) {
+        toast.success("Cobrança pendente criada no financeiro.");
+      } else if (result.billingAlreadyExists) {
+        toast.info("Já existe um lançamento financeiro vinculado a esta sessão.");
+      } else if (result.billingSkippedReason === "courtesy_or_zero_value") {
+        toast.info("Sessão cortesia ou sem valor: cobrança não criada.");
+      }
+      if (result.needsEvolution) {
+        toast.info("Evolução ainda não registrada. Você pode registrar sem bloquear a finalização.");
+      }
+
+      schedule.setShowSessionDetails(false);
+      schedule.setSelectedSessionDetails(null);
+      await schedule.loadData();
+      window.dispatchEvent(new CustomEvent("notifications:refresh"));
+    } catch (err: any) {
+      toast.error(err?.message ?? "Falha ao marcar sessão como realizada.");
+    } finally {
+      setCompletingSession(false);
     }
   }
 
@@ -944,6 +1016,16 @@ export default function SchedulePage() {
                                         {getSessionSubtitle(session)}
                                       </p>
                                     )}
+                                    {!compact && session.status === "completed" && !session.is_external_google && (
+                                      <p
+                                        className={cn(
+                                          "mt-0.5 truncate text-[9px] font-bold uppercase tracking-[0.08em]",
+                                          hasSessionEvolution(session) ? "text-emerald-700" : "text-amber-700"
+                                        )}
+                                      >
+                                        {getEvolutionStatusLabel(session)}
+                                      </p>
+                                    )}
                                   </div>
 
                                   <div className={cn("mt-auto flex min-w-0 items-center gap-2 text-[10px] font-semibold leading-4 opacity-80", compact && "hidden")}>
@@ -1006,7 +1088,7 @@ export default function SchedulePage() {
                                 type="button"
                                 key={session.id}
                                 className={cn(
-                                  "block w-full truncate rounded-xl border px-2 py-1.5 text-left text-[10px] font-semibold shadow-sm transition hover:-translate-y-0.5",
+                                  "block w-full overflow-hidden rounded-xl border px-2 py-1.5 text-left text-[10px] font-semibold shadow-sm transition hover:-translate-y-0.5",
                                   styles.card
                                 )}
                                 onClick={() => {
@@ -1014,7 +1096,17 @@ export default function SchedulePage() {
                                   schedule.setShowSessionDetails(true);
                                 }}
                               >
-                                {formatTime(session.scheduled_at)} {getSessionTitle(session)}
+                                <span className="block truncate">{formatTime(session.scheduled_at)} {getSessionTitle(session)}</span>
+                                {session.status === "completed" && !session.is_external_google && (
+                                  <span
+                                    className={cn(
+                                      "mt-0.5 block truncate text-[9px] font-bold uppercase tracking-[0.08em]",
+                                      hasSessionEvolution(session) ? "text-emerald-700" : "text-amber-700"
+                                    )}
+                                  >
+                                    {getEvolutionStatusLabel(session)}
+                                  </span>
+                                )}
                               </button>
                             );
                           })}
@@ -1369,22 +1461,79 @@ export default function SchedulePage() {
                     </p>
                   </div>
                 )}
+                {!selectedIsExternal && selectedItem.status === "completed" && (
+                  <div className="rounded-2xl border border-border/70 bg-slate-50/60 p-4">
+                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      <FileText className="size-4" />
+                      Prontuário
+                    </div>
+                    <p
+                      className={cn(
+                        "text-sm font-semibold",
+                        hasSessionEvolution(selectedItem) ? "text-emerald-700" : "text-amber-700"
+                      )}
+                    >
+                      {getEvolutionStatusLabel(selectedItem)}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {hasSessionEvolution(selectedItem)
+                        ? "Esta sessão já tem evolução vinculada."
+                        : "Registre a evolução contextualizada desta sessão."}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          <DialogFooter className="mx-0 mb-0 rounded-none bg-slate-50/90 px-4 py-4 sm:px-5">
-            {!selectedIsExternal && selectedItem?.status !== "cancelled" && (
+          <DialogFooter className="mx-0 mb-0 flex-col gap-2 rounded-none bg-slate-50/90 px-4 py-4 sm:flex-row sm:flex-wrap sm:px-5">
+            {!selectedIsExternal && selectedItem?.patient_id && (
+              <Button
+                variant="outline"
+                className="rounded-2xl bg-white"
+                onClick={() => router.push(`/dashboard/patients/${selectedItem.patient_id}`)}
+                disabled={cancellingSession || completingSession}
+              >
+                <UserRound className="size-4" />
+                Ver paciente
+              </Button>
+            )}
+            {!selectedIsExternal && selectedItem?.patient_id && selectedItem.status === "completed" && (
+              <Button
+                variant="outline"
+                className="rounded-2xl border-primary/20 bg-white text-primary hover:bg-primary/5"
+                onClick={() =>
+                  router.push(
+                    `/dashboard/patients/${selectedItem.patient_id}?tab=sessions&sessionId=${selectedItem.id}&evolution=1`
+                  )
+                }
+                disabled={cancellingSession || completingSession}
+              >
+                <FileText className="size-4" />
+                {hasSessionEvolution(selectedItem) ? "Editar evolução" : "Registrar evolução"}
+              </Button>
+            )}
+            {canCompleteSelectedSession && (
+              <Button
+                className="rounded-2xl bg-emerald-600 text-white shadow-emerald-600/20 hover:bg-emerald-700"
+                onClick={() => handleCompleteSession()}
+                disabled={cancellingSession || completingSession}
+              >
+                <CheckCircle className="size-4" />
+                {completingSession ? "Finalizando..." : "Marcar como realizada"}
+              </Button>
+            )}
+            {!selectedIsExternal && selectedItem?.status === "scheduled" && (
               <Button
                 variant="outline"
                 className="rounded-2xl border-rose-200 bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                 onClick={handleCancelSession}
-                disabled={cancellingSession}
+                disabled={cancellingSession || completingSession}
               >
                 {cancellingSession ? "Cancelando..." : "Cancelar sessão"}
               </Button>
             )}
-            <Button className="rounded-2xl" onClick={() => schedule.setShowSessionDetails(false)} disabled={cancellingSession}>
+            <Button className="rounded-2xl" onClick={() => schedule.setShowSessionDetails(false)} disabled={cancellingSession || completingSession}>
               Fechar
             </Button>
           </DialogFooter>

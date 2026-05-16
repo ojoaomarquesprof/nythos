@@ -30,6 +30,12 @@ export function EvolutionNotesForm({
   savingNote,
   handleAddNote,
 }: EvolutionNotesFormProps) {
+  const sessionEvolutions = sessions.filter(
+    (session) =>
+      session.status === "completed" &&
+      Boolean((session as any).has_session_evolution || session.session_notes_encrypted)
+  );
+
   return (
     <>
       <div className="flex flex-col justify-between gap-4 rounded-2xl border border-border/70 bg-white/75 p-4 shadow-sm md:flex-row md:items-center">
@@ -63,12 +69,12 @@ export function EvolutionNotesForm({
         <CardHeader className="border-b border-border/60 bg-white/70 pb-4">
           <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
             <FileText className="w-5 h-5" />
-            Nova Nota de Evolução
+            Nota geral do paciente
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 p-5">
           <Textarea
-            placeholder="Registre a evolução do paciente nesta sessão..."
+            placeholder="Registre uma nota geral do prontuário, sem vínculo obrigatório com sessão..."
             className="min-h-[150px] resize-none rounded-2xl border-border/70 bg-white/80 p-4 text-sm leading-relaxed transition-all focus:bg-white"
             value={newNote}
             onChange={(e) => setNewNote(e.target.value)}
@@ -108,7 +114,7 @@ export function EvolutionNotesForm({
             )}
 
             {/* Evoluções de Sessão */}
-            {sessions.filter(s => s.status === "completed" && s.session_notes_encrypted).map(session => {
+            {sessionEvolutions.map(session => {
               let evolution: any = null;
               try {
                 evolution = JSON.parse(session.session_notes_encrypted || "{}");
@@ -139,7 +145,7 @@ export function EvolutionNotesForm({
               );
             })}
 
-            {!patient.notes_encrypted && sessions.filter(s => s.status === "completed" && s.session_notes_encrypted).length === 0 && (
+            {!patient.notes_encrypted && sessionEvolutions.length === 0 && (
               <p className="text-sm text-muted-foreground italic text-center py-10">Nenhum registro de evolução encontrado.</p>
             )}
           </div>
