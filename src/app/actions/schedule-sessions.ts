@@ -17,6 +17,11 @@ import {
   toInteger,
 } from "@/lib/validation/input";
 import { logSafeError } from "@/lib/errors/safe-error";
+import {
+  calculateSessionPackageReservableSessions,
+  calculateSessionPackageReservedSessions,
+  getSessionPackageScheduleBlockReason,
+} from "@/services/session-package-rules";
 import type { ExternalCalendarEvent, Session } from "@/types/database";
 
 export interface CreateSessionPayload {
@@ -27,7 +32,8 @@ export interface CreateSessionPayload {
   durationMinutes?: number;
   sessionType?: string;
   sessionPrice?: number | null;
-  billingMode?: "single" | "free";
+  billingMode?: "single" | "free" | "package";
+  packageId?: string | null;
   location?: string;
   isRecurring?: boolean;
   recurrencePeriod?: "weekly" | "monthly";
@@ -63,6 +69,8 @@ export interface CompleteSessionResult {
   billingCreated?: boolean;
   billingAlreadyExists?: boolean;
   billingSkippedReason?: "courtesy_or_zero_value" | "package_session";
+  packageCreditConsumed?: boolean;
+  packageCreditAlreadyConsumed?: boolean;
   needsEvolution?: boolean;
   requiresConfirmation?: boolean;
   error?: string;
@@ -84,6 +92,22 @@ type TimeInterval = {
 
 type SessionConflictRow = Pick<Session, "scheduled_at" | "duration_minutes">;
 type ExternalEventConflictRow = Pick<ExternalCalendarEvent, "starts_at" | "ends_at">;
+type PackageSchedulingRow = {
+  id: string;
+  user_id: string;
+  patient_id: string;
+  name: string;
+  total_sessions: number;
+  unit_amount: number;
+  status: string;
+  payment_status: string;
+  expires_at: string | null;
+  allow_use_before_payment: boolean;
+};
+type PackageLinkedSessionRow = {
+  id: string | null;
+  status: string | null;
+};
 
 const ALLOWED_CREATE_SESSION_KEYS = [
   "therapistId",
@@ -94,6 +118,7 @@ const ALLOWED_CREATE_SESSION_KEYS = [
   "sessionType",
   "sessionPrice",
   "billingMode",
+  "packageId",
   "location",
   "isRecurring",
   "recurrencePeriod",
@@ -120,7 +145,8 @@ type ValidatedCreatePayload = {
   duration: number;
   sessionType: string;
   sessionPrice: number | null;
-  billingMode: "single" | "free";
+  billingMode: "single" | "free" | "package";
+  packageId: string | null;
   location: string;
   isRecurring: boolean;
   recurrencePeriod: "weekly" | "monthly";
@@ -179,7 +205,7 @@ function parseCreatePayload(payload: CreateSessionPayload): { ok: true; value: V
   }
 
   const billingMode = payload.billingMode ?? (price === 0 ? "free" : "single");
-  if (!["single", "free"].includes(billingMode)) {
+  if (!["single", "free", "package"].includes(billingMode)) {
     return { ok: false, error: "Tipo de cobrança inválido." };
   }
 
@@ -188,6 +214,16 @@ function parseCreatePayload(payload: CreateSessionPayload): { ok: true; value: V
       ok: false,
       error: "Sessão avulsa precisa ter valor maior que zero. Para não cobrar, selecione cortesia.",
     };
+  }
+
+  const packageId = payload.packageId === null || payload.packageId === undefined
+    ? null
+    : String(payload.packageId).trim();
+  if (billingMode === "package" && (!packageId || !isValidUuid(packageId))) {
+    return { ok: false, error: "Selecione um pacote válido para usar nesta sessão." };
+  }
+  if (billingMode !== "package" && packageId) {
+    return { ok: false, error: "Pacote só pode ser informado ao usar cobrança por pacote." };
   }
 
   const sessionType = String(payload.sessionType ?? "individual").trim();
@@ -215,6 +251,7 @@ function parseCreatePayload(payload: CreateSessionPayload): { ok: true; value: V
       sessionType,
       sessionPrice: billingMode === "free" ? 0 : price,
       billingMode,
+      packageId,
       location,
       isRecurring,
       recurrencePeriod,
@@ -261,8 +298,7 @@ function resolveBillingAmount(...values: Array<number | string | null | undefine
   return 0;
 }
 
-function getSessionDueDate(scheduledAt: string): string {
-  const date = new Date(scheduledAt);
+function getSaoPauloDateString(date: Date): string {
   if (Number.isNaN(date.getTime())) {
     return new Date().toISOString().slice(0, 10);
   }
@@ -277,6 +313,37 @@ function getSessionDueDate(scheduledAt: string): string {
   return `${byType.year}-${byType.month}-${byType.day}`;
 }
 
+function getSessionDueDate(scheduledAt: string): string {
+  return getSaoPauloDateString(new Date(scheduledAt));
+}
+
+function getCompleteSessionErrorMessage(error: unknown): string {
+  const message = typeof error === "object" && error !== null && "message" in error
+    ? String((error as { message?: unknown }).message ?? "")
+    : "";
+
+  if (message.includes("package_session_missing_package")) {
+    return "Esta sessão de pacote não possui pacote vinculado.";
+  }
+  if (message.includes("package_not_found") || message.includes("invalid_session_package_link")) {
+    return "O pacote vinculado a esta sessão é inválido.";
+  }
+  if (message.includes("package_not_active")) {
+    return "Este pacote não está ativo.";
+  }
+  if (message.includes("package_expired")) {
+    return "Este pacote estava vencido na data da sessão.";
+  }
+  if (message.includes("package_payment_blocked")) {
+    return "Este pacote precisa estar pago antes de consumir crédito.";
+  }
+  if (message.includes("package_without_balance")) {
+    return "Este pacote não possui saldo disponível para consumir crédito.";
+  }
+
+  return "Não foi possível marcar a sessão como realizada.";
+}
+
 function addPeriod(date: Date, period: "weekly" | "monthly"): Date {
   const next = new Date(date);
   if (period === "monthly") {
@@ -289,6 +356,47 @@ function addPeriod(date: Date, period: "weekly" | "monthly"): Date {
 
 function overlaps(a: TimeInterval, b: TimeInterval): boolean {
   return a.start < b.end && a.end > b.start;
+}
+
+async function getPackageReservableSessionCount(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  packageId: string,
+  totalSessions: number
+): Promise<{ ok: true; reservableSessions: number; usedSessions: number; reservedSessions: number } | { ok: false; error: string }> {
+  const [usageRows, linkedSessionRows] = await Promise.all([
+    supabase
+      .from("session_package_usages")
+      .select("session_id")
+      .eq("package_id", packageId)
+      .eq("status", "active"),
+    supabase
+      .from("sessions")
+      .select("id, status")
+      .eq("package_id", packageId)
+      .eq("billing_mode", "package")
+      .neq("status", "cancelled"),
+  ]);
+
+  if (usageRows.error || linkedSessionRows.error) {
+    logSafeError("[getPackageReservableSessionCount] Failed to load package balance", usageRows.error || linkedSessionRows.error);
+    return { ok: false, error: "Não foi possível validar o saldo do pacote." };
+  }
+
+  const usageSessionIds = (usageRows.data ?? [])
+    .map((usage) => usage.session_id)
+    .filter((sessionId): sessionId is string => Boolean(sessionId));
+  const usedSessions = usageRows.data?.length ?? 0;
+  const reservedSessions = calculateSessionPackageReservedSessions(
+    (linkedSessionRows.data ?? []) as PackageLinkedSessionRow[],
+    usageSessionIds
+  );
+  const reservableSessions = calculateSessionPackageReservableSessions(
+    totalSessions,
+    usedSessions,
+    reservedSessions
+  );
+
+  return { ok: true, reservableSessions, usedSessions, reservedSessions };
 }
 
 async function refreshGoogleToken(
@@ -416,10 +524,114 @@ export async function createScheduleSessions(
     const duration = input.duration;
     const period = input.recurrencePeriod;
     const requestedCount = input.recurrenceCount;
+    if (input.billingMode === "package" && input.isRecurring && input.isIndefinite) {
+      return {
+        success: false,
+        error: "Recorrência sem data final não pode usar pacote nesta fase.",
+      };
+    }
+
     const seriesCount = input.isRecurring ? (input.isIndefinite ? 12 : Math.min(requestedCount, 24)) : 1;
     const recurrenceRule = input.isRecurring
       ? `RRULE:FREQ=${period === "monthly" ? "MONTHLY" : "WEEKLY"};COUNT=${seriesCount}`
       : null;
+
+    const { data: patient } = await supabase
+      .from("patients")
+      .select("full_name")
+      .eq("id", input.patientId)
+      .eq("user_id", effectiveTherapistId)
+      .maybeSingle();
+
+    if (!patient) {
+      return { success: false, error: "Paciente inválido para esta agenda." };
+    }
+
+    let lastScheduledStart = new Date(baseDate);
+    for (let i = 1; i < seriesCount; i++) {
+      lastScheduledStart = addPeriod(lastScheduledStart, period);
+    }
+
+    let resolvedSessionPrice = input.billingMode === "free" ? 0 : input.sessionPrice;
+    let resolvedPackageId: string | null = null;
+
+    if (input.billingMode === "package") {
+      const packageId = input.packageId;
+      if (!packageId) {
+        return { success: false, error: "Selecione um pacote válido para usar nesta sessão." };
+      }
+
+      const { data: sessionPackage, error: packageError } = await supabase
+        .from("session_packages")
+        .select("id, user_id, patient_id, name, total_sessions, unit_amount, status, payment_status, expires_at, allow_use_before_payment")
+        .eq("id", packageId)
+        .eq("patient_id", input.patientId)
+        .eq("user_id", effectiveTherapistId)
+        .maybeSingle();
+
+      if (packageError) {
+        logSafeError("[createScheduleSessions] Failed to load session package", packageError);
+        return { success: false, error: "Não foi possível validar o pacote selecionado." };
+      }
+
+      if (!sessionPackage) {
+        return { success: false, error: "Pacote inválido para este paciente." };
+      }
+
+      const packageRow = sessionPackage as PackageSchedulingRow;
+      const balance = await getPackageReservableSessionCount(
+        supabase,
+        packageRow.id,
+        packageRow.total_sessions
+      );
+
+      if (!balance.ok) {
+        return { success: false, error: balance.error };
+      }
+
+      const blockReason = getSessionPackageScheduleBlockReason({
+        status: packageRow.status,
+        paymentStatus: packageRow.payment_status,
+        allowUseBeforePayment: packageRow.allow_use_before_payment,
+        expiresAt: packageRow.expires_at,
+        referenceDate: getSaoPauloDateString(lastScheduledStart),
+        reservableSessions: balance.reservableSessions,
+        requestedSessions: seriesCount,
+      });
+
+      if (blockReason === "package_without_balance") {
+        return {
+          success: false,
+          error: input.isRecurring
+            ? "O pacote selecionado não possui saldo suficiente para esta recorrência."
+            : "O pacote selecionado não possui saldo disponível.",
+        };
+      }
+
+      if (blockReason === "package_payment_blocked") {
+        return {
+          success: false,
+          error: "Este pacote precisa estar pago antes de ser usado.",
+        };
+      }
+
+      if (blockReason === "package_expired") {
+        return {
+          success: false,
+          error: "Este pacote está vencido para a data da sessão.",
+        };
+      }
+
+      if (blockReason === "package_not_active") {
+        return {
+          success: false,
+          error: "Este pacote não está ativo.",
+        };
+      }
+
+      resolvedPackageId = packageRow.id;
+      resolvedSessionPrice = Number(packageRow.unit_amount);
+    }
 
     const rows = [];
     const candidateIntervals: TimeInterval[] = [];
@@ -434,8 +646,9 @@ export async function createScheduleSessions(
         scheduled_at: start.toISOString(),
         duration_minutes: duration,
         session_type: input.sessionType,
-        session_price: input.sessionPrice,
+        session_price: resolvedSessionPrice,
         billing_mode: input.billingMode,
+        package_id: resolvedPackageId,
         location: input.location,
         status: "scheduled" as const,
         is_recurring: input.isRecurring ? true : false,
@@ -500,17 +713,6 @@ export async function createScheduleSessions(
         success: false,
         error: "HorÃ¡rio indisponÃ­vel. JÃ¡ existe uma sessÃ£o ou bloqueio nesse perÃ­odo.",
       };
-    }
-
-    const { data: patient } = await supabase
-      .from("patients")
-      .select("full_name")
-      .eq("id", input.patientId)
-      .eq("user_id", effectiveTherapistId)
-      .maybeSingle();
-
-    if (!patient) {
-      return { success: false, error: "Paciente invÃ¡lido para esta agenda." };
     }
 
     const admin = createAdminClient();
@@ -782,6 +984,8 @@ export async function completeScheduleSession(
       return { success: false, error: "Sessão cancelada não pode ser marcada como realizada." };
     }
 
+    const billingMode = session.billing_mode ?? (session.package_id ? "package" : "single");
+
     const { data: existingBillingBefore, error: existingBillingError } = await supabase
       .from("cash_flow")
       .select("id")
@@ -794,10 +998,27 @@ export async function completeScheduleSession(
       return { success: false, error: "Não foi possível validar o financeiro da sessão." };
     }
 
+    const { data: existingPackageUsageBefore, error: existingPackageUsageError } = billingMode === "package"
+      ? await supabase
+          .from("session_package_usages")
+          .select("id")
+          .eq("session_id", session.id)
+          .eq("status", "active")
+          .limit(1)
+          .maybeSingle()
+      : { data: null, error: null };
+
+    if (existingPackageUsageError) {
+      logSafeError("[completeScheduleSession] Failed to check existing package usage", existingPackageUsageError);
+      return { success: false, error: "Não foi possível validar o consumo do pacote." };
+    }
+
     if (session.status === "completed") {
       return {
         success: true,
         billingAlreadyExists: !!existingBillingBefore,
+        billingSkippedReason: billingMode === "package" ? "package_session" : undefined,
+        packageCreditAlreadyConsumed: billingMode === "package" && !!existingPackageUsageBefore,
         needsEvolution: !session.session_notes_encrypted,
       };
     }
@@ -833,7 +1054,7 @@ export async function completeScheduleSession(
 
     if (updateError) {
       logSafeError("[completeScheduleSession] Failed to complete session", updateError);
-      return { success: false, error: "Não foi possível marcar a sessão como realizada." };
+      return { success: false, error: getCompleteSessionErrorMessage(updateError) };
     }
 
     if (!updatedSession) {
@@ -852,10 +1073,28 @@ export async function completeScheduleSession(
       return { success: false, error: "Sessão realizada, mas não foi possível validar o lançamento financeiro." };
     }
 
+    const { data: existingPackageUsageAfter, error: packageUsageAfterError } = billingMode === "package"
+      ? await supabase
+          .from("session_package_usages")
+          .select("id")
+          .eq("session_id", session.id)
+          .eq("status", "active")
+          .limit(1)
+          .maybeSingle()
+      : { data: null, error: null };
+
+    if (packageUsageAfterError) {
+      logSafeError("[completeScheduleSession] Failed to reload package usage after completion", packageUsageAfterError);
+      return { success: false, error: "Sessão realizada, mas não foi possível validar o consumo do pacote." };
+    }
+
     let billingCreated = !existingBillingBefore && !!existingBillingAfter;
     let billingAlreadyExists = !!existingBillingBefore || (!!existingBillingAfter && !billingCreated);
     let billingSkippedReason: CompleteSessionResult["billingSkippedReason"];
-    const billingMode = session.billing_mode ?? (session.package_id ? "package" : "single");
+    const packageCreditConsumed =
+      billingMode === "package" && !existingPackageUsageBefore && !!existingPackageUsageAfter;
+    const packageCreditAlreadyConsumed =
+      billingMode === "package" && !!existingPackageUsageBefore;
 
     if (billingMode === "package") {
       billingSkippedReason = "package_session";
@@ -913,6 +1152,8 @@ export async function completeScheduleSession(
       billingCreated,
       billingAlreadyExists,
       billingSkippedReason,
+      packageCreditConsumed,
+      packageCreditAlreadyConsumed,
       needsEvolution: !updatedSession.session_notes_encrypted,
     };
   } catch (err: unknown) {

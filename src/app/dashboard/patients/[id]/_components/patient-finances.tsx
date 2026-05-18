@@ -555,6 +555,8 @@ export function PatientFinances({
                 : sessionPackage.guardian_id
                   ? "Responsável vinculado"
                   : "Paciente";
+              const reservedSessions = Number(sessionPackage.reserved_sessions ?? 0);
+              const reservableSessions = Number(sessionPackage.reservable_sessions ?? sessionPackage.remaining_sessions ?? 0);
 
               return (
                 <Card key={sessionPackage.id} className="overflow-hidden rounded-[30px] border border-slate-100 bg-white/85 shadow-lg shadow-slate-200/50">
@@ -589,7 +591,7 @@ export function PatientFinances({
                       <div className="h-3 overflow-hidden rounded-full bg-slate-100">
                         <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all" style={{ width: `${usagePercent}%` }} />
                       </div>
-                      <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
                         <div className="rounded-2xl bg-slate-50 p-3">
                           <p className="text-lg font-black text-slate-900">{sessionPackage.total_sessions}</p>
                           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total</p>
@@ -602,7 +604,16 @@ export function PatientFinances({
                           <p className="text-lg font-black text-slate-900">{sessionPackage.remaining_sessions}</p>
                           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Restantes</p>
                         </div>
+                        <div className="rounded-2xl bg-slate-50 p-3">
+                          <p className="text-lg font-black text-slate-900">{reservableSessions}</p>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Disponíveis</p>
+                        </div>
                       </div>
+                      {reservedSessions > 0 && (
+                        <p className="text-xs font-semibold text-slate-500">
+                          {reservedSessions} reservada(s) em sessões ainda não consumidas.
+                        </p>
+                      )}
                     </div>
 
                     <div className="grid gap-3 text-xs font-semibold text-slate-600 sm:grid-cols-2">

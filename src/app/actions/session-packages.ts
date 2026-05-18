@@ -12,6 +12,8 @@ import {
   toInteger,
 } from "@/lib/validation/input";
 import {
+  calculateSessionPackageReservableSessions,
+  calculateSessionPackageReservedSessions,
   calculateSessionPackageUnitAmount,
   isManageableSessionPackageStatus,
 } from "@/services/session-package-rules";
@@ -127,6 +129,72 @@ function castPackageList(data: Json | null): SessionPackageWithBalance[] {
   return data as unknown as SessionPackageWithBalance[];
 }
 
+async function addReservableBalances(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  packages: SessionPackageWithBalance[]
+): Promise<SessionPackageWithBalance[]> {
+  const packageIds = packages.map((sessionPackage) => sessionPackage.id).filter(Boolean);
+  if (packageIds.length === 0) return packages;
+
+  const [sessionRows, usageRows] = await Promise.all([
+    supabase
+      .from("sessions")
+      .select("id, package_id, status")
+      .in("package_id", packageIds)
+      .eq("billing_mode", "package")
+      .neq("status", "cancelled"),
+    supabase
+      .from("session_package_usages")
+      .select("package_id, session_id")
+      .in("package_id", packageIds)
+      .eq("status", "active")
+      .not("session_id", "is", null),
+  ]);
+
+  if (sessionRows.error || usageRows.error) {
+    logSafeError("[addReservableBalances] Failed to load package reservations", sessionRows.error || usageRows.error);
+    return packages.map((sessionPackage) => ({
+      ...sessionPackage,
+      reserved_sessions: 0,
+      reservable_sessions: sessionPackage.remaining_sessions,
+    }));
+  }
+
+  const activeUsageSessionIdsByPackage = new Map<string, string[]>();
+  for (const usage of usageRows.data ?? []) {
+    if (!usage.package_id || !usage.session_id) continue;
+    const existing = activeUsageSessionIdsByPackage.get(usage.package_id) ?? [];
+    existing.push(usage.session_id);
+    activeUsageSessionIdsByPackage.set(usage.package_id, existing);
+  }
+
+  const sessionsByPackage = new Map<string, Array<{ id: string | null; status: string | null }>>();
+  for (const session of sessionRows.data ?? []) {
+    if (!session.package_id) continue;
+    const existing = sessionsByPackage.get(session.package_id) ?? [];
+    existing.push({ id: session.id, status: session.status });
+    sessionsByPackage.set(session.package_id, existing);
+  }
+
+  return packages.map((sessionPackage) => {
+    const reservedSessions = calculateSessionPackageReservedSessions(
+      sessionsByPackage.get(sessionPackage.id) ?? [],
+      activeUsageSessionIdsByPackage.get(sessionPackage.id) ?? []
+    );
+    const reservableSessions = calculateSessionPackageReservableSessions(
+      sessionPackage.total_sessions,
+      sessionPackage.used_sessions,
+      reservedSessions
+    );
+
+    return {
+      ...sessionPackage,
+      reserved_sessions: reservedSessions,
+      reservable_sessions: reservableSessions,
+    };
+  });
+}
+
 function revalidatePackagePaths(patientId: string | null | undefined): void {
   if (patientId) {
     revalidatePath(`/dashboard/patients/${patientId}`);
@@ -237,7 +305,8 @@ export async function listPatientSessionPackages(
       return { success: false, error: getRpcErrorMessage(error) };
     }
 
-    return { success: true, data: castPackageList(data) };
+    const packages = await addReservableBalances(supabase, castPackageList(data));
+    return { success: true, data: packages };
   } catch (err: unknown) {
     logSafeError("[listPatientSessionPackages] Exception", err);
     return { success: false, error: GENERIC_PACKAGE_ERROR };

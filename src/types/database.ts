@@ -1217,6 +1217,8 @@ export type PatientDocument = Database['public']['Tables']['patient_documents'][
 export type SessionPackageWithBalance = SessionPackage & {
   used_sessions: number;
   remaining_sessions: number;
+  reserved_sessions?: number;
+  reservable_sessions?: number;
   cash_flow_id: string | null;
   cash_flow_status: CashFlowStatus | null;
   cash_flow_due_date: string | null;

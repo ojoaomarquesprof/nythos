@@ -20,6 +20,29 @@ export const MANAGEABLE_SESSION_PACKAGE_STATUSES: readonly SessionPackageManageS
   "cancelled",
 ];
 
+export type PackageReservableSession = {
+  id: string | null | undefined;
+  status: string | null | undefined;
+};
+
+export type SessionPackageScheduleBlockReason =
+  | "package_not_active"
+  | "package_expired"
+  | "package_payment_blocked"
+  | "package_without_balance";
+
+export type PackageCreditConsumptionDecision =
+  | { canComplete: true; shouldCreateUsage: true }
+  | { canComplete: true; shouldCreateUsage: false; reason: "already_consumed" }
+  | { canComplete: false; shouldCreateUsage: false; reason: "package_without_balance" };
+
+export const SESSION_PACKAGE_SCHEDULE_BLOCK_MESSAGES: Record<SessionPackageScheduleBlockReason, string> = {
+  package_not_active: "Este pacote não está ativo.",
+  package_expired: "Este pacote está vencido.",
+  package_payment_blocked: "Este pacote precisa estar pago antes de ser usado.",
+  package_without_balance: "Este pacote não possui saldo disponível.",
+};
+
 export function calculateSessionPackageUnitAmount(totalAmount: number, totalSessions: number): number {
   if (!Number.isFinite(totalAmount) || !Number.isInteger(totalSessions) || totalSessions <= 0) {
     throw new Error("invalid_package_totals");
@@ -43,6 +66,90 @@ export function calculateRemainingPackageSessions(totalSessions: number, usedSes
   }
 
   return Math.max(totalSessions - usedSessions, 0);
+}
+
+export function shouldCountSessionAsPackageReservation(status: string | null | undefined): boolean {
+  return status !== "cancelled";
+}
+
+export function calculateSessionPackageReservedSessions(
+  packageSessions: PackageReservableSession[],
+  activeUsageSessionIds: Iterable<string | null | undefined> = []
+): number {
+  const usedSessionIds = new Set(
+    Array.from(activeUsageSessionIds).filter((id): id is string => Boolean(id))
+  );
+
+  return packageSessions.reduce((total, session) => {
+    if (!session.id || usedSessionIds.has(session.id)) return total;
+    if (!shouldCountSessionAsPackageReservation(session.status)) return total;
+    return total + 1;
+  }, 0);
+}
+
+export function calculateSessionPackageReservableSessions(
+  totalSessions: number,
+  usedSessions: number,
+  reservedSessions: number
+): number {
+  if (
+    !Number.isInteger(totalSessions)
+    || !Number.isInteger(usedSessions)
+    || !Number.isInteger(reservedSessions)
+  ) {
+    throw new Error("invalid_package_sessions");
+  }
+
+  return Math.max(totalSessions - Math.max(usedSessions, 0) - Math.max(reservedSessions, 0), 0);
+}
+
+export function getPackageCreditConsumptionDecision(input: {
+  totalSessions: number;
+  usedSessions: number;
+  hasActiveUsageForSession: boolean;
+}): PackageCreditConsumptionDecision {
+  if (!Number.isInteger(input.totalSessions) || !Number.isInteger(input.usedSessions)) {
+    throw new Error("invalid_package_sessions");
+  }
+
+  if (input.hasActiveUsageForSession) {
+    return { canComplete: true, shouldCreateUsage: false, reason: "already_consumed" };
+  }
+
+  if (input.usedSessions >= input.totalSessions) {
+    return { canComplete: false, shouldCreateUsage: false, reason: "package_without_balance" };
+  }
+
+  return { canComplete: true, shouldCreateUsage: true };
+}
+
+export function isSessionPackageExpired(
+  expiresAt: string | null | undefined,
+  referenceDate: string
+): boolean {
+  if (!expiresAt) return false;
+  return expiresAt < referenceDate;
+}
+
+export function getSessionPackageScheduleBlockReason(input: {
+  status: string | null | undefined;
+  paymentStatus: string | null | undefined;
+  allowUseBeforePayment: boolean | null | undefined;
+  expiresAt?: string | null;
+  referenceDate: string;
+  reservableSessions: number;
+  requestedSessions?: number;
+}): SessionPackageScheduleBlockReason | null {
+  if (input.status !== "active") return "package_not_active";
+  if (isSessionPackageExpired(input.expiresAt, input.referenceDate)) return "package_expired";
+  if (input.paymentStatus !== "paid" && input.allowUseBeforePayment === false) {
+    return "package_payment_blocked";
+  }
+  if (input.reservableSessions < Math.max(input.requestedSessions ?? 1, 1)) {
+    return "package_without_balance";
+  }
+
+  return null;
 }
 
 export function formatSessionPackageBalance(totalSessions: number, usedSessions: number): string {

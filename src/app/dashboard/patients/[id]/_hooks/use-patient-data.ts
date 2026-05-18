@@ -278,9 +278,15 @@ export function usePatientData() {
         throw new Error(result.error || "Falha ao marcar sessão como realizada.");
       }
 
-      toast.success("Sessão marcada como realizada.");
+      if (result.packageCreditConsumed) {
+        toast.success("Sessão realizada. 1 crédito do pacote foi consumido.");
+      } else {
+        toast.success("Sessão marcada como realizada.");
+      }
       if (result.billingCreated) {
         toast.success("Cobrança pendente criada no financeiro.");
+      } else if (result.packageCreditAlreadyConsumed) {
+        toast.info("Crédito do pacote já estava consumido para esta sessão.");
       } else if (result.billingAlreadyExists) {
         toast.info("Já existe um lançamento financeiro vinculado a esta sessão.");
       } else if (result.billingSkippedReason === "courtesy_or_zero_value") {

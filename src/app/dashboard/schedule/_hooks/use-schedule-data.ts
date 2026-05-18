@@ -2,13 +2,23 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useSubscription } from "@/hooks/use-subscription";
 import { SESSION_STATUS } from "@/lib/constants";
-import type { ExternalCalendarEvent, Patient, Profile, Session } from "@/types/database";
+import { listPatientSessionPackages } from "@/app/actions/session-packages";
+import type { ExternalCalendarEvent, Patient, Profile, Session, SessionPackageWithBalance } from "@/types/database";
 
 type ScheduleItem = (Session & { patient?: Patient }) & {
   has_session_evolution?: boolean;
   billing_status?: string | null;
   billing_amount?: number | string | null;
   financial_entry_id?: string | null;
+  package_credit_consumed?: boolean;
+  session_package_usage_id?: string | null;
+  session_package?: {
+    id: string;
+    name: string;
+    total_amount: number | string;
+    unit_amount: number | string;
+    payment_status: string;
+  } | null;
   is_external_google?: boolean;
   external_title?: string | null;
   external_description?: string | null;
@@ -56,7 +66,8 @@ export function useScheduleData() {
     duration_minutes: "50",
     session_type: "individual",
     session_price: "",
-    billing_mode: "single" as "single" | "free",
+    billing_mode: "single" as "single" | "free" | "package",
+    package_id: "",
     location: "office",
     is_recurring: false,
     recurrence_period: "weekly",
@@ -70,6 +81,9 @@ export function useScheduleData() {
   const [selectedSessionDetails, setSelectedSessionDetails] = useState<
     ScheduleItem | null
   >(null);
+  const [patientSessionPackages, setPatientSessionPackages] = useState<SessionPackageWithBalance[]>([]);
+  const [patientSessionPackagesLoading, setPatientSessionPackagesLoading] = useState(false);
+  const [patientSessionPackagesError, setPatientSessionPackagesError] = useState<string | null>(null);
 
   const [isRescheduling, setIsRescheduling] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState("");
@@ -140,6 +154,39 @@ export function useScheduleData() {
     fetchAgendaForReschedule();
   }, [rescheduleWeekOffset, isRescheduling, therapistId, rescheduleWeekDays]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchPatientPackages() {
+      if (!newSession.patient_id) {
+        setPatientSessionPackages([]);
+        setPatientSessionPackagesError(null);
+        setPatientSessionPackagesLoading(false);
+        return;
+      }
+
+      setPatientSessionPackagesLoading(true);
+      setPatientSessionPackagesError(null);
+      const result = await listPatientSessionPackages(newSession.patient_id);
+
+      if (cancelled) return;
+
+      if (result.success) {
+        setPatientSessionPackages(result.data ?? []);
+      } else {
+        setPatientSessionPackages([]);
+        setPatientSessionPackagesError(result.error ?? "Não foi possível carregar os pacotes deste paciente.");
+      }
+      setPatientSessionPackagesLoading(false);
+    }
+
+    fetchPatientPackages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [newSession.patient_id]);
+
   const loadData = useCallback(async () => {
     if (!therapistId) return;
     setLoading(true);
@@ -188,6 +235,52 @@ export function useScheduleData() {
 
     if (!sessionsRes.error && !externalEventsRes.error) {
       const sessionItems: ScheduleItem[] = (sessionsRes.data ?? []) as ScheduleItem[];
+      const packageIds = Array.from(new Set(
+        sessionItems
+          .map((session) => session.package_id)
+          .filter((packageId): packageId is string => Boolean(packageId))
+      ));
+      const packageSessionIds = sessionItems
+        .filter((session) => session.billing_mode === "package" || Boolean(session.package_id))
+        .map((session) => session.id);
+      const packagesById = new Map<string, NonNullable<ScheduleItem["session_package"]>>();
+      const packageUsageBySessionId = new Map<string, string>();
+
+      if (packageIds.length > 0) {
+        const { data: packageRows, error: packageRowsError } = await supabase
+          .from("session_packages")
+          .select("id, name, total_amount, unit_amount, payment_status")
+          .in("id", packageIds);
+
+        if (!packageRowsError) {
+          for (const sessionPackage of packageRows ?? []) {
+            packagesById.set(sessionPackage.id, sessionPackage);
+          }
+        }
+      }
+
+      if (packageSessionIds.length > 0) {
+        const { data: packageUsageRows, error: packageUsageRowsError } = await supabase
+          .from("session_package_usages")
+          .select("id, session_id")
+          .in("session_id", packageSessionIds)
+          .eq("status", "active");
+
+        if (!packageUsageRowsError) {
+          for (const usage of packageUsageRows ?? []) {
+            if (usage.session_id) {
+              packageUsageBySessionId.set(usage.session_id, usage.id);
+            }
+          }
+        }
+      }
+
+      const decoratedSessionItems = sessionItems.map((session) => ({
+        ...session,
+        session_package: session.package_id ? packagesById.get(session.package_id) ?? null : null,
+        package_credit_consumed: packageUsageBySessionId.has(session.id),
+        session_package_usage_id: packageUsageBySessionId.get(session.id) ?? null,
+      }));
       const externalItems: ScheduleItem[] = (externalEventsRes.data ?? []).map((event: ExternalCalendarScheduleEvent) => {
         const start = new Date(event.starts_at);
         const end = new Date(event.ends_at);
@@ -211,6 +304,11 @@ export function useScheduleData() {
           billing_amount: null,
           financial_entry_id: null,
           session_price: null,
+          billing_mode: "single",
+          package_id: null,
+          package_credit_consumed: false,
+          session_package_usage_id: null,
+          session_package: null,
           location: event.location ? "office" : "online",
           is_recurring: false,
           recurrence_rule: null,
@@ -227,7 +325,7 @@ export function useScheduleData() {
         };
       });
 
-      const merged = [...sessionItems, ...externalItems].sort(
+      const merged = [...decoratedSessionItems, ...externalItems].sort(
         (a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
       );
       setSessions(merged);
@@ -302,6 +400,10 @@ export function useScheduleData() {
     setProfile,
     newSession,
     setNewSession,
+    patientSessionPackages,
+    setPatientSessionPackages,
+    patientSessionPackagesLoading,
+    patientSessionPackagesError,
     selectedSessionDetails,
     setSelectedSessionDetails,
     isRescheduling,

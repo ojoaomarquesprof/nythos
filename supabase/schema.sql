@@ -633,9 +633,10 @@ CREATE TABLE IF NOT EXISTS public.session_package_usages (
 CREATE INDEX IF NOT EXISTS idx_session_package_usages_package_id ON public.session_package_usages(package_id);
 CREATE INDEX IF NOT EXISTS idx_session_package_usages_status ON public.session_package_usages(status);
 CREATE INDEX IF NOT EXISTS idx_session_package_usages_used_at ON public.session_package_usages(used_at);
-CREATE UNIQUE INDEX IF NOT EXISTS session_package_usages_session_id_uidx
+CREATE UNIQUE INDEX IF NOT EXISTS session_package_usages_active_session_id_uidx
   ON public.session_package_usages(session_id)
-  WHERE session_id IS NOT NULL;
+  WHERE session_id IS NOT NULL
+    AND status = 'active';
 
 ALTER TABLE public.session_package_usages ENABLE ROW LEVEL SECURITY;
 
@@ -1059,6 +1060,10 @@ DECLARE
   v_patient_name TEXT;
   v_guardian_id UUID;
   v_billing_mode TEXT;
+  v_package public.session_packages%ROWTYPE;
+  v_used_sessions INTEGER := 0;
+  v_scheduled_date DATE;
+  v_actor_id UUID := auth.uid();
 BEGIN
   IF NEW.status <> 'completed' THEN
     RETURN NEW;
@@ -1074,6 +1079,84 @@ BEGIN
     NULLIF(NEW.billing_mode, ''),
     CASE WHEN NEW.package_id IS NOT NULL THEN 'package' ELSE 'single' END
   );
+
+  IF v_billing_mode = 'package' THEN
+    IF NEW.package_id IS NULL THEN
+      RAISE EXCEPTION 'package_session_missing_package' USING ERRCODE = '23514';
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM public.session_package_usages spu
+      WHERE spu.session_id = NEW.id
+        AND spu.status = 'active'
+    ) THEN
+      RETURN NEW;
+    END IF;
+
+    SELECT sp.*
+    INTO v_package
+    FROM public.session_packages sp
+    WHERE sp.id = NEW.package_id
+    FOR UPDATE;
+
+    IF v_package.id IS NULL THEN
+      RAISE EXCEPTION 'package_not_found' USING ERRCODE = '02000';
+    END IF;
+
+    IF v_package.user_id <> NEW.user_id
+      OR v_package.patient_id <> NEW.patient_id
+    THEN
+      RAISE EXCEPTION 'invalid_session_package_link' USING ERRCODE = '23514';
+    END IF;
+
+    IF v_package.status <> 'active' THEN
+      RAISE EXCEPTION 'package_not_active' USING ERRCODE = '22023';
+    END IF;
+
+    v_scheduled_date := (NEW.scheduled_at AT TIME ZONE 'America/Sao_Paulo')::date;
+    IF v_package.expires_at IS NOT NULL
+      AND v_package.expires_at < v_scheduled_date
+    THEN
+      RAISE EXCEPTION 'package_expired' USING ERRCODE = '22023';
+    END IF;
+
+    IF v_package.payment_status <> 'paid'
+      AND v_package.allow_use_before_payment = false
+    THEN
+      RAISE EXCEPTION 'package_payment_blocked' USING ERRCODE = '22023';
+    END IF;
+
+    SELECT COUNT(*)::INTEGER
+    INTO v_used_sessions
+    FROM public.session_package_usages spu
+    WHERE spu.package_id = NEW.package_id
+      AND spu.status = 'active';
+
+    IF v_used_sessions >= v_package.total_sessions THEN
+      RAISE EXCEPTION 'package_without_balance' USING ERRCODE = '22023';
+    END IF;
+
+    INSERT INTO public.session_package_usages (
+      package_id,
+      session_id,
+      status,
+      usage_type,
+      used_at,
+      used_by
+    )
+    VALUES (
+      NEW.package_id,
+      NEW.id,
+      'active',
+      'completed_session',
+      NOW(),
+      v_actor_id
+    )
+    ON CONFLICT DO NOTHING;
+
+    RETURN NEW;
+  END IF;
 
   IF v_billing_mode <> 'single' THEN
     RETURN NEW;

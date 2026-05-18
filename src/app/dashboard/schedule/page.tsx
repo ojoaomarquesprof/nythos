@@ -17,6 +17,7 @@ import {
   FileText,
   Info,
   MapPin,
+  PackageCheck,
   Plus,
   RefreshCw,
   Search,
@@ -41,6 +42,11 @@ import { SubscriptionGate } from "@/components/auth/subscription-gate";
 import { cn } from "@/lib/utils";
 import { SESSION_STATUS, formatCurrency, formatTime } from "@/lib/constants";
 import { cancelScheduleSession, completeScheduleSession, createScheduleSessions } from "@/app/actions/schedule-sessions";
+import {
+  SESSION_PACKAGE_SCHEDULE_BLOCK_MESSAGES,
+  getSessionPackagePaymentStatusLabel,
+  getSessionPackageScheduleBlockReason,
+} from "@/services/session-package-rules";
 import { useCalendarSync } from "./_hooks/use-calendar-sync";
 import { useScheduleData } from "./_hooks/use-schedule-data";
 
@@ -126,6 +132,39 @@ function formatDateShort(date: Date) {
   });
 }
 
+function formatIsoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseIsoDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  const date = new Date(year, month - 1, day);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+function addSchedulePeriod(date: Date, period: string) {
+  const next = new Date(date);
+  if (period === "monthly") {
+    next.setMonth(next.getMonth() + 1);
+  } else {
+    next.setDate(next.getDate() + 7);
+  }
+  return next;
+}
+
+function formatPackageDate(value?: string | null) {
+  if (!value) return "Sem validade";
+  const date = parseIsoDate(value);
+  return date
+    ? date.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })
+    : value;
+}
+
 function formatWeekdayCompact(date: Date) {
   return date
     .toLocaleDateString("pt-BR", { weekday: "short" })
@@ -200,9 +239,16 @@ function getEvolutionStatusLabel(session: ScheduleItem) {
 
 function isCourtesySession(session: ScheduleItem) {
   if (session.is_external_google) return false;
+  if (session.billing_mode === "package" || session.package_id) return false;
+  if (session.billing_mode === "free") return true;
   if (session.session_price === null || session.session_price === undefined) return false;
   const amount = Number(session.session_price);
   return Number.isFinite(amount) && amount <= 0;
+}
+
+function isPackageSession(session: ScheduleItem) {
+  if (session.is_external_google) return false;
+  return session.billing_mode === "package" || Boolean(session.package_id);
 }
 
 function getBillingStatusLabel(status?: string | null) {
@@ -560,37 +606,116 @@ export default function SchedulePage() {
   );
   const suggestedPrice = selectedPatient?.session_price ?? schedule.profile?.session_price_default ?? null;
   const billingMode = schedule.newSession.billing_mode ?? "single";
+  const isPackageBilling = billingMode === "package";
   const sessionPriceValue =
     schedule.newSession.session_price?.trim() !== ""
       ? Number(schedule.newSession.session_price)
       : suggestedPrice;
   const isFreeSession = billingMode === "free";
-  const chargeAmount = isFreeSession ? 0 : Number(sessionPriceValue ?? 0);
+  const chargeAmount = isFreeSession || isPackageBilling ? 0 : Number(sessionPriceValue ?? 0);
+  const recurrenceCountValue = Math.max(
+    1,
+    Math.min(parseInt(schedule.newSession.recurrence_count, 10) || 1, 24)
+  );
+  const packageRequestedSessions = schedule.newSession.is_recurring ? recurrenceCountValue : 1;
+  const packageReferenceDate = useMemo(() => {
+    const baseDate = parseIsoDate(schedule.newSession.scheduled_at) ?? new Date();
+    let cursor = baseDate;
+    const steps = schedule.newSession.is_recurring && !schedule.newSession.is_indefinite
+      ? packageRequestedSessions - 1
+      : 0;
 
-  function setBillingMode(nextMode: "single" | "free") {
+    for (let i = 0; i < steps; i++) {
+      cursor = addSchedulePeriod(cursor, schedule.newSession.recurrence_period);
+    }
+
+    return formatIsoDate(cursor);
+  }, [
+    packageRequestedSessions,
+    schedule.newSession.is_indefinite,
+    schedule.newSession.is_recurring,
+    schedule.newSession.recurrence_period,
+    schedule.newSession.scheduled_at,
+  ]);
+  const activePackageOptions = useMemo(
+    () => schedule.patientSessionPackages.filter((sessionPackage) => sessionPackage.status === "active"),
+    [schedule.patientSessionPackages]
+  );
+  const packagesWithReservableBalance = useMemo(
+    () =>
+      activePackageOptions.filter((sessionPackage) => {
+        const reservableSessions = Number(
+          sessionPackage.reservable_sessions ?? sessionPackage.remaining_sessions ?? 0
+        );
+        return reservableSessions > 0 && !(sessionPackage.expires_at && sessionPackage.expires_at < packageReferenceDate);
+      }),
+    [activePackageOptions, packageReferenceDate]
+  );
+  const packageChoiceAvailable = packagesWithReservableBalance.length > 0;
+  const selectedPackage = useMemo(
+    () => activePackageOptions.find((sessionPackage) => sessionPackage.id === schedule.newSession.package_id) ?? null,
+    [activePackageOptions, schedule.newSession.package_id]
+  );
+  const selectedPackageReservableSessions = selectedPackage
+    ? Number(selectedPackage.reservable_sessions ?? selectedPackage.remaining_sessions ?? 0)
+    : 0;
+  const selectedPackageBlockReason = selectedPackage
+    ? getSessionPackageScheduleBlockReason({
+        status: selectedPackage.status,
+        paymentStatus: selectedPackage.payment_status,
+        allowUseBeforePayment: selectedPackage.allow_use_before_payment,
+        expiresAt: selectedPackage.expires_at,
+        referenceDate: packageReferenceDate,
+        reservableSessions: selectedPackageReservableSessions,
+        requestedSessions: packageRequestedSessions,
+      })
+    : null;
+  const selectedPackageError = isPackageBilling
+    ? schedule.newSession.is_recurring && schedule.newSession.is_indefinite
+      ? "Recorrência sem data final não pode usar pacote nesta fase."
+      : !selectedPackage
+        ? "Selecione um pacote para esta sessão."
+        : selectedPackageBlockReason === "package_without_balance" && schedule.newSession.is_recurring
+          ? "O pacote selecionado não possui saldo suficiente para esta recorrência."
+          : selectedPackageBlockReason
+            ? SESSION_PACKAGE_SCHEDULE_BLOCK_MESSAGES[selectedPackageBlockReason]
+            : null
+    : null;
+
+  function setBillingMode(nextMode: "single" | "free" | "package") {
+    const fallbackPackage = selectedPackage ?? packagesWithReservableBalance[0] ?? activePackageOptions[0] ?? null;
     schedule.setNewSession({
       ...schedule.newSession,
       billing_mode: nextMode,
+      package_id: nextMode === "package" ? fallbackPackage?.id ?? "" : "",
       session_price:
         nextMode === "free"
           ? "0"
+          : nextMode === "package"
+            ? fallbackPackage
+              ? String(fallbackPackage.unit_amount)
+              : ""
           : suggestedPrice != null
             ? String(suggestedPrice)
             : "",
+      is_indefinite: nextMode === "package" ? false : schedule.newSession.is_indefinite,
     });
   }
 
   function applySelectedPatient(patientId: string) {
     const patient = schedule.patients.find((item) => item.id === patientId);
     const resolvedPrice = patient?.session_price ?? schedule.profile?.session_price_default ?? null;
+    const nextBillingMode = schedule.newSession.billing_mode === "package" ? "single" : schedule.newSession.billing_mode;
 
     schedule.setNewSession({
       ...schedule.newSession,
       patient_id: patientId,
+      package_id: "",
+      billing_mode: nextBillingMode,
       session_price:
-        schedule.newSession.billing_mode === "free"
+        nextBillingMode === "free"
           ? "0"
-          : schedule.newSession.session_price?.trim() !== ""
+          : nextBillingMode === "single" && schedule.newSession.session_price?.trim() !== ""
             ? schedule.newSession.session_price
             : resolvedPrice != null
               ? String(resolvedPrice)
@@ -608,9 +733,24 @@ export default function SchedulePage() {
     schedule.setSaving(true);
     try {
       const duration = parseInt(schedule.newSession.duration_minutes, 10);
-      const rawPrice = isFreeSession ? 0 : chargeAmount;
+      const rawPrice = isFreeSession
+        ? 0
+        : isPackageBilling && selectedPackage
+          ? Number(selectedPackage.unit_amount)
+          : chargeAmount;
 
-      if (!isFreeSession && (!Number.isFinite(rawPrice) || rawPrice <= 0)) {
+      if (isPackageBilling) {
+        if (selectedPackageError) {
+          setScheduleError(selectedPackageError);
+          return;
+        }
+        if (!selectedPackage) {
+          setScheduleError("Selecione um pacote para esta sessão.");
+          return;
+        }
+      }
+
+      if (!isFreeSession && !isPackageBilling && (!Number.isFinite(rawPrice) || rawPrice <= 0)) {
         setScheduleError("Sessão avulsa precisa ter valor maior que zero. Para não cobrar, selecione cortesia.");
         return;
       }
@@ -624,6 +764,7 @@ export default function SchedulePage() {
         sessionType: schedule.newSession.session_type,
         sessionPrice: rawPrice,
         billingMode,
+        packageId: isPackageBilling ? selectedPackage?.id ?? null : null,
         location: schedule.newSession.location,
         isRecurring: schedule.newSession.is_recurring,
         recurrencePeriod: schedule.newSession.recurrence_period as "weekly" | "monthly",
@@ -663,6 +804,7 @@ export default function SchedulePage() {
         session_type: "individual",
         session_price: "",
         billing_mode: "single",
+        package_id: "",
         location: "office",
         is_recurring: false,
         recurrence_period: "weekly",
@@ -742,9 +884,15 @@ export default function SchedulePage() {
         throw new Error(result.error || "Falha ao marcar sessão como realizada.");
       }
 
-      toast.success("Sessão marcada como realizada.");
+      if (result.packageCreditConsumed) {
+        toast.success("Sessão realizada. 1 crédito do pacote foi consumido.");
+      } else {
+        toast.success("Sessão marcada como realizada.");
+      }
       if (result.billingCreated) {
         toast.success("Cobrança pendente criada no financeiro.");
+      } else if (result.packageCreditAlreadyConsumed) {
+        toast.info("Crédito do pacote já estava consumido para esta sessão.");
       } else if (result.billingAlreadyExists) {
         toast.info("Já existe um lançamento financeiro vinculado a esta sessão.");
       } else if (result.billingSkippedReason === "courtesy_or_zero_value") {
@@ -1586,14 +1734,14 @@ export default function SchedulePage() {
                       : "border-emerald-200 bg-emerald-50 text-emerald-700"
                   )}
                 >
-                  {isFreeSession ? "Sem cobrança" : "Cobrança ao realizar"}
+                  {isFreeSession ? "Sem cobrança" : isPackageBilling ? "Pacote de sessões" : "Cobrança ao realizar"}
                 </Badge>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-[minmax(0,1.1fr)_minmax(220px,0.9fr)]">
+              <div className="grid gap-4 md:grid-cols-[minmax(0,1.15fr)_minmax(240px,0.85fr)]">
                 <div className="space-y-2">
                   <Label>Tipo de cobrança</Label>
-                  <div className="grid gap-2 min-[430px]:grid-cols-2">
+                  <div className="grid gap-2 min-[520px]:grid-cols-3">
                     <Button
                       type="button"
                       variant={billingMode === "single" ? "default" : "outline"}
@@ -1608,6 +1756,33 @@ export default function SchedulePage() {
                       <span className="w-full whitespace-normal text-sm font-semibold leading-4">Sessão avulsa</span>
                       <span className={cn("w-full whitespace-normal break-words text-[11px] leading-4", billingMode === "single" ? "text-primary-foreground/80" : "text-muted-foreground")}>
                         Gera pendência depois
+                      </span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={billingMode === "package" ? "default" : "outline"}
+                      disabled={!selectedPatient || schedule.patientSessionPackagesLoading || !packageChoiceAvailable}
+                      className={cn(
+                        "h-auto min-h-14 w-full min-w-0 flex-col items-start gap-1 whitespace-normal rounded-2xl px-3 py-2 text-left",
+                        billingMode === "package"
+                          ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                          : "border-border/70 bg-white text-foreground hover:bg-emerald-50",
+                        (!selectedPatient || schedule.patientSessionPackagesLoading || !packageChoiceAvailable) && "opacity-60"
+                      )}
+                      onClick={() => packageChoiceAvailable && setBillingMode("package")}
+                    >
+                      <span className="flex w-full items-center gap-1.5 whitespace-normal text-sm font-semibold leading-4">
+                        <PackageCheck className="size-3.5 shrink-0" />
+                        Usar pacote
+                      </span>
+                      <span className={cn("w-full whitespace-normal break-words text-[11px] leading-4", billingMode === "package" ? "text-white/85" : "text-muted-foreground")}>
+                        {!selectedPatient
+                          ? "Selecione paciente"
+                          : schedule.patientSessionPackagesLoading
+                            ? "Carregando pacotes"
+                            : packageChoiceAvailable
+                              ? `${Number(packagesWithReservableBalance[0].reservable_sessions ?? packagesWithReservableBalance[0].remaining_sessions ?? 0)} sessões restantes`
+                              : "Nenhum pacote ativo"}
                       </span>
                     </Button>
                     <Button
@@ -1627,9 +1802,93 @@ export default function SchedulePage() {
                       </span>
                     </Button>
                   </div>
+                  {selectedPatient && !schedule.patientSessionPackagesLoading && !packageChoiceAvailable && (
+                    <div className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs font-medium text-muted-foreground">
+                      <span>Nenhum pacote ativo para este paciente.</span>
+                      <button
+                        type="button"
+                        className="font-semibold text-primary transition-colors hover:text-primary/80"
+                        onClick={() => router.push(`/dashboard/patients/${selectedPatient.id}?tab=finance`)}
+                      >
+                        Criar pacote
+                      </button>
+                    </div>
+                  )}
+                  {schedule.patientSessionPackagesError && (
+                    <p className="text-xs font-medium text-rose-600">{schedule.patientSessionPackagesError}</p>
+                  )}
                 </div>
 
-                <FieldShell>
+                {isPackageBilling ? (
+                  <FieldShell>
+                    <Label>Pacote</Label>
+                    <select
+                      className={nativeSelectClassName()}
+                      value={schedule.newSession.package_id}
+                      onChange={(event) => {
+                        const nextPackage = activePackageOptions.find((sessionPackage) => sessionPackage.id === event.target.value) ?? null;
+                        schedule.setNewSession({
+                          ...schedule.newSession,
+                          package_id: event.target.value,
+                          session_price: nextPackage ? String(nextPackage.unit_amount) : "",
+                          is_indefinite: false,
+                        });
+                      }}
+                    >
+                      <option value="">Selecionar pacote</option>
+                      {activePackageOptions.map((sessionPackage) => {
+                        const reservableSessions = Number(sessionPackage.reservable_sessions ?? sessionPackage.remaining_sessions ?? 0);
+                        return (
+                          <option key={sessionPackage.id} value={sessionPackage.id}>
+                            {sessionPackage.name} - {reservableSessions} restantes
+                          </option>
+                        );
+                      })}
+                    </select>
+                    {selectedPackage ? (
+                      <div className="space-y-2 rounded-xl border border-emerald-100 bg-emerald-50/55 p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-emerald-950">{selectedPackage.name}</p>
+                            <p className="text-[11px] font-medium text-emerald-800">
+                              {selectedPackageReservableSessions} sessões reserváveis · {formatCurrency(Number(selectedPackage.unit_amount))} por sessão
+                            </p>
+                          </div>
+                          <Badge variant="outline" className="shrink-0 rounded-full border-emerald-200 bg-white/75 px-2.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">
+                            {getSessionPackagePaymentStatusLabel(selectedPackage.payment_status)}
+                          </Badge>
+                        </div>
+                        <p className="text-[11px] font-medium text-emerald-800">
+                          Total {formatCurrency(Number(selectedPackage.total_amount))} · Validade {formatPackageDate(selectedPackage.expires_at)}
+                        </p>
+                        {selectedPackage.payment_status !== "paid" && (
+                          <p className="text-[11px] font-semibold text-amber-700">
+                            Pagamento {getSessionPackagePaymentStatusLabel(selectedPackage.payment_status).toLowerCase()}.
+                          </p>
+                        )}
+                        {selectedPackage.payment_status !== "paid" && selectedPackage.allow_use_before_payment === false && (
+                          <p className="text-[11px] font-semibold text-rose-700">
+                            Este pacote não permite uso antes do pagamento.
+                          </p>
+                        )}
+                        {selectedPackageError ? (
+                          <p className="rounded-lg bg-white/80 px-2 py-1.5 text-[11px] font-semibold text-rose-700">
+                            {selectedPackageError}
+                          </p>
+                        ) : (
+                          <p className="text-[11px] font-medium text-muted-foreground">
+                            O crédito será consumido apenas ao marcar a sessão como realizada.
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] font-medium text-muted-foreground">
+                        Selecione um pacote ativo para vincular esta sessão.
+                      </p>
+                    )}
+                  </FieldShell>
+                ) : (
+                  <FieldShell>
                   <Label>Valor da sessão</Label>
                   <Input
                     type="number"
@@ -1659,7 +1918,8 @@ export default function SchedulePage() {
                       Informe um valor maior que zero para sessão avulsa.
                     </p>
                   )}
-                </FieldShell>
+                  </FieldShell>
+                )}
               </div>
             </section>
 
@@ -1713,14 +1973,20 @@ export default function SchedulePage() {
                     <Checkbox
                       id="is-indefinite"
                       checked={schedule.newSession.is_indefinite}
+                      disabled={isPackageBilling}
                       onCheckedChange={(checked) =>
-                        schedule.setNewSession({ ...schedule.newSession, is_indefinite: checked === true })
+                        schedule.setNewSession({ ...schedule.newSession, is_indefinite: isPackageBilling ? false : checked === true })
                       }
                     />
                     <Label htmlFor="is-indefinite" className="text-sm font-medium">
                       Sem data final (cria 12 ocorrências iniciais)
                     </Label>
                   </div>
+                  {isPackageBilling && (
+                    <p className="text-xs font-medium text-muted-foreground sm:col-span-2">
+                      Pacotes precisam de quantidade definida nesta fase.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">Cria apenas uma sessão para o horário selecionado.</p>
@@ -1837,20 +2103,30 @@ export default function SchedulePage() {
                       Cobrança
                     </div>
                     <p className={cn("text-sm font-semibold", isCourtesySession(selectedItem) ? "text-slate-600" : "text-emerald-700")}>
-                      {isCourtesySession(selectedItem)
-                        ? "Cortesia / sem cobrança"
-                        : `Sessão avulsa${selectedItem.session_price != null ? ` · ${formatCurrency(Number(selectedItem.session_price))}` : ""}`}
+                      {isPackageSession(selectedItem)
+                        ? `Pacote de sessões${selectedItem.session_package?.name ? ` · ${selectedItem.session_package.name}` : ""}`
+                        : isCourtesySession(selectedItem)
+                          ? "Cortesia / sem cobrança"
+                          : `Sessão avulsa${selectedItem.session_price != null ? ` · ${formatCurrency(Number(selectedItem.session_price))}` : ""}`}
                     </p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {isCourtesySession(selectedItem)
-                        ? "Não será gerada cobrança ao marcar como realizada."
-                        : selectedItem.billing_status
-                          ? `Financeiro: ${getBillingStatusLabel(selectedItem.billing_status) ?? selectedItem.billing_status}${
-                              selectedItem.billing_amount != null ? ` · ${formatCurrency(Number(selectedItem.billing_amount))}` : ""
-                            }`
-                          : selectedItem.status === "completed"
-                            ? "Sessão realizada. Confira o lançamento no financeiro."
-                            : "A cobrança será gerada como pendente ao realizar."}
+                      {isPackageSession(selectedItem)
+                        ? `${selectedItem.session_price != null ? `Valor de referência: ${formatCurrency(Number(selectedItem.session_price))}. ` : ""}${
+                            selectedItem.status === "completed"
+                              ? selectedItem.package_credit_consumed
+                                ? "Crédito consumido."
+                                : "Crédito pendente de consumo."
+                              : "Crédito será consumido ao marcar como realizada."
+                          }`
+                        : isCourtesySession(selectedItem)
+                          ? "Não será gerada cobrança ao marcar como realizada."
+                          : selectedItem.billing_status
+                            ? `Financeiro: ${getBillingStatusLabel(selectedItem.billing_status) ?? selectedItem.billing_status}${
+                                selectedItem.billing_amount != null ? ` · ${formatCurrency(Number(selectedItem.billing_amount))}` : ""
+                              }`
+                            : selectedItem.status === "completed"
+                              ? "Sessão realizada. Confira o lançamento no financeiro."
+                              : "A cobrança será gerada como pendente ao realizar."}
                     </p>
                   </div>
                 )}
