@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { completeScheduleSession } from "@/app/actions/schedule-sessions";
+import { completeScheduleSession, reverseCompletedScheduleSession } from "@/app/actions/schedule-sessions";
 import { createClient } from "@/lib/supabase/client";
 import { PatientService } from "@/services/patient-service";
 import { BillingService } from "@/services/billing-service";
@@ -307,6 +307,59 @@ export function usePatientData() {
     }
   };
 
+  const handleReverseCompletedSession = async (session: Session): Promise<boolean> => {
+    if (session.status !== "completed") return false;
+
+    const confirmed = window.confirm(
+      [
+        "Desfazer realização desta sessão?",
+        "",
+        "A sessão voltará para agendada.",
+        "Cobrança pendente será cancelada, se houver.",
+        "Crédito de pacote será devolvido, se houver.",
+        "A evolução será mantida no histórico.",
+      ].join("\n")
+    );
+    if (!confirmed) return false;
+
+    setIsSaving(true);
+    try {
+      const result = await reverseCompletedScheduleSession({
+        sessionId: session.id,
+        reason: "Desfazer realização pelo prontuário do paciente",
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || "Falha ao desfazer realização.");
+      }
+
+      if (result.packageCreditReversed) {
+        toast.success("Sessão revertida e crédito devolvido ao pacote.");
+      } else if (result.cashFlowCancelled) {
+        toast.success("Sessão revertida e cobrança pendente cancelada.");
+      } else {
+        toast.success("Sessão revertida.");
+      }
+      if (result.warning === "package_usage_not_found") {
+        toast.info("Nenhum crédito ativo foi encontrado para devolver.");
+      }
+      if (result.hadEvolution) {
+        toast.info("A evolução registrada foi mantida no histórico.");
+      }
+
+      setShowSessionModal(false);
+      setViewingSession(null);
+      await loadData();
+      window.dispatchEvent(new CustomEvent("notifications:refresh"));
+      return true;
+    } catch (err: any) {
+      showError("Erro ao desfazer realização", err.message || "Erro inesperado.");
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleStartEditingSession = () => {
     if (!viewingSession) return;
     
@@ -571,6 +624,7 @@ export function usePatientData() {
     handleAddNote,
     handleStatusChange,
     handleCompleteSession,
+    handleReverseCompletedSession,
     handleStartEditingSession,
     handleSaveSessionEdit,
     handleCancelSession,

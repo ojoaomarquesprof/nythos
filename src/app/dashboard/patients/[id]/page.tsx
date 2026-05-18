@@ -25,6 +25,7 @@ import {
   Check,
   CheckCircle2,
   History,
+  Undo2,
   Smile,
   Frown,
   Zap,
@@ -557,6 +558,7 @@ export default function PatientDetailPage() {
     handleAddNote,
     handleStatusChange,
     handleCompleteSession,
+    handleReverseCompletedSession,
     handleStartEditingSession,
     handleSaveSessionEdit,
     handleCancelSession,
@@ -2070,6 +2072,7 @@ export default function PatientDetailPage() {
                 isSaving={isSaving}
                 handleExportSessions={handleExportSessions}
                 handleCompleteSession={handleCompleteSession}
+                handleReverseCompletedSession={handleReverseCompletedSession}
                 onViewSession={(session) => {
                   setViewingSession(session);
                   setIsEditingSession(false);
@@ -2721,6 +2724,17 @@ export default function PatientDetailPage() {
                         >
                           <FileText className="w-4 h-4 mr-2" />
                           {hasSessionEvolution(viewingSession) ? "EDITAR EVOLUÇÃO" : "REGISTRAR EVOLUÇÃO"}
+                        </Button>
+                      )}
+                      {viewingSession.status === "completed" && (
+                        <Button
+                          variant="outline"
+                          onClick={() => handleReverseCompletedSession(viewingSession)}
+                          disabled={isSaving}
+                          className="rounded-full px-6 h-10 font-bold border-amber-200 text-amber-700 hover:bg-amber-50"
+                        >
+                          <Undo2 className="w-4 h-4 mr-2" />
+                          DESFAZER REALIZAÇÃO
                         </Button>
                       )}
                     </div>

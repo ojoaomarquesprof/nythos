@@ -1,5 +1,5 @@
 import React from "react";
-import { Calendar, CheckCircle2, ChevronRight, Clock, Download, X } from "lucide-react";
+import { Calendar, CheckCircle2, ChevronRight, Clock, Download, Undo2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,6 +13,7 @@ interface SessionListProps {
   isSaving: boolean;
   handleExportSessions: () => Promise<void>;
   handleCompleteSession: (session: Session) => Promise<boolean>;
+  handleReverseCompletedSession: (session: Session) => Promise<boolean>;
   onViewSession: (session: Session) => void;
   setRescheduleSession: (session: Session | null) => void;
   setRescheduleDate: (date: string) => void;
@@ -28,6 +29,7 @@ export function SessionList({
   isSaving,
   handleExportSessions,
   handleCompleteSession,
+  handleReverseCompletedSession,
   onViewSession,
   setRescheduleSession,
   setRescheduleDate,
@@ -74,6 +76,7 @@ export function SessionList({
           {sessions.map((session: Session) => {
             const statusCfg = SESSION_STATUS[session.status as keyof typeof SESSION_STATUS] || SESSION_STATUS.scheduled;
             const canManageScheduledSession = session.status === "scheduled";
+            const canReverseCompletedSession = session.status === "completed";
             const hasEvolution = Boolean((session as any).has_session_evolution || session.session_notes_encrypted);
             return (
               <Card key={session.id} className="rounded-2xl border border-border/70 bg-white/85 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
@@ -134,6 +137,18 @@ export function SessionList({
                         >
                           <CheckCircle2 className="size-3.5" />
                           Realizada
+                        </Button>
+                      )}
+                      {canReverseCompletedSession && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 rounded-xl border-amber-200 bg-white text-xs text-amber-700 hover:bg-amber-50"
+                          onClick={() => handleReverseCompletedSession(session)}
+                          disabled={isSaving}
+                        >
+                          <Undo2 className="size-3.5" />
+                          Desfazer
                         </Button>
                       )}
                       {canManageScheduledSession && (

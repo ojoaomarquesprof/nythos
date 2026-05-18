@@ -10,6 +10,7 @@ import {
   canSetPackageTotalSessions,
   formatSessionPackageBalance,
   getPackageCreditConsumptionDecision,
+  getPackageCreditReversalDecision,
   getSessionPackageScheduleBlockReason,
   getSessionPackagePaymentStatusLabel,
   getSessionPackageStatusLabel,
@@ -87,6 +88,29 @@ describe("session package rules", () => {
       canComplete: true,
       shouldCreateUsage: false,
       reason: "already_consumed",
+    });
+  });
+
+  it("decides package credit reversal idempotently", () => {
+    expect(getPackageCreditReversalDecision({
+      hasActiveUsageForSession: true,
+    })).toEqual({ canReverse: true, shouldReverseUsage: true });
+
+    expect(getPackageCreditReversalDecision({
+      hasActiveUsageForSession: false,
+      hasReversedUsageForSession: true,
+    })).toEqual({
+      canReverse: true,
+      shouldReverseUsage: false,
+      reason: "already_reversed",
+    });
+
+    expect(getPackageCreditReversalDecision({
+      hasActiveUsageForSession: false,
+    })).toEqual({
+      canReverse: true,
+      shouldReverseUsage: false,
+      reason: "usage_not_found",
     });
   });
 

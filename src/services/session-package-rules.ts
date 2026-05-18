@@ -36,6 +36,10 @@ export type PackageCreditConsumptionDecision =
   | { canComplete: true; shouldCreateUsage: false; reason: "already_consumed" }
   | { canComplete: false; shouldCreateUsage: false; reason: "package_without_balance" };
 
+export type PackageCreditReversalDecision =
+  | { canReverse: true; shouldReverseUsage: true }
+  | { canReverse: true; shouldReverseUsage: false; reason: "already_reversed" | "usage_not_found" };
+
 export const SESSION_PACKAGE_SCHEDULE_BLOCK_MESSAGES: Record<SessionPackageScheduleBlockReason, string> = {
   package_not_active: "Este pacote não está ativo.",
   package_expired: "Este pacote está vencido.",
@@ -121,6 +125,21 @@ export function getPackageCreditConsumptionDecision(input: {
   }
 
   return { canComplete: true, shouldCreateUsage: true };
+}
+
+export function getPackageCreditReversalDecision(input: {
+  hasActiveUsageForSession: boolean;
+  hasReversedUsageForSession?: boolean;
+}): PackageCreditReversalDecision {
+  if (input.hasActiveUsageForSession) {
+    return { canReverse: true, shouldReverseUsage: true };
+  }
+
+  if (input.hasReversedUsageForSession) {
+    return { canReverse: true, shouldReverseUsage: false, reason: "already_reversed" };
+  }
+
+  return { canReverse: true, shouldReverseUsage: false, reason: "usage_not_found" };
 }
 
 export function isSessionPackageExpired(

@@ -76,6 +76,21 @@ export interface CompleteSessionResult {
   error?: string;
 }
 
+export interface ReverseCompletedSessionPayload {
+  sessionId: string;
+  reason?: string | null;
+}
+
+export interface ReverseCompletedSessionResult {
+  success: boolean;
+  billingMode?: "single" | "free" | "package" | string;
+  cashFlowCancelled?: boolean;
+  packageCreditReversed?: boolean;
+  hadEvolution?: boolean;
+  warning?: string | null;
+  error?: string;
+}
+
 type TherapistGoogleProfile = {
   google_access_token: string | null;
   google_refresh_token: string | null;
@@ -136,6 +151,7 @@ const ALLOWED_SESSION_TYPES = new Set([
 
 const ALLOWED_CANCEL_SESSION_KEYS = ["sessionId"] as const;
 const ALLOWED_COMPLETE_SESSION_KEYS = ["sessionId", "allowFutureCompletion"] as const;
+const ALLOWED_REVERSE_SESSION_KEYS = ["sessionId", "reason"] as const;
 
 type ValidatedCreatePayload = {
   therapistId: string;
@@ -289,6 +305,26 @@ function parseCompletePayload(payload: CompleteSessionPayload): { ok: true; sess
   };
 }
 
+function parseReversePayload(payload: ReverseCompletedSessionPayload): { ok: true; sessionId: string; reason: string | null } | { ok: false; error: string } {
+  if (!isPlainObject(payload) || !hasOnlyAllowedKeys(payload, ALLOWED_REVERSE_SESSION_KEYS)) {
+    return { ok: false, error: "Payload inválido para reversão da sessão." };
+  }
+
+  if (!isValidUuid(payload.sessionId)) {
+    return { ok: false, error: "Sessão inválida." };
+  }
+
+  const reason = typeof payload.reason === "string"
+    ? payload.reason.trim().slice(0, 500)
+    : null;
+
+  return {
+    ok: true,
+    sessionId: payload.sessionId.trim(),
+    reason: reason || null,
+  };
+}
+
 function resolveBillingAmount(...values: Array<number | string | null | undefined>): number {
   for (const value of values) {
     if (value === null || value === undefined || value === "") continue;
@@ -342,6 +378,27 @@ function getCompleteSessionErrorMessage(error: unknown): string {
   }
 
   return "Não foi possível marcar a sessão como realizada.";
+}
+
+function getReverseCompletedSessionErrorMessage(error: unknown): string {
+  const message = typeof error === "object" && error !== null && "message" in error
+    ? String((error as { message?: unknown }).message ?? "")
+    : "";
+
+  if (message.includes("not_authorized")) {
+    return "Você não tem permissão para desfazer esta realização.";
+  }
+  if (message.includes("session_not_found")) {
+    return "Sessão não encontrada.";
+  }
+  if (message.includes("session_not_completed")) {
+    return "A sessão já não está marcada como realizada.";
+  }
+  if (message.includes("session_billing_confirmed")) {
+    return "Esta sessão possui cobrança confirmada. Ajuste o financeiro antes de desfazer a realização.";
+  }
+
+  return "Não foi possível desfazer a realização da sessão.";
 }
 
 function addPeriod(date: Date, period: "weekly" | "monthly"): Date {
@@ -1159,6 +1216,55 @@ export async function completeScheduleSession(
   } catch (err: unknown) {
     logSafeError("[completeScheduleSession] Unexpected error", err);
     return { success: false, error: "Erro ao marcar sessão como realizada." };
+  }
+}
+
+export async function reverseCompletedScheduleSession(
+  payload: ReverseCompletedSessionPayload
+): Promise<ReverseCompletedSessionResult> {
+  try {
+    const parsedPayload = parseReversePayload(payload);
+    if (!parsedPayload.ok) {
+      return { success: false, error: parsedPayload.error };
+    }
+
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return { success: false, error: "Sessão inválida." };
+
+    const { data, error } = await supabase.rpc("reverse_completed_session_secure", {
+      p_session_id: parsedPayload.sessionId,
+      p_reason: parsedPayload.reason,
+    });
+
+    if (error) {
+      logSafeError("[reverseCompletedScheduleSession] Failed to reverse completed session", error);
+      return { success: false, error: getReverseCompletedSessionErrorMessage(error) };
+    }
+
+    const result = data && typeof data === "object" && !Array.isArray(data)
+      ? (data as Record<string, unknown>)
+      : {};
+    const patientId = typeof result.patient_id === "string" ? result.patient_id : null;
+
+    revalidatePath("/dashboard/schedule");
+    if (patientId) revalidatePath(`/dashboard/patients/${patientId}`);
+    revalidatePath("/dashboard/finances");
+
+    return {
+      success: true,
+      billingMode: typeof result.billing_mode === "string" ? result.billing_mode : undefined,
+      cashFlowCancelled: result.cash_flow_cancelled === true,
+      packageCreditReversed: result.package_credit_reversed === true,
+      hadEvolution: result.had_evolution === true,
+      warning: typeof result.warning === "string" ? result.warning : null,
+    };
+  } catch (err: unknown) {
+    logSafeError("[reverseCompletedScheduleSession] Unexpected error", err);
+    return { success: false, error: "Erro ao desfazer realização da sessão." };
   }
 }
 

@@ -1159,6 +1159,13 @@ export type Database = {
         };
         Returns: Json;
       };
+      reverse_completed_session_secure: {
+        Args: {
+          p_session_id: string;
+          p_reason?: string | null;
+        };
+        Returns: Json;
+      };
     };
   };
 };

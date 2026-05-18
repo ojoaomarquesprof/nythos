@@ -23,6 +23,7 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  Undo2,
   Unlink,
   UserRound,
   Video,
@@ -41,7 +42,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { SubscriptionGate } from "@/components/auth/subscription-gate";
 import { cn } from "@/lib/utils";
 import { SESSION_STATUS, formatCurrency, formatTime } from "@/lib/constants";
-import { cancelScheduleSession, completeScheduleSession, createScheduleSessions } from "@/app/actions/schedule-sessions";
+import {
+  cancelScheduleSession,
+  completeScheduleSession,
+  createScheduleSessions,
+  reverseCompletedScheduleSession,
+} from "@/app/actions/schedule-sessions";
 import {
   SESSION_PACKAGE_SCHEDULE_BLOCK_MESSAGES,
   getSessionPackagePaymentStatusLabel,
@@ -519,6 +525,7 @@ export default function SchedulePage() {
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [cancellingSession, setCancellingSession] = useState(false);
   const [completingSession, setCompletingSession] = useState(false);
+  const [reversingSession, setReversingSession] = useState(false);
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
@@ -910,6 +917,55 @@ export default function SchedulePage() {
       toast.error(err?.message ?? "Falha ao marcar sessão como realizada.");
     } finally {
       setCompletingSession(false);
+    }
+  }
+
+  async function handleReverseCompletedSession() {
+    if (!selectedItem?.id || selectedIsExternal || selectedItem.status !== "completed") return;
+
+    const confirmationLines = [
+      "Desfazer realização desta sessão?",
+      "",
+      "A sessão voltará para agendada.",
+      "Cobrança pendente será cancelada, se houver.",
+      "Crédito de pacote será devolvido, se houver.",
+      "A evolução será mantida no histórico.",
+    ];
+    if (!window.confirm(confirmationLines.join("\n"))) return;
+
+    setReversingSession(true);
+    try {
+      const result = await reverseCompletedScheduleSession({
+        sessionId: selectedItem.id,
+        reason: "Desfazer realização pela agenda",
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || "Falha ao desfazer realização.");
+      }
+
+      if (result.packageCreditReversed) {
+        toast.success("Sessão revertida e crédito devolvido ao pacote.");
+      } else if (result.cashFlowCancelled) {
+        toast.success("Sessão revertida e cobrança pendente cancelada.");
+      } else {
+        toast.success("Sessão revertida.");
+      }
+      if (result.warning === "package_usage_not_found") {
+        toast.info("Nenhum crédito ativo foi encontrado para devolver.");
+      }
+      if (result.hadEvolution) {
+        toast.info("A evolução registrada foi mantida no histórico.");
+      }
+
+      schedule.setShowSessionDetails(false);
+      schedule.setSelectedSessionDetails(null);
+      await schedule.loadData();
+      window.dispatchEvent(new CustomEvent("notifications:refresh"));
+    } catch (err: any) {
+      toast.error(err?.message ?? "Falha ao desfazer realização.");
+    } finally {
+      setReversingSession(false);
     }
   }
 
@@ -2175,7 +2231,7 @@ export default function SchedulePage() {
                 variant="outline"
                 className="rounded-2xl bg-white"
                 onClick={() => router.push(`/dashboard/patients/${selectedItem.patient_id}`)}
-                disabled={cancellingSession || completingSession}
+                disabled={cancellingSession || completingSession || reversingSession}
               >
                 <UserRound className="size-4" />
                 Ver paciente
@@ -2190,17 +2246,28 @@ export default function SchedulePage() {
                     `/dashboard/patients/${selectedItem.patient_id}?tab=sessions&sessionId=${selectedItem.id}&evolution=1`
                   )
                 }
-                disabled={cancellingSession || completingSession}
+                disabled={cancellingSession || completingSession || reversingSession}
               >
                 <FileText className="size-4" />
                 {hasSessionEvolution(selectedItem) ? "Editar evolução" : "Registrar evolução"}
+              </Button>
+            )}
+            {!selectedIsExternal && selectedItem?.status === "completed" && (
+              <Button
+                variant="outline"
+                className="rounded-2xl border-amber-200 bg-white text-amber-700 hover:bg-amber-50 hover:text-amber-800"
+                onClick={handleReverseCompletedSession}
+                disabled={cancellingSession || completingSession || reversingSession}
+              >
+                <Undo2 className="size-4" />
+                {reversingSession ? "Desfazendo..." : "Desfazer realização"}
               </Button>
             )}
             {canCompleteSelectedSession && (
               <Button
                 className="rounded-2xl bg-emerald-600 text-white shadow-emerald-600/20 hover:bg-emerald-700"
                 onClick={() => handleCompleteSession()}
-                disabled={cancellingSession || completingSession}
+                disabled={cancellingSession || completingSession || reversingSession}
               >
                 <CheckCircle className="size-4" />
                 {completingSession ? "Finalizando..." : "Marcar como realizada"}
@@ -2211,12 +2278,12 @@ export default function SchedulePage() {
                 variant="outline"
                 className="rounded-2xl border-rose-200 bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                 onClick={handleCancelSession}
-                disabled={cancellingSession || completingSession}
+                disabled={cancellingSession || completingSession || reversingSession}
               >
                 {cancellingSession ? "Cancelando..." : "Cancelar sessão"}
               </Button>
             )}
-            <Button className="rounded-2xl" onClick={() => schedule.setShowSessionDetails(false)} disabled={cancellingSession || completingSession}>
+            <Button className="rounded-2xl" onClick={() => schedule.setShowSessionDetails(false)} disabled={cancellingSession || completingSession || reversingSession}>
               Fechar
             </Button>
           </DialogFooter>
