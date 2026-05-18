@@ -1124,6 +1124,41 @@ export type Database = {
         Args: { p_document_id: string };
         Returns: Json;
       };
+      current_professional_can_manage_financial_patient: {
+        Args: { p_patient_id: string };
+        Returns: boolean;
+      };
+      create_session_package_with_billing: {
+        Args: {
+          p_patient_id: string;
+          p_name: string;
+          p_total_sessions: number;
+          p_total_amount: number;
+          p_start_date?: string | null;
+          p_expires_at?: string | null;
+          p_guardian_id?: string | null;
+          p_allow_use_before_payment?: boolean;
+        };
+        Returns: Json;
+      };
+      get_patient_session_packages: {
+        Args: { p_patient_id: string };
+        Returns: Json;
+      };
+      update_session_package_secure: {
+        Args: {
+          p_package_id: string;
+          p_patch: Json;
+        };
+        Returns: Json;
+      };
+      set_session_package_status_secure: {
+        Args: {
+          p_package_id: string;
+          p_status: string;
+        };
+        Returns: Json;
+      };
     };
   };
 };
@@ -1179,6 +1214,17 @@ export type PatientConsent = Database['public']['Tables']['patient_consents']['R
 export type PatientDocument = Database['public']['Tables']['patient_documents']['Row'] & {
   description: string | null;
 };
+export type SessionPackageWithBalance = SessionPackage & {
+  used_sessions: number;
+  remaining_sessions: number;
+  cash_flow_id: string | null;
+  cash_flow_status: CashFlowStatus | null;
+  cash_flow_due_date: string | null;
+  cash_flow_paid_at: string | null;
+  amount_paid: number;
+  amount_pending: number;
+  warning?: string | null;
+};
 
 // ─── Convenience Insert/Update Types ────────────────────────────────────────
 export type ProfileInsert  = Database['public']['Tables']['profiles']['Insert'];
@@ -1204,6 +1250,7 @@ export type SessionStatus  = 'scheduled' | 'completed' | 'missed' | 'cancelled';
 export type SessionType    = 'individual' | 'couple' | 'group' | 'online' | 'initial_assessment';
 export type SessionBillingMode = 'single' | 'free' | 'package';
 export type SessionPackageStatus = 'active' | 'paused' | 'completed' | 'cancelled';
+export type SessionPackageManageStatus = 'active' | 'paused' | 'cancelled';
 export type SessionPackagePaymentStatus = 'pending' | 'paid' | 'partial' | 'cancelled';
 export type SessionPackageUsageStatus = 'active' | 'reversed' | 'kept';
 export type SessionPackageUsageType = 'completed_session' | 'no_show' | 'manual_adjustment';
