@@ -16,7 +16,10 @@ import {
   getSessionPackageStatusLabel,
   isSessionPackageExpired,
   isManageableSessionPackageStatus,
+  shouldCountCashFlowAsActiveSessionBilling,
+  shouldCountPackageUsageAsActive,
   shouldCountSessionAsPackageReservation,
+  shouldCreateSessionBilling,
   validateSessionPackageBasics,
 } from "./session-package-rules";
 
@@ -56,6 +59,52 @@ describe("session package rules", () => {
     expect(shouldCountSessionAsPackageReservation("missed")).toBe(true);
     expect(shouldCountSessionAsPackageReservation("cancelled")).toBe(false);
     expect(calculateSessionPackageReservedSessions(sessions, ["completed-used"])).toBe(3);
+  });
+
+  it("counts only pending and confirmed cash_flow rows as active session billing", () => {
+    expect(shouldCountCashFlowAsActiveSessionBilling("pending")).toBe(true);
+    expect(shouldCountCashFlowAsActiveSessionBilling("confirmed")).toBe(true);
+    expect(shouldCountCashFlowAsActiveSessionBilling("cancelled")).toBe(false);
+    expect(shouldCountCashFlowAsActiveSessionBilling(null)).toBe(false);
+  });
+
+  it("creates session billing only for unpaid single sessions without active billing", () => {
+    expect(shouldCreateSessionBilling({
+      billingMode: "single",
+      amount: 180,
+      hasActiveBillingForSession: false,
+    })).toBe(true);
+
+    expect(shouldCreateSessionBilling({
+      billingMode: "single",
+      amount: 180,
+      hasActiveBillingForSession: shouldCountCashFlowAsActiveSessionBilling("pending"),
+    })).toBe(false);
+
+    expect(shouldCreateSessionBilling({
+      billingMode: "single",
+      amount: 180,
+      hasActiveBillingForSession: shouldCountCashFlowAsActiveSessionBilling("confirmed"),
+    })).toBe(false);
+
+    expect(shouldCreateSessionBilling({
+      billingMode: "single",
+      amount: 180,
+      hasActiveBillingForSession: shouldCountCashFlowAsActiveSessionBilling("cancelled"),
+    })).toBe(true);
+
+    expect(shouldCreateSessionBilling({
+      billingMode: "free",
+      amount: 180,
+      hasActiveBillingForSession: false,
+    })).toBe(false);
+  });
+
+  it("counts only active package usages as consumed credits", () => {
+    expect(shouldCountPackageUsageAsActive("active")).toBe(true);
+    expect(shouldCountPackageUsageAsActive("reversed")).toBe(false);
+    expect(shouldCountPackageUsageAsActive("kept")).toBe(false);
+    expect(shouldCountPackageUsageAsActive(undefined)).toBe(false);
   });
 
   it("calculates package reservable balance from used and reserved sessions", () => {

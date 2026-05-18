@@ -21,6 +21,9 @@ import {
   calculateSessionPackageReservableSessions,
   calculateSessionPackageReservedSessions,
   getSessionPackageScheduleBlockReason,
+  shouldCountCashFlowAsActiveSessionBilling,
+  shouldCountPackageUsageAsActive,
+  shouldCreateSessionBilling,
 } from "@/services/session-package-rules";
 import type { ExternalCalendarEvent, Session } from "@/types/database";
 
@@ -1045,8 +1048,9 @@ export async function completeScheduleSession(
 
     const { data: existingBillingBefore, error: existingBillingError } = await supabase
       .from("cash_flow")
-      .select("id")
+      .select("id, status")
       .eq("session_id", session.id)
+      .neq("status", "cancelled")
       .limit(1)
       .maybeSingle();
 
@@ -1058,7 +1062,7 @@ export async function completeScheduleSession(
     const { data: existingPackageUsageBefore, error: existingPackageUsageError } = billingMode === "package"
       ? await supabase
           .from("session_package_usages")
-          .select("id")
+          .select("id, status")
           .eq("session_id", session.id)
           .eq("status", "active")
           .limit(1)
@@ -1073,9 +1077,10 @@ export async function completeScheduleSession(
     if (session.status === "completed") {
       return {
         success: true,
-        billingAlreadyExists: !!existingBillingBefore,
+        billingAlreadyExists: shouldCountCashFlowAsActiveSessionBilling(existingBillingBefore?.status),
         billingSkippedReason: billingMode === "package" ? "package_session" : undefined,
-        packageCreditAlreadyConsumed: billingMode === "package" && !!existingPackageUsageBefore,
+        packageCreditAlreadyConsumed:
+          billingMode === "package" && shouldCountPackageUsageAsActive(existingPackageUsageBefore?.status),
         needsEvolution: !session.session_notes_encrypted,
       };
     }
@@ -1120,8 +1125,9 @@ export async function completeScheduleSession(
 
     const { data: existingBillingAfter, error: billingAfterError } = await supabase
       .from("cash_flow")
-      .select("id")
+      .select("id, status")
       .eq("session_id", session.id)
+      .neq("status", "cancelled")
       .limit(1)
       .maybeSingle();
 
@@ -1133,7 +1139,7 @@ export async function completeScheduleSession(
     const { data: existingPackageUsageAfter, error: packageUsageAfterError } = billingMode === "package"
       ? await supabase
           .from("session_package_usages")
-          .select("id")
+          .select("id, status")
           .eq("session_id", session.id)
           .eq("status", "active")
           .limit(1)
@@ -1145,19 +1151,24 @@ export async function completeScheduleSession(
       return { success: false, error: "Sessão realizada, mas não foi possível validar o consumo do pacote." };
     }
 
-    let billingCreated = !existingBillingBefore && !!existingBillingAfter;
-    let billingAlreadyExists = !!existingBillingBefore || (!!existingBillingAfter && !billingCreated);
+    const hadActiveBillingBefore = shouldCountCashFlowAsActiveSessionBilling(existingBillingBefore?.status);
+    const hasActiveBillingAfter = shouldCountCashFlowAsActiveSessionBilling(existingBillingAfter?.status);
+    const hadActivePackageUsageBefore = shouldCountPackageUsageAsActive(existingPackageUsageBefore?.status);
+    const hasActivePackageUsageAfter = shouldCountPackageUsageAsActive(existingPackageUsageAfter?.status);
+
+    let billingCreated = !hadActiveBillingBefore && hasActiveBillingAfter;
+    let billingAlreadyExists = hadActiveBillingBefore || (hasActiveBillingAfter && !billingCreated);
     let billingSkippedReason: CompleteSessionResult["billingSkippedReason"];
     const packageCreditConsumed =
-      billingMode === "package" && !existingPackageUsageBefore && !!existingPackageUsageAfter;
+      billingMode === "package" && !hadActivePackageUsageBefore && hasActivePackageUsageAfter;
     const packageCreditAlreadyConsumed =
-      billingMode === "package" && !!existingPackageUsageBefore;
+      billingMode === "package" && hadActivePackageUsageBefore;
 
     if (billingMode === "package") {
       billingSkippedReason = "package_session";
     } else if (billingMode === "free") {
       billingSkippedReason = "courtesy_or_zero_value";
-    } else if (!existingBillingAfter) {
+    } else if (!hasActiveBillingAfter) {
       const [{ data: patient }, { data: therapistProfile }] = await Promise.all([
         supabase
           .from("patients")
@@ -1177,7 +1188,11 @@ export async function completeScheduleSession(
         therapistProfile?.session_price_default
       );
 
-      if (amount > 0) {
+      if (shouldCreateSessionBilling({
+        billingMode,
+        amount,
+        hasActiveBillingForSession: hasActiveBillingAfter,
+      })) {
         const { error: insertBillingError } = await supabase.from("cash_flow").insert({
           user_id: session.user_id,
           patient_id: session.patient_id,

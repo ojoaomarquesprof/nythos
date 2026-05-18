@@ -578,7 +578,10 @@ CREATE INDEX IF NOT EXISTS idx_cash_flow_package_id ON public.cash_flow(package_
 CREATE INDEX idx_cash_flow_type ON public.cash_flow(type);
 CREATE INDEX idx_cash_flow_status ON public.cash_flow(status);
 CREATE INDEX idx_cash_flow_created_at ON public.cash_flow(created_at);
-CREATE UNIQUE INDEX IF NOT EXISTS cash_flow_session_id_uidx ON public.cash_flow(session_id) WHERE session_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS cash_flow_session_id_uidx
+  ON public.cash_flow(session_id)
+  WHERE session_id IS NOT NULL
+    AND status <> 'cancelled';
 CREATE UNIQUE INDEX IF NOT EXISTS cash_flow_package_id_uidx ON public.cash_flow(package_id)
   WHERE package_id IS NOT NULL AND category = 'package' AND type = 'income';
 
@@ -1166,6 +1169,7 @@ BEGIN
     SELECT 1
     FROM public.cash_flow cf
     WHERE cf.session_id = NEW.id
+      AND cf.status <> 'cancelled'
   ) THEN
     RETURN NEW;
   END IF;
@@ -1211,7 +1215,8 @@ BEGIN
     'pending',
     (NEW.scheduled_at AT TIME ZONE 'America/Sao_Paulo')::date,
     v_guardian_id
-  );
+  )
+  ON CONFLICT DO NOTHING;
 
   RETURN NEW;
 END;

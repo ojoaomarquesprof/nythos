@@ -25,6 +25,9 @@ export type PackageReservableSession = {
   status: string | null | undefined;
 };
 
+export type SessionBillingStatus = "pending" | "confirmed" | "cancelled";
+export type SessionPackageUsageStatus = "active" | "reversed" | "kept";
+
 export type SessionPackageScheduleBlockReason =
   | "package_not_active"
   | "package_expired"
@@ -74,6 +77,28 @@ export function calculateRemainingPackageSessions(totalSessions: number, usedSes
 
 export function shouldCountSessionAsPackageReservation(status: string | null | undefined): boolean {
   return status !== "cancelled";
+}
+
+export function shouldCountCashFlowAsActiveSessionBilling(
+  status: string | null | undefined
+): status is Exclude<SessionBillingStatus, "cancelled"> {
+  return status === "pending" || status === "confirmed";
+}
+
+export function shouldCountPackageUsageAsActive(
+  status: string | null | undefined
+): status is Extract<SessionPackageUsageStatus, "active"> {
+  return status === "active";
+}
+
+export function shouldCreateSessionBilling(input: {
+  billingMode: string | null | undefined;
+  amount: number;
+  hasActiveBillingForSession: boolean;
+}): boolean {
+  if (input.billingMode !== "single") return false;
+  if (input.hasActiveBillingForSession) return false;
+  return Number.isFinite(input.amount) && input.amount > 0;
 }
 
 export function calculateSessionPackageReservedSessions(
