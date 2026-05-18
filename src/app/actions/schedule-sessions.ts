@@ -62,7 +62,7 @@ export interface CompleteSessionResult {
   success: boolean;
   billingCreated?: boolean;
   billingAlreadyExists?: boolean;
-  billingSkippedReason?: "courtesy_or_zero_value";
+  billingSkippedReason?: "courtesy_or_zero_value" | "package_session";
   needsEvolution?: boolean;
   requiresConfirmation?: boolean;
   error?: string;
@@ -435,6 +435,7 @@ export async function createScheduleSessions(
         duration_minutes: duration,
         session_type: input.sessionType,
         session_price: input.sessionPrice,
+        billing_mode: input.billingMode,
         location: input.location,
         status: "scheduled" as const,
         is_recurring: input.isRecurring ? true : false,
@@ -761,7 +762,7 @@ export async function completeScheduleSession(
 
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
-      .select("id, user_id, patient_id, scheduled_at, status, session_price, session_notes_encrypted")
+      .select("id, user_id, patient_id, scheduled_at, status, session_price, session_notes_encrypted, billing_mode, package_id")
       .eq("id", parsedPayload.sessionId)
       .maybeSingle();
 
@@ -854,8 +855,13 @@ export async function completeScheduleSession(
     let billingCreated = !existingBillingBefore && !!existingBillingAfter;
     let billingAlreadyExists = !!existingBillingBefore || (!!existingBillingAfter && !billingCreated);
     let billingSkippedReason: CompleteSessionResult["billingSkippedReason"];
+    const billingMode = session.billing_mode ?? (session.package_id ? "package" : "single");
 
-    if (!existingBillingAfter) {
+    if (billingMode === "package") {
+      billingSkippedReason = "package_session";
+    } else if (billingMode === "free") {
+      billingSkippedReason = "courtesy_or_zero_value";
+    } else if (!existingBillingAfter) {
       const [{ data: patient }, { data: therapistProfile }] = await Promise.all([
         supabase
           .from("patients")
@@ -878,6 +884,7 @@ export async function completeScheduleSession(
       if (amount > 0) {
         const { error: insertBillingError } = await supabase.from("cash_flow").insert({
           user_id: session.user_id,
+          patient_id: session.patient_id,
           session_id: session.id,
           type: "income",
           amount,

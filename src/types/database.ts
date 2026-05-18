@@ -184,6 +184,62 @@ export type Database = {
         Relationships: never[];
       };
 
+      session_packages: {
+        Row: {
+          id: string;
+          user_id: string;
+          patient_id: string;
+          guardian_id: string | null;
+          name: string;
+          total_sessions: number;
+          total_amount: number;
+          unit_amount: number;
+          status: string;
+          payment_status: string;
+          start_date: string;
+          expires_at: string | null;
+          allow_use_before_payment: boolean;
+          created_by: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          patient_id: string;
+          guardian_id?: string | null;
+          name: string;
+          total_sessions: number;
+          total_amount: number;
+          unit_amount: number;
+          status?: string;
+          payment_status?: string;
+          start_date?: string;
+          expires_at?: string | null;
+          allow_use_before_payment?: boolean;
+          created_by?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          user_id?: string;
+          patient_id?: string;
+          guardian_id?: string | null;
+          name?: string;
+          total_sessions?: number;
+          total_amount?: number;
+          unit_amount?: number;
+          status?: string;
+          payment_status?: string;
+          start_date?: string;
+          expires_at?: string | null;
+          allow_use_before_payment?: boolean;
+          created_by?: string | null;
+          updated_at?: string | null;
+        };
+        Relationships: never[];
+      };
+
       sessions: {
         Row: {
           id: string;
@@ -200,6 +256,8 @@ export type Database = {
           is_recurring: boolean | null;
           recurrence_rule: string | null;
           reminder_sent: boolean | null;
+          billing_mode: string;
+          package_id: string | null;
           google_event_id: string | null;
           created_at: string | null;
           updated_at: string | null;
@@ -219,6 +277,8 @@ export type Database = {
           is_recurring?: boolean | null;
           recurrence_rule?: string | null;
           reminder_sent?: boolean | null;
+          billing_mode?: string;
+          package_id?: string | null;
           google_event_id?: string | null;
         };
         Update: {
@@ -234,6 +294,8 @@ export type Database = {
           is_recurring?: boolean | null;
           recurrence_rule?: string | null;
           reminder_sent?: boolean | null;
+          billing_mode?: string;
+          package_id?: string | null;
           google_event_id?: string | null;
           updated_at?: string | null;
         };
@@ -324,7 +386,9 @@ export type Database = {
         Row: {
           id: string;
           user_id: string;
+          patient_id: string | null;
           session_id: string | null;
+          package_id: string | null;
           type: string;
           amount: number;
           description: string;
@@ -341,7 +405,9 @@ export type Database = {
         Insert: {
           id?: string;
           user_id: string;
+          patient_id?: string | null;
           session_id?: string | null;
+          package_id?: string | null;
           type: string;
           amount: number;
           description: string;
@@ -354,7 +420,9 @@ export type Database = {
           guardian_id?: string | null;
         };
         Update: {
+          patient_id?: string | null;
           session_id?: string | null;
+          package_id?: string | null;
           type?: string;
           amount?: number;
           description?: string;
@@ -366,6 +434,47 @@ export type Database = {
           notes?: string | null;
           guardian_id?: string | null;
           updated_at?: string | null;
+        };
+        Relationships: never[];
+      };
+
+      session_package_usages: {
+        Row: {
+          id: string;
+          package_id: string;
+          session_id: string | null;
+          status: string;
+          usage_type: string;
+          used_at: string | null;
+          used_by: string | null;
+          reversed_at: string | null;
+          reversed_by: string | null;
+          reversal_reason: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          package_id: string;
+          session_id?: string | null;
+          status?: string;
+          usage_type?: string;
+          used_at?: string | null;
+          used_by?: string | null;
+          reversed_at?: string | null;
+          reversed_by?: string | null;
+          reversal_reason?: string | null;
+          created_at?: string | null;
+        };
+        Update: {
+          package_id?: string;
+          session_id?: string | null;
+          status?: string;
+          usage_type?: string;
+          used_at?: string | null;
+          used_by?: string | null;
+          reversed_at?: string | null;
+          reversed_by?: string | null;
+          reversal_reason?: string | null;
         };
         Relationships: never[];
       };
@@ -1022,6 +1131,8 @@ export type Database = {
 // ─── Convenience Row Types ───────────────────────────────────────────────────
 export type Profile            = Database['public']['Tables']['profiles']['Row'];
 export type Patient            = Database['public']['Tables']['patients']['Row'];
+export type SessionPackage     = Database['public']['Tables']['session_packages']['Row'];
+export type SessionPackageUsage = Database['public']['Tables']['session_package_usages']['Row'];
 export type Session            = Database['public']['Tables']['sessions']['Row'];
 export type ExternalCalendarEvent = Database['public']['Tables']['external_calendar_events']['Row'];
 export type Subscription       = Database['public']['Tables']['subscriptions']['Row'];
@@ -1074,6 +1185,10 @@ export type ProfileInsert  = Database['public']['Tables']['profiles']['Insert'];
 export type ProfileUpdate  = Database['public']['Tables']['profiles']['Update'];
 export type PatientInsert  = Database['public']['Tables']['patients']['Insert'];
 export type PatientUpdate  = Database['public']['Tables']['patients']['Update'];
+export type SessionPackageInsert = Database['public']['Tables']['session_packages']['Insert'];
+export type SessionPackageUpdate = Database['public']['Tables']['session_packages']['Update'];
+export type SessionPackageUsageInsert = Database['public']['Tables']['session_package_usages']['Insert'];
+export type SessionPackageUsageUpdate = Database['public']['Tables']['session_package_usages']['Update'];
 export type SessionInsert  = Database['public']['Tables']['sessions']['Insert'];
 export type SessionUpdate  = Database['public']['Tables']['sessions']['Update'];
 export type ExternalCalendarEventInsert = Database['public']['Tables']['external_calendar_events']['Insert'];
@@ -1087,6 +1202,11 @@ export type EmotionDiaryInsert = Database['public']['Tables']['emotion_diary']['
 // ─── Semantic Aliases ────────────────────────────────────────────────────────
 export type SessionStatus  = 'scheduled' | 'completed' | 'missed' | 'cancelled';
 export type SessionType    = 'individual' | 'couple' | 'group' | 'online' | 'initial_assessment';
+export type SessionBillingMode = 'single' | 'free' | 'package';
+export type SessionPackageStatus = 'active' | 'paused' | 'completed' | 'cancelled';
+export type SessionPackagePaymentStatus = 'pending' | 'paid' | 'partial' | 'cancelled';
+export type SessionPackageUsageStatus = 'active' | 'reversed' | 'kept';
+export type SessionPackageUsageType = 'completed_session' | 'no_show' | 'manual_adjustment';
 export type CashFlowType   = 'income' | 'expense';
 export type CashFlowStatus = 'pending' | 'confirmed' | 'cancelled';
 export type PatientStatus  = 'active' | 'inactive' | 'archived';

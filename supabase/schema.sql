@@ -358,6 +358,118 @@ CREATE POLICY "Therapists can delete own patient_guardians"
   );
 
 -- ============================================================
+-- TABELA: session_packages (Pacotes de Sessões)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.session_packages (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  patient_id UUID NOT NULL REFERENCES public.patients(id) ON DELETE CASCADE,
+  guardian_id UUID REFERENCES public.patient_guardians(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  total_sessions INTEGER NOT NULL CHECK (total_sessions > 0),
+  total_amount NUMERIC(10,2) NOT NULL CHECK (total_amount >= 0),
+  unit_amount NUMERIC(10,2) NOT NULL CHECK (unit_amount >= 0),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'completed', 'cancelled')),
+  payment_status TEXT NOT NULL DEFAULT 'pending' CHECK (payment_status IN ('pending', 'paid', 'partial', 'cancelled')),
+  start_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  expires_at DATE,
+  allow_use_before_payment BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT session_packages_name_not_blank CHECK (btrim(name) <> ''),
+  CONSTRAINT session_packages_valid_dates CHECK (expires_at IS NULL OR expires_at >= start_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_packages_user_id ON public.session_packages(user_id);
+CREATE INDEX IF NOT EXISTS idx_session_packages_patient_id ON public.session_packages(patient_id);
+CREATE INDEX IF NOT EXISTS idx_session_packages_status ON public.session_packages(status);
+CREATE INDEX IF NOT EXISTS idx_session_packages_payment_status ON public.session_packages(payment_status);
+CREATE INDEX IF NOT EXISTS idx_session_packages_expires_at ON public.session_packages(expires_at);
+
+ALTER TABLE public.session_packages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view relevant session_packages"
+  ON public.session_packages FOR SELECT
+  TO authenticated
+  USING (
+    auth.uid() = user_id
+    OR EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE profiles.id = auth.uid()
+        AND profiles.employer_id = session_packages.user_id
+    )
+  );
+
+CREATE POLICY "Users can insert relevant session_packages"
+  ON public.session_packages FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    (
+      auth.uid() = user_id
+      OR EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE profiles.id = auth.uid()
+          AND profiles.employer_id = session_packages.user_id
+      )
+    )
+    AND EXISTS (
+      SELECT 1 FROM public.patients
+      WHERE patients.id = session_packages.patient_id
+        AND patients.user_id = session_packages.user_id
+    )
+    AND (
+      session_packages.guardian_id IS NULL
+      OR EXISTS (
+        SELECT 1 FROM public.patient_guardians
+        WHERE patient_guardians.id = session_packages.guardian_id
+          AND patient_guardians.patient_id = session_packages.patient_id
+      )
+    )
+  );
+
+CREATE POLICY "Users can update relevant session_packages"
+  ON public.session_packages FOR UPDATE
+  TO authenticated
+  USING (
+    auth.uid() = user_id
+    OR EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE profiles.id = auth.uid()
+        AND profiles.employer_id = session_packages.user_id
+    )
+  )
+  WITH CHECK (
+    (
+      auth.uid() = user_id
+      OR EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE profiles.id = auth.uid()
+          AND profiles.employer_id = session_packages.user_id
+      )
+    )
+    AND EXISTS (
+      SELECT 1 FROM public.patients
+      WHERE patients.id = session_packages.patient_id
+        AND patients.user_id = session_packages.user_id
+    )
+    AND (
+      session_packages.guardian_id IS NULL
+      OR EXISTS (
+        SELECT 1 FROM public.patient_guardians
+        WHERE patient_guardians.id = session_packages.guardian_id
+          AND patient_guardians.patient_id = session_packages.patient_id
+      )
+    )
+  );
+
+CREATE POLICY "Therapists can delete own session_packages"
+  ON public.session_packages FOR DELETE
+  TO authenticated
+  USING (auth.uid() = user_id);
+
+-- ============================================================
 -- TABELA: sessions (Sessões / Agenda)
 -- ============================================================
 
@@ -376,14 +488,22 @@ CREATE TABLE IF NOT EXISTS public.sessions (
   is_recurring BOOLEAN DEFAULT FALSE,
   recurrence_rule TEXT,  -- iCal RRULE format
   reminder_sent BOOLEAN DEFAULT FALSE,
+  billing_mode TEXT NOT NULL DEFAULT 'single' CHECK (billing_mode IN ('single', 'free', 'package')),
+  package_id UUID REFERENCES public.session_packages(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT sessions_package_billing_check CHECK (
+    (billing_mode = 'package' AND package_id IS NOT NULL)
+    OR (billing_mode <> 'package' AND package_id IS NULL)
+  )
 );
 
 CREATE INDEX idx_sessions_user_id ON public.sessions(user_id);
 CREATE INDEX idx_sessions_patient_id ON public.sessions(patient_id);
 CREATE INDEX idx_sessions_scheduled_at ON public.sessions(scheduled_at);
 CREATE INDEX idx_sessions_status ON public.sessions(status);
+CREATE INDEX IF NOT EXISTS idx_sessions_billing_mode ON public.sessions(billing_mode);
+CREATE INDEX IF NOT EXISTS idx_sessions_package_id ON public.sessions(package_id);
 
 ALTER TABLE public.sessions ENABLE ROW LEVEL SECURITY;
 
@@ -422,7 +542,9 @@ CREATE POLICY "Therapists can delete own sessions"
 CREATE TABLE IF NOT EXISTS public.cash_flow (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  patient_id UUID REFERENCES public.patients(id) ON DELETE SET NULL,
   session_id UUID REFERENCES public.sessions(id) ON DELETE SET NULL,
+  package_id UUID REFERENCES public.session_packages(id) ON DELETE SET NULL,
   type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
   amount DECIMAL(10,2) NOT NULL,
   description TEXT NOT NULL,
@@ -437,14 +559,28 @@ CREATE TABLE IF NOT EXISTS public.cash_flow (
   notes TEXT,
   guardian_id UUID REFERENCES public.patient_guardians(id) ON DELETE SET NULL, -- Responsável financeiro
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT cash_flow_package_billing_check CHECK (
+    package_id IS NULL
+    OR (
+      type = 'income'
+      AND category = 'package'
+      AND session_id IS NULL
+      AND patient_id IS NOT NULL
+    )
+  )
 );
 
 CREATE INDEX idx_cash_flow_user_id ON public.cash_flow(user_id);
+CREATE INDEX IF NOT EXISTS idx_cash_flow_patient_id ON public.cash_flow(patient_id);
 CREATE INDEX idx_cash_flow_session_id ON public.cash_flow(session_id);
+CREATE INDEX IF NOT EXISTS idx_cash_flow_package_id ON public.cash_flow(package_id);
 CREATE INDEX idx_cash_flow_type ON public.cash_flow(type);
 CREATE INDEX idx_cash_flow_status ON public.cash_flow(status);
 CREATE INDEX idx_cash_flow_created_at ON public.cash_flow(created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS cash_flow_session_id_uidx ON public.cash_flow(session_id) WHERE session_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS cash_flow_package_id_uidx ON public.cash_flow(package_id)
+  WHERE package_id IS NOT NULL AND category = 'package' AND type = 'income';
 
 ALTER TABLE public.cash_flow ENABLE ROW LEVEL SECURITY;
 
@@ -475,6 +611,145 @@ CREATE POLICY "Users can update relevant cash_flow"
 CREATE POLICY "Therapists can delete own cash_flow"
   ON public.cash_flow FOR DELETE
   USING (auth.uid() = user_id);
+
+-- ============================================================
+-- TABELA: session_package_usages (Ledger de Consumo de Pacotes)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.session_package_usages (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  package_id UUID NOT NULL REFERENCES public.session_packages(id) ON DELETE CASCADE,
+  session_id UUID REFERENCES public.sessions(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'reversed', 'kept')),
+  usage_type TEXT NOT NULL DEFAULT 'completed_session' CHECK (usage_type IN ('completed_session', 'no_show', 'manual_adjustment')),
+  used_at TIMESTAMPTZ DEFAULT NOW(),
+  used_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  reversed_at TIMESTAMPTZ,
+  reversed_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  reversal_reason TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_package_usages_package_id ON public.session_package_usages(package_id);
+CREATE INDEX IF NOT EXISTS idx_session_package_usages_status ON public.session_package_usages(status);
+CREATE INDEX IF NOT EXISTS idx_session_package_usages_used_at ON public.session_package_usages(used_at);
+CREATE UNIQUE INDEX IF NOT EXISTS session_package_usages_session_id_uidx
+  ON public.session_package_usages(session_id)
+  WHERE session_id IS NOT NULL;
+
+ALTER TABLE public.session_package_usages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view relevant session_package_usages"
+  ON public.session_package_usages FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.session_packages sp
+      WHERE sp.id = session_package_usages.package_id
+        AND (
+          auth.uid() = sp.user_id
+          OR EXISTS (
+            SELECT 1
+            FROM public.profiles
+            WHERE profiles.id = auth.uid()
+              AND profiles.employer_id = sp.user_id
+          )
+        )
+    )
+  );
+
+CREATE POLICY "Users can insert relevant session_package_usages"
+  ON public.session_package_usages FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    EXISTS (
+      SELECT 1
+      FROM public.session_packages sp
+      WHERE sp.id = session_package_usages.package_id
+        AND (
+          auth.uid() = sp.user_id
+          OR EXISTS (
+            SELECT 1
+            FROM public.profiles
+            WHERE profiles.id = auth.uid()
+              AND profiles.employer_id = sp.user_id
+          )
+        )
+        AND (
+          session_package_usages.session_id IS NULL
+          OR EXISTS (
+            SELECT 1
+            FROM public.sessions s
+            WHERE s.id = session_package_usages.session_id
+              AND s.user_id = sp.user_id
+              AND s.patient_id = sp.patient_id
+              AND s.package_id = sp.id
+              AND s.billing_mode = 'package'
+          )
+        )
+    )
+  );
+
+CREATE POLICY "Users can update relevant session_package_usages"
+  ON public.session_package_usages FOR UPDATE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.session_packages sp
+      WHERE sp.id = session_package_usages.package_id
+        AND (
+          auth.uid() = sp.user_id
+          OR EXISTS (
+            SELECT 1
+            FROM public.profiles
+            WHERE profiles.id = auth.uid()
+              AND profiles.employer_id = sp.user_id
+          )
+        )
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1
+      FROM public.session_packages sp
+      WHERE sp.id = session_package_usages.package_id
+        AND (
+          auth.uid() = sp.user_id
+          OR EXISTS (
+            SELECT 1
+            FROM public.profiles
+            WHERE profiles.id = auth.uid()
+              AND profiles.employer_id = sp.user_id
+          )
+        )
+        AND (
+          session_package_usages.session_id IS NULL
+          OR EXISTS (
+            SELECT 1
+            FROM public.sessions s
+            WHERE s.id = session_package_usages.session_id
+              AND s.user_id = sp.user_id
+              AND s.patient_id = sp.patient_id
+              AND s.package_id = sp.id
+              AND s.billing_mode = 'package'
+          )
+        )
+    )
+  );
+
+CREATE POLICY "Therapists can delete own session_package_usages"
+  ON public.session_package_usages FOR DELETE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.session_packages sp
+      WHERE sp.id = session_package_usages.package_id
+        AND auth.uid() = sp.user_id
+    )
+  );
 
 -- ============================================================
 -- TABELA: patient_tasks (Tarefas Terapêuticas)
@@ -675,6 +950,85 @@ CREATE TRIGGER on_auth_user_created
 -- TRIGGER: Criar entrada financeira ao marcar sessão como "completed"
 -- ============================================================
 
+CREATE OR REPLACE FUNCTION public.validate_session_package_link()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_package_user_id UUID;
+  v_package_patient_id UUID;
+BEGIN
+  IF NEW.package_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT user_id, patient_id
+  INTO v_package_user_id, v_package_patient_id
+  FROM public.session_packages
+  WHERE id = NEW.package_id;
+
+  IF v_package_user_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF v_package_user_id <> NEW.user_id OR v_package_patient_id <> NEW.patient_id THEN
+    RAISE EXCEPTION 'invalid_session_package_link' USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SET search_path = public, pg_temp;
+
+DROP TRIGGER IF EXISTS validate_session_package_link ON public.sessions;
+CREATE TRIGGER validate_session_package_link
+  BEFORE INSERT OR UPDATE OF user_id, patient_id, package_id, billing_mode ON public.sessions
+  FOR EACH ROW
+  EXECUTE FUNCTION public.validate_session_package_link();
+
+CREATE OR REPLACE FUNCTION public.validate_session_package_usage()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_package_user_id UUID;
+  v_package_patient_id UUID;
+  v_session_user_id UUID;
+  v_session_patient_id UUID;
+  v_session_package_id UUID;
+  v_session_billing_mode TEXT;
+BEGIN
+  IF NEW.session_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT user_id, patient_id
+  INTO v_package_user_id, v_package_patient_id
+  FROM public.session_packages
+  WHERE id = NEW.package_id;
+
+  SELECT user_id, patient_id, package_id, billing_mode
+  INTO v_session_user_id, v_session_patient_id, v_session_package_id, v_session_billing_mode
+  FROM public.sessions
+  WHERE id = NEW.session_id;
+
+  IF v_session_user_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF v_session_user_id <> v_package_user_id
+    OR v_session_patient_id <> v_package_patient_id
+    OR v_session_package_id IS DISTINCT FROM NEW.package_id
+    OR v_session_billing_mode <> 'package'
+  THEN
+    RAISE EXCEPTION 'invalid_session_package_usage' USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SET search_path = public, pg_temp;
+
+DROP TRIGGER IF EXISTS validate_session_package_usage ON public.session_package_usages;
+CREATE TRIGGER validate_session_package_usage
+  BEFORE INSERT OR UPDATE OF package_id, session_id ON public.session_package_usages
+  FOR EACH ROW
+  EXECUTE FUNCTION public.validate_session_package_usage();
+
 CREATE OR REPLACE FUNCTION public.set_session_completed_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -704,6 +1058,7 @@ DECLARE
   v_price DECIMAL(10,2);
   v_patient_name TEXT;
   v_guardian_id UUID;
+  v_billing_mode TEXT;
 BEGIN
   IF NEW.status <> 'completed' THEN
     RETURN NEW;
@@ -713,6 +1068,15 @@ BEGIN
     IF OLD.status = 'completed' THEN
       RETURN NEW;
     END IF;
+  END IF;
+
+  v_billing_mode := COALESCE(
+    NULLIF(NEW.billing_mode, ''),
+    CASE WHEN NEW.package_id IS NOT NULL THEN 'package' ELSE 'single' END
+  );
+
+  IF v_billing_mode <> 'single' THEN
+    RETURN NEW;
   END IF;
 
   IF EXISTS (
@@ -743,6 +1107,7 @@ BEGIN
 
   INSERT INTO public.cash_flow (
     user_id,
+    patient_id,
     session_id,
     type,
     amount,
@@ -754,6 +1119,7 @@ BEGIN
   )
   VALUES (
     NEW.user_id,
+    NEW.patient_id,
     NEW.id,
     'income',
     v_price,
@@ -811,6 +1177,10 @@ CREATE TRIGGER update_sessions_updated_at
 
 CREATE TRIGGER update_cash_flow_updated_at
   BEFORE UPDATE ON public.cash_flow
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+CREATE TRIGGER update_session_packages_updated_at
+  BEFORE UPDATE ON public.session_packages
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
 CREATE TRIGGER update_patient_tasks_updated_at
