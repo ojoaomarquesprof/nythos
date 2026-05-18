@@ -2118,9 +2118,12 @@ export default function PatientDetailPage() {
 
             <TabsContent value="finance" className="mt-0 space-y-6 w-full animate-fade-in">
               <PatientFinances
+                patientId={patient.id}
                 totalPatientIncome={totalPatientIncome}
                 pendingPatientIncome={pendingPatientIncome}
                 patientCashFlow={patientCashFlow}
+                guardian={guardian}
+                onPackagesChanged={loadData}
               />
             </TabsContent>
 

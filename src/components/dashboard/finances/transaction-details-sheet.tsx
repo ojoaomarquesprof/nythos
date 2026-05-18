@@ -52,8 +52,11 @@ export function TransactionDetailsSheet({
 
   const isIncome = transaction.type === "income";
   const isPending = transaction.status === "pending";
+  const isPackage = transaction.category === "package";
   const categoryInfo = CASH_FLOW_CATEGORIES[transaction.category as keyof typeof CASH_FLOW_CATEGORIES];
   const paymentMethodInfo = PAYMENT_METHODS[transaction.payment_method as keyof typeof PAYMENT_METHODS];
+  const patientShortId = transaction.patient_id ? transaction.patient_id.slice(0, 8) : null;
+  const packageShortId = transaction.package_id ? transaction.package_id.slice(0, 8) : null;
 
   const handleDelete = async () => {
     if (window.confirm("Tem certeza de que deseja excluir esta transação?")) {
@@ -104,6 +107,21 @@ export function TransactionDetailsSheet({
                     <p className="text-sm font-bold text-slate-700 mt-0.5">{transaction.description}</p>
                   </div>
                 </div>
+
+                {isPackage && (
+                  <div className="flex items-start gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center shrink-0">
+                      <Tag className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Origem do Lançamento</p>
+                      <p className="text-sm font-bold text-slate-700 mt-0.5">
+                        Pacote{packageShortId ? ` #${packageShortId}` : ""}
+                        {patientShortId ? ` · Paciente #${patientShortId}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex items-start gap-4">
                   <div className="w-10 h-10 rounded-xl bg-slate-50 text-slate-600 flex items-center justify-center shrink-0">

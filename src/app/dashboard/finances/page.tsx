@@ -487,6 +487,7 @@ export default function FinancesPage() {
                 const category = CASH_FLOW_CATEGORIES[tx.category as keyof typeof CASH_FLOW_CATEGORIES];
                 const isIncome = tx.type === "income";
                 const isPending = tx.status === "pending";
+                const isPackage = tx.category === "package";
 
                 return (
                   <div
@@ -515,12 +516,23 @@ export default function FinancesPage() {
                             Aguardando
                           </Badge>
                         )}
+                        {isPackage && (
+                          <Badge className="text-[9px] h-5 px-2 font-black uppercase tracking-widest bg-sky-100 text-sky-700 border-0 rounded-full">
+                            Pacote
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex items-center gap-3">
                         <p className="text-[10px] font-black text-teal-600 uppercase tracking-[0.15em] flex items-center gap-2">
                           <span>{formatDate(tx.due_date ?? tx.paid_at ?? tx.created_at ?? new Date().toISOString())}</span>
                           <span className="w-1 h-1 rounded-full bg-teal-500" />
                           <span className="text-teal-600/60">{category?.label || tx.category}</span>
+                          {isPackage && tx.patient_id && (
+                            <>
+                              <span className="w-1 h-1 rounded-full bg-teal-500" />
+                              <span className="text-teal-600/60">Paciente vinculado</span>
+                            </>
+                          )}
                         </p>
                       </div>
                     </div>

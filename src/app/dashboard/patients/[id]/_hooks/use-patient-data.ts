@@ -217,13 +217,12 @@ export function usePatientData() {
     })));
     if (guardianRes.data) setGuardian(guardianRes.data);
 
-    const sessionIds = sessionsRes.data?.map((s: Session) => s.id) || [];
-    if (sessionIds.length > 0) {
-      const { data: cashFlowData } = await BillingService.getCashFlowBySessions(sessionIds);
-      setPatientCashFlow(cashFlowData || []);
-    } else {
-      setPatientCashFlow([]);
-    }
+    const { data: cashFlowData } = await supabase
+      .from("cash_flow")
+      .select("*")
+      .eq("patient_id", idStr)
+      .order("created_at", { ascending: false });
+    setPatientCashFlow(cashFlowData || []);
     
     if (authRes.data.user) {
       const { data: profileData } = await supabase.from("profiles").select("*").eq("id", authRes.data.user.id).single();
