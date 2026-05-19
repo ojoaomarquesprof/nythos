@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import {
   Sheet,
   SheetContent,
@@ -11,256 +12,285 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { 
-  FileText, 
-  Trash2, 
-  Calendar, 
-  Tag, 
-  CreditCard, 
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Ban,
+  Calendar,
+  CheckCircle2,
+  CreditCard,
   FileCheck,
-  Edit3,
-  Info
+  Info,
+  Package,
+  Tag,
+  User,
+  X,
 } from "lucide-react";
-import { 
-  formatCurrency, 
-  formatDate, 
-  CASH_FLOW_CATEGORIES, 
-  PAYMENT_METHODS 
+import {
+  formatCurrency,
+  formatDate,
+  PAYMENT_METHODS,
 } from "@/lib/constants";
-import type { CashFlow } from "@/types/database";
+import { cn } from "@/lib/utils";
+import type { FinancialTransaction } from "@/services/billing-service";
+import {
+  MANUAL_PAYMENT_METHODS,
+  canCancelCashFlow,
+  canConfirmCashFlowPayment,
+  getCashFlowCategoryLabel,
+  getCashFlowOriginLabel,
+  getCashFlowStatusLabel,
+  isManualPaymentMethod,
+  type ManualPaymentMethod,
+} from "@/services/financial-transaction-rules";
 
 interface TransactionDetailsSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  transaction: CashFlow | null;
-  onExportReceipt: (tx: CashFlow) => void;
-  isExportingReceipt: boolean;
-  onDeleteTransaction: (id: string) => Promise<void>;
+  transaction: FinancialTransaction | null;
+  onConfirmPayment: (
+    id: string,
+    method: ManualPaymentMethod,
+    paidAt?: string | null
+  ) => Promise<void>;
+  onCancelTransaction: (id: string) => Promise<void>;
+  actionPending?: boolean;
+}
+
+function todayIsoDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function paymentMethodLabel(method: string | null | undefined): string {
+  if (!isManualPaymentMethod(method)) return "Não informado";
+  return PAYMENT_METHODS[method]?.label ?? "Outro";
+}
+
+function DetailRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <div className="flex items-start gap-4">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-600">
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+        <div className="mt-0.5 text-sm font-bold text-slate-700">{value}</div>
+      </div>
+    </div>
+  );
 }
 
 export function TransactionDetailsSheet({
   open,
   onOpenChange,
   transaction,
-  onExportReceipt,
-  isExportingReceipt,
-  onDeleteTransaction,
+  onConfirmPayment,
+  onCancelTransaction,
+  actionPending = false,
 }: TransactionDetailsSheetProps) {
-  const [deleting, setDeleting] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<ManualPaymentMethod>("pix");
+  const [paidAt, setPaidAt] = useState(todayIsoDate());
+
+  useEffect(() => {
+    if (!transaction) return;
+    setPaymentMethod(isManualPaymentMethod(transaction.payment_method) ? transaction.payment_method : "pix");
+    setPaidAt(transaction.paid_at ? transaction.paid_at.slice(0, 10) : todayIsoDate());
+  }, [transaction]);
 
   if (!transaction) return null;
 
   const isIncome = transaction.type === "income";
-  const isPending = transaction.status === "pending";
-  const isPackage = transaction.category === "package";
-  const categoryInfo = CASH_FLOW_CATEGORIES[transaction.category as keyof typeof CASH_FLOW_CATEGORIES];
-  const paymentMethodInfo = PAYMENT_METHODS[transaction.payment_method as keyof typeof PAYMENT_METHODS];
-  const patientShortId = transaction.patient_id ? transaction.patient_id.slice(0, 8) : null;
-  const packageShortId = transaction.package_id ? transaction.package_id.slice(0, 8) : null;
+  const canConfirm = canConfirmCashFlowPayment(transaction);
+  const canCancel = canCancelCashFlow(transaction);
+  const originLabel = getCashFlowOriginLabel(transaction);
+  const categoryLabel = getCashFlowCategoryLabel(transaction.category);
+  const statusLabel = getCashFlowStatusLabel(transaction.status);
+  const transactionId = transaction.id;
+  const patientName = transaction.patient?.full_name || (transaction.patient_id ? "Paciente vinculado" : "Não vinculado");
+  const packageName = transaction.session_package?.name || (transaction.package_id ? "Pacote de sessões" : null);
+  const sessionDate = transaction.session?.scheduled_at || transaction.due_date || null;
+  const statusClassName = transaction.status === "confirmed"
+    ? "bg-emerald-100 text-emerald-700"
+    : transaction.status === "pending"
+      ? "bg-amber-100 text-amber-700"
+      : "bg-slate-100 text-slate-500";
 
-  const handleDelete = async () => {
-    if (window.confirm("Tem certeza de que deseja excluir esta transação?")) {
-      setDeleting(true);
-      await onDeleteTransaction(transaction.id);
-      setDeleting(false);
-      onOpenChange(false);
-    }
-  };
+  async function handleConfirm() {
+    if (!canConfirm || actionPending) return;
+    await onConfirmPayment(transactionId, paymentMethod, paidAt || null);
+  }
+
+  async function handleCancel() {
+    if (!canCancel || actionPending) return;
+    const confirmed = window.confirm("Cancelar este lançamento pendente? O histórico financeiro será preservado.");
+    if (!confirmed) return;
+    await onCancelTransaction(transactionId);
+  }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-md bg-white border-l border-slate-100 flex flex-col p-0">
-        <SheetHeader className="p-8 pb-6 border-b border-slate-50 bg-slate-50/50">
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Detalhes da Operação</p>
-          <div className="flex items-center justify-between gap-4 mt-4">
-            <h2 className={`text-3xl font-black tracking-tight ${isIncome ? "text-emerald-600" : "text-rose-600"}`}>
-              {isIncome ? "+" : "-"} {formatCurrency(Number(transaction.amount))}
-            </h2>
-            <Badge 
-              variant="outline"
-              className={`text-[9px] h-6 px-3 font-black uppercase tracking-widest rounded-full border-0 ${
-                isPending 
-                  ? "bg-amber-100 text-amber-700 animate-pulse" 
-                  : "bg-emerald-100 text-emerald-700"
-              }`}
-            >
-              {isPending ? "Aguardando" : "Confirmado"}
+      <SheetContent side="right" className="w-full overflow-hidden border-l border-slate-100 bg-white p-0 sm:max-w-lg">
+        <SheetHeader className="border-b border-slate-100 bg-slate-50/70 p-6 sm:p-8">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Detalhes do lançamento</p>
+          <div className="mt-4 flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <SheetTitle className={cn("text-3xl font-black tracking-tight", isIncome ? "text-emerald-600" : "text-rose-600")}>
+                {isIncome ? "+" : "-"} {formatCurrency(Number(transaction.amount))}
+              </SheetTitle>
+              <SheetDescription className="mt-2 truncate text-sm font-bold text-slate-600">
+                {transaction.description}
+              </SheetDescription>
+            </div>
+            <Badge className={cn("shrink-0 rounded-full border-0 px-3 py-1 text-[9px] font-black uppercase tracking-widest", statusClassName)}>
+              {statusLabel}
             </Badge>
           </div>
-          <SheetDescription className="text-slate-600 font-bold text-sm mt-2 truncate">
-            {transaction.description}
-          </SheetDescription>
         </SheetHeader>
 
-        <div className="flex-1 overflow-y-auto p-8 space-y-8">
-          {/* Main Info Blocks */}
+        <div className="flex-1 space-y-8 overflow-y-auto p-6 sm:p-8">
           <div className="space-y-5">
-            {isIncome ? (
-              <>
-                {/* Receitas View */}
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                    <FileCheck className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Origem / Descrição</p>
-                    <p className="text-sm font-bold text-slate-700 mt-0.5">{transaction.description}</p>
-                  </div>
-                </div>
-
-                {isPackage && (
-                  <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center shrink-0">
-                      <Tag className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Origem do Lançamento</p>
-                      <p className="text-sm font-bold text-slate-700 mt-0.5">
-                        Pacote{packageShortId ? ` #${packageShortId}` : ""}
-                        {patientShortId ? ` · Paciente #${patientShortId}` : ""}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-slate-50 text-slate-600 flex items-center justify-center shrink-0">
-                    <Calendar className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Data de Vencimento / Sessão</p>
-                    <p className="text-sm font-bold text-slate-700 mt-0.5">
-                      {formatDate(transaction.due_date ?? transaction.created_at ?? new Date().toISOString())}
-                    </p>
-                  </div>
-                </div>
-
-                {!isPending && (
-                  <>
-                    <div className="flex items-start gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-                        <CreditCard className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Método de Recebimento</p>
-                        <p className="text-sm font-bold text-slate-700 mt-0.5">
-                          {paymentMethodInfo?.label || "Lançamento Manual"}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center shrink-0">
-                        <Calendar className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Data de Pagamento</p>
-                        <p className="text-sm font-bold text-slate-700 mt-0.5">
-                          {transaction.paid_at ? formatDate(transaction.paid_at) : "Confirmado"}
-                        </p>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </>
-            ) : (
-              <>
-                {/* Despesas View */}
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
-                    <Tag className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Categoria da Despesa</p>
-                    <p className="text-sm font-bold text-slate-700 mt-0.5">
-                      {categoryInfo?.label || transaction.category}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-slate-50 text-slate-600 flex items-center justify-center shrink-0">
-                    <Calendar className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Data de Vencimento</p>
-                    <p className="text-sm font-bold text-slate-700 mt-0.5">
-                      {formatDate(transaction.due_date ?? transaction.created_at ?? new Date().toISOString())}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
-                    <Calendar className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Data de Pagamento</p>
-                    <p className="text-sm font-bold text-slate-700 mt-0.5">
-                      {transaction.paid_at ? formatDate(transaction.paid_at) : "Registrado"}
-                    </p>
-                  </div>
-                </div>
-              </>
+            <DetailRow
+              icon={<FileCheck className="h-5 w-5" />}
+              label="Origem"
+              value={originLabel}
+            />
+            <DetailRow
+              icon={<Tag className="h-5 w-5" />}
+              label="Categoria"
+              value={categoryLabel}
+            />
+            {transaction.patient_id && (
+              <DetailRow
+                icon={<User className="h-5 w-5" />}
+                label="Paciente"
+                value={patientName}
+              />
             )}
+            {packageName && (
+              <DetailRow
+                icon={<Package className="h-5 w-5" />}
+                label="Pacote"
+                value={packageName}
+              />
+            )}
+            {transaction.session_id && (
+              <DetailRow
+                icon={<Calendar className="h-5 w-5" />}
+                label="Sessão"
+                value={sessionDate ? formatDate(sessionDate) : "Sessão vinculada"}
+              />
+            )}
+            <DetailRow
+              icon={<Calendar className="h-5 w-5" />}
+              label="Vencimento"
+              value={transaction.due_date ? formatDate(transaction.due_date) : "Não informado"}
+            />
+            <DetailRow
+              icon={<CreditCard className="h-5 w-5" />}
+              label="Método de pagamento"
+              value={paymentMethodLabel(transaction.payment_method)}
+            />
+            <DetailRow
+              icon={<CheckCircle2 className="h-5 w-5" />}
+              label="Data de pagamento"
+              value={transaction.paid_at ? formatDate(transaction.paid_at) : "Não baixado"}
+            />
           </div>
 
-          {/* Observations Box */}
           {transaction.notes && (
-            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100/50 space-y-1.5">
+            <div className="space-y-1.5 rounded-2xl border border-slate-100 bg-slate-50 p-5">
               <div className="flex items-center gap-2 text-slate-400">
-                <Info className="w-4 h-4" />
-                <p className="text-[10px] font-black uppercase tracking-widest">Observações Internas</p>
+                <Info className="h-4 w-4" />
+                <p className="text-[10px] font-black uppercase tracking-widest">Observações internas</p>
               </div>
-              <p className="text-xs font-medium text-slate-600 leading-relaxed italic">
-                "{transaction.notes}"
-              </p>
+              <p className="text-xs font-medium leading-relaxed text-slate-600">{transaction.notes}</p>
             </div>
           )}
 
-          {/* Action Button: Recibo */}
-          {isIncome && !isPending && (
-            <Button
-              className="w-full h-12 bg-primary hover:bg-primary-hover text-white font-black rounded-xl shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-2"
-              onClick={() => onExportReceipt(transaction)}
-              disabled={isExportingReceipt}
-            >
-              {isExportingReceipt ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  <FileText className="w-4 h-4" />
-                  BAIXAR RECIBO (PDF)
-                </>
-              )}
-            </Button>
+          {canConfirm && (
+            <div className="space-y-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-5">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700/70">Baixa manual</p>
+                <p className="mt-1 text-xs font-semibold text-emerald-900/70">
+                  Registra o pagamento neste lançamento sem alterar valor, categoria ou origem.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="ml-1 text-[10px] font-black uppercase tracking-widest text-emerald-800/60">
+                    Método
+                  </Label>
+                  <select
+                    className="h-11 w-full rounded-xl border border-emerald-100 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-emerald-300"
+                    value={paymentMethod}
+                    onChange={(event) => {
+                      const nextMethod = event.target.value;
+                      if (isManualPaymentMethod(nextMethod)) setPaymentMethod(nextMethod);
+                    }}
+                    disabled={actionPending}
+                  >
+                    {MANUAL_PAYMENT_METHODS.map((method) => (
+                      <option key={method} value={method}>
+                        {PAYMENT_METHODS[method]?.label ?? method}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="ml-1 text-[10px] font-black uppercase tracking-widest text-emerald-800/60">
+                    Data
+                  </Label>
+                  <Input
+                    type="date"
+                    className="h-11 rounded-xl border-emerald-100 bg-white font-bold text-slate-700 focus:border-emerald-300"
+                    value={paidAt}
+                    onChange={(event) => setPaidAt(event.target.value)}
+                    disabled={actionPending}
+                  />
+                </div>
+              </div>
+            </div>
           )}
         </div>
 
-        <SheetFooter className="p-8 border-t border-slate-50 bg-slate-50/50 flex flex-row gap-3 mt-auto">
+        <SheetFooter className="mt-auto flex-col gap-2 border-t border-slate-100 bg-slate-50/80 p-4 sm:flex-row sm:p-6">
           <Button
             variant="outline"
-            className="flex-1 h-12 rounded-xl font-bold border-slate-200 text-slate-600 hover:bg-slate-100 flex items-center justify-center gap-2"
-            disabled
+            className="h-11 flex-1 rounded-xl bg-white font-bold text-slate-600"
+            onClick={() => onOpenChange(false)}
+            disabled={actionPending}
           >
-            <Edit3 className="w-4 h-4" />
-            Editar
+            <X className="h-4 w-4" />
+            Fechar
           </Button>
-          <Button
-            variant="destructive"
-            className="flex-1 h-12 rounded-xl font-black bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center gap-2 shadow-lg shadow-rose-200 active:scale-95 transition-all"
-            onClick={handleDelete}
-            disabled={deleting}
-          >
-            {deleting ? (
-              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              <>
-                <Trash2 className="w-4 h-4" />
-                Excluir
-              </>
-            )}
-          </Button>
+          {canCancel && (
+            <Button
+              variant="outline"
+              className="h-11 flex-1 rounded-xl bg-white font-black text-rose-700 hover:bg-rose-50"
+              onClick={handleCancel}
+              disabled={actionPending}
+            >
+              <Ban className="h-4 w-4" />
+              Cancelar lançamento
+            </Button>
+          )}
+          {canConfirm && (
+            <Button
+              className="h-11 flex-1 rounded-xl bg-emerald-600 font-black text-white hover:bg-emerald-700"
+              onClick={handleConfirm}
+              disabled={actionPending}
+            >
+              {actionPending ? "Registrando..." : "Dar baixa"}
+            </Button>
+          )}
         </SheetFooter>
       </SheetContent>
     </Sheet>

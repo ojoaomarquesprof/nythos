@@ -10,10 +10,8 @@ import {
   Clock,
   ArrowUpRight,
   ArrowDownRight,
-  X,
   Download,
   AlertCircle,
-  FileText,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -24,9 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
-import { SupabaseClient } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
 import { SubscriptionGate } from "@/components/auth/subscription-gate";
 import { useSubscription } from "@/hooks/use-subscription";
@@ -34,24 +30,32 @@ import {
   formatCurrency,
   formatDate,
   CASH_FLOW_CATEGORIES,
-  PAYMENT_METHODS,
 } from "@/lib/constants";
-import type { Database, CashFlow, Profile } from "@/types/database";
+import type { Profile } from "@/types/database";
 import { usePdfExport } from "@/hooks/use-pdf-export";
-import { getBase64ImageFromUrl } from "@/lib/pdf-generator";
-import { BillingService } from "@/services/billing-service";
+import { toast } from "sonner";
+import { confirmCashFlowPayment, cancelPendingCashFlow } from "@/app/actions/financial-transactions";
+import { BillingService, type FinancialTransaction } from "@/services/billing-service";
+import {
+  canConfirmCashFlowPayment,
+  getCashFlowCategoryLabel,
+  getCashFlowOriginLabel,
+  getCashFlowStatusLabel,
+  type ManualPaymentMethod,
+} from "@/services/financial-transaction-rules";
 import { FinancialEvolutionChart } from "@/components/dashboard/finances/evolution-chart";
 import { TransactionDetailsSheet } from "@/components/dashboard/finances/transaction-details-sheet";
 
 export default function FinancesPage() {
   const { therapistId } = useSubscription();
   const supabase = createClient() as any;
-  const [transactions, setTransactions] = useState<CashFlow[]>([]);
+  const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [chartData, setChartData] = useState<any[]>([]);
   const [chartLoading, setChartLoading] = useState(true);
-  const [selectedTransaction, setSelectedTransaction] = useState<CashFlow | null>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<FinancialTransaction | null>(null);
+  const [transactionActionId, setTransactionActionId] = useState<string | null>(null);
   const [showExpense, setShowExpense] = useState(false);
   const [saving, setSaving] = useState(false);
   const { exportPdf, isExporting } = usePdfExport();
@@ -97,9 +101,39 @@ export default function FinancesPage() {
     setChartLoading(false);
   }
 
-  const handleConfirmPayment = async (id: string, method: string) => {
-    const { error } = await BillingService.confirmPayment(id, method);
-    if (!error) loadTransactions();
+  const handleConfirmPayment = async (
+    id: string,
+    method: ManualPaymentMethod,
+    paidAt?: string | null
+  ) => {
+    setTransactionActionId(id);
+    const result = await confirmCashFlowPayment(id, {
+      payment_method: method,
+      paid_at: paidAt || null,
+    });
+
+    if (result.success) {
+      toast.success("Pagamento registrado.");
+      setSelectedTransaction(null);
+      await loadTransactions();
+    } else {
+      toast.error(result.error || "Não foi possível registrar o pagamento.");
+    }
+    setTransactionActionId(null);
+  };
+
+  const handleCancelTransaction = async (id: string) => {
+    setTransactionActionId(id);
+    const result = await cancelPendingCashFlow(id);
+
+    if (result.success) {
+      toast.success("Lançamento cancelado.");
+      setSelectedTransaction(null);
+      await loadTransactions();
+    } else {
+      toast.error(result.error || "Não foi possível cancelar o lançamento.");
+    }
+    setTransactionActionId(null);
   };
 
   const handleAddExpense = async (e: React.FormEvent) => {
@@ -121,15 +155,6 @@ export default function FinancesPage() {
       loadTransactions();
     }
     setSaving(false);
-  };
-
-  const handleDeleteTransaction = async (id: string) => {
-    const { error } = await BillingService.deleteTransaction(id);
-    if (!error) {
-      loadTransactions();
-    } else {
-      showError("Erro ao Excluir", error || "Não foi possível excluir a transação.");
-    }
   };
 
   // Calculations (Time Travel!)
@@ -172,9 +197,9 @@ export default function FinancesPage() {
     const tableBody = filtered.map(tx => [
       new Date(tx.due_date ?? tx.paid_at ?? tx.created_at ?? new Date().toISOString()).toLocaleDateString("pt-BR"),
       tx.description,
-      CASH_FLOW_CATEGORIES[tx.category as keyof typeof CASH_FLOW_CATEGORIES]?.label || tx.category,
+      getCashFlowCategoryLabel(tx.category),
       tx.type === "income" ? "+" + formatCurrency(Number(tx.amount)) : "-" + formatCurrency(Number(tx.amount)),
-      tx.status === "confirmed" ? "Confirmado" : "Pendente"
+      getCashFlowStatusLabel(tx.status)
     ]);
 
     await exportPdf({
@@ -207,70 +232,6 @@ export default function FinancesPage() {
           }
         }
       ]
-    });
-  };
-
-  const handleExportReceipt = async (tx: CashFlow) => {
-    if (!profile) {
-      showError("Perfil Necessário", "Configure seu perfil com nome completo e dados profissionais para emitir recibos.");
-      return;
-    }
-    
-    const docNumber = `${new Date(tx.created_at ?? new Date().toISOString()).getFullYear()}${String(new Date(tx.created_at ?? new Date().toISOString()).getMonth() + 1).padStart(2, '0')}${tx.id.split("-")[0].slice(-4).toUpperCase()}`;
-    const patientName = tx.description.replace("Sessão - ", "").toUpperCase();
-    const amountExtenso = Number(tx.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    const fullDate = tx.paid_at ? new Date(tx.paid_at!) : new Date(tx.created_at ?? new Date().toISOString());
-    const dateStr = fullDate.toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' });
-
-    let sigImage: any = null;
-    if (profile.signature_url) {
-      try {
-        const { getBase64ImageFromUrl } = await import('@/lib/pdf-generator');
-        const sigBase64 = await getBase64ImageFromUrl(profile.signature_url);
-        sigImage = { image: sigBase64, width: 150, alignment: 'center', margin: [0, 20, 0, 5] };
-      } catch {
-        console.error("[finances] Failed to load signature image for receipt export");
-      }
-    }
-
-    await exportPdf({
-      title: "Recibo de Pagamento",
-      subtitle: `Nº do Recibo: ${docNumber}`,
-      profile,
-      fileName: `recibo_${patientName.replace(/\s+/g, '_')}.pdf`,
-      content: [
-        {
-          columns: [
-            { text: "RECIBO", fontSize: 24, bold: true, color: '#6d28d9', margin: [0, 20, 0, 0] },
-            {
-              table: {
-                widths: ['*'],
-                body: [
-                  [{ text: formatCurrency(Number(tx.amount)), fontSize: 16, bold: true, color: '#6d28d9', alignment: 'center', fillColor: '#f5f3ff', margin: [10, 10] }]
-                ]
-              },
-              layout: 'noBorders',
-              width: 150
-            }
-          ]
-        },
-        {
-          text: [
-            `Recebemos de `, { text: patientName, bold: true }, `,\n\n`,
-            `a importância supra de `, { text: `${formatCurrency(Number(tx.amount))} (${amountExtenso})`, bold: true }, `,\n\n`,
-            `referente aos serviços profissionais de: Sessão de Atendimento.\n\n`,
-            `Para maior clareza, firmamos o presente recibo.\n\n\n`,
-            `Data do Pagamento: ${dateStr}`
-          ],
-          fontSize: 12,
-          color: '#334155',
-          margin: [0, 30, 0, 60]
-        },
-        sigImage,
-        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 250, y2: 0, lineWidth: 1, lineColor: '#cbd5e1' }], margin: [130, (sigImage ? 0 : 40), 0, 10] },
-        { text: profile.full_name || "Assinatura do Profissional", alignment: 'center', fontSize: 12, bold: true, color: '#334155' },
-        profile.crp ? { text: `CRP: ${profile.crp}`, alignment: 'center', fontSize: 10, color: '#64748b' } : null
-      ].filter(Boolean)
     });
   };
 
@@ -486,8 +447,17 @@ export default function FinancesPage() {
               {filtered.map((tx) => {
                 const category = CASH_FLOW_CATEGORIES[tx.category as keyof typeof CASH_FLOW_CATEGORIES];
                 const isIncome = tx.type === "income";
-                const isPending = tx.status === "pending";
                 const isPackage = tx.category === "package";
+                const originLabel = getCashFlowOriginLabel(tx);
+                const categoryLabel = getCashFlowCategoryLabel(tx.category);
+                const patientName = tx.patient?.full_name;
+                const packageName = tx.session_package?.name;
+                const canRegisterPayment = canConfirmCashFlowPayment(tx);
+                const statusClassName = tx.status === "confirmed"
+                  ? "bg-emerald-100 text-emerald-700"
+                  : tx.status === "pending"
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-slate-100 text-slate-500";
 
                 return (
                   <div
@@ -507,15 +477,13 @@ export default function FinancesPage() {
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-1">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
                         <p className="text-base font-bold text-[#1e1b4b] truncate group-hover:text-teal-600 transition-colors">
                           {tx.description}
                         </p>
-                        {isPending && (
-                          <Badge className="text-[9px] h-5 px-2 font-black uppercase tracking-widest bg-amber-100 text-amber-700 border-0 rounded-full animate-pulse">
-                            Aguardando
-                          </Badge>
-                        )}
+                        <Badge className={cn("text-[9px] h-5 px-2 font-black uppercase tracking-widest border-0 rounded-full", statusClassName)}>
+                          {getCashFlowStatusLabel(tx.status)}
+                        </Badge>
                         {isPackage && (
                           <Badge className="text-[9px] h-5 px-2 font-black uppercase tracking-widest bg-sky-100 text-sky-700 border-0 rounded-full">
                             Pacote
@@ -523,14 +491,22 @@ export default function FinancesPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-3">
-                        <p className="text-[10px] font-black text-teal-600 uppercase tracking-[0.15em] flex items-center gap-2">
+                        <p className="text-[10px] font-black text-teal-600 uppercase tracking-[0.15em] flex flex-wrap items-center gap-2">
                           <span>{formatDate(tx.due_date ?? tx.paid_at ?? tx.created_at ?? new Date().toISOString())}</span>
                           <span className="w-1 h-1 rounded-full bg-teal-500" />
-                          <span className="text-teal-600/60">{category?.label || tx.category}</span>
-                          {isPackage && tx.patient_id && (
+                          <span className="text-teal-600/60">{originLabel}</span>
+                          <span className="w-1 h-1 rounded-full bg-teal-500" />
+                          <span className="text-teal-600/60">{categoryLabel}</span>
+                          {patientName && (
                             <>
                               <span className="w-1 h-1 rounded-full bg-teal-500" />
-                              <span className="text-teal-600/60">Paciente vinculado</span>
+                              <span className="text-teal-600/60">{patientName}</span>
+                            </>
+                          )}
+                          {isPackage && packageName && (
+                            <>
+                              <span className="w-1 h-1 rounded-full bg-teal-500" />
+                              <span className="text-teal-600/60">{packageName}</span>
                             </>
                           )}
                         </p>
@@ -548,43 +524,24 @@ export default function FinancesPage() {
                         {isIncome ? "+" : "-"} {formatCurrency(Number(tx.amount))}
                       </span>
 
-                      {isPending && isIncome && (
+                      {canRegisterPayment && (
                         <SubscriptionGate>
-                          <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
-                            {["pix", "cash", "credit_card"].map((method) => (
-                              <button
-                                key={method}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleConfirmPayment(tx.id, method);
-                                }}
-                                className="h-8 px-2.5 rounded-lg text-[10px] font-bold uppercase tracking-tighter bg-emerald-50 text-emerald-700 hover:bg-emerald-500 hover:text-white transition-all shadow-sm active:scale-95"
-                                title={`Confirmar como ${PAYMENT_METHODS[method as keyof typeof PAYMENT_METHODS]?.label}`}
-                              >
-                                {method === "pix" ? "Pix" : method === "cash" ? "💵" : "💳"}
-                              </button>
-                            ))}
-                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 rounded-xl bg-emerald-50 px-3 text-[10px] font-black uppercase tracking-widest text-emerald-700 hover:bg-emerald-500 hover:text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTransaction(tx);
+                            }}
+                          >
+                            Dar baixa
+                          </Button>
                         </SubscriptionGate>
                       )}
 
                       {tx.status === "confirmed" && (
                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                          {isIncome && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 px-3 text-[10px] font-black uppercase tracking-widest text-primary hover:text-primary hover:bg-primary/5 rounded-xl transition-all"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleExportReceipt(tx);
-                              }}
-                              disabled={isExporting}
-                            >
-                              <FileText className="w-3 h-3 mr-1.5" />
-                              Recibo
-                            </Button>
-                          )}
                           <div className="w-5 h-5 rounded-full bg-emerald-50 flex items-center justify-center">
                             <CheckCircle2 className="w-3 h-3 text-emerald-500" />
                           </div>
@@ -736,9 +693,9 @@ export default function FinancesPage() {
         open={selectedTransaction !== null}
         onOpenChange={(open) => !open && setSelectedTransaction(null)}
         transaction={selectedTransaction}
-        onExportReceipt={handleExportReceipt}
-        isExportingReceipt={isExporting}
-        onDeleteTransaction={handleDeleteTransaction}
+        onConfirmPayment={handleConfirmPayment}
+        onCancelTransaction={handleCancelTransaction}
+        actionPending={transactionActionId === selectedTransaction?.id}
       />
     </div>
   );

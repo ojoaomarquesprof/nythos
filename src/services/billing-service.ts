@@ -5,6 +5,11 @@ import type { ServiceResponse } from "./types";
 
 const supabase = createClient() as any;
 const GENERIC_SERVICE_ERROR = safeClientError("Nao foi possivel concluir a operacao.");
+export type FinancialTransaction = CashFlow & {
+  patient?: { id: string; full_name: string | null } | null;
+  session_package?: { id: string; name: string | null; total_sessions: number | null } | null;
+  session?: { id: string; scheduled_at: string | null; billing_mode: string | null } | null;
+};
 export type TherapistSessionInRange = {
   id: string;
   scheduled_at: string;
@@ -220,16 +225,21 @@ export const BillingService = {
     }
   },
 
-  async getTransactions(userId: string): Promise<ServiceResponse<CashFlow[]>> {
+  async getTransactions(userId: string): Promise<ServiceResponse<FinancialTransaction[]>> {
     try {
       const { data, error } = await supabase
         .from("cash_flow")
-        .select("*")
+        .select(`
+          *,
+          patient:patients(id, full_name),
+          session_package:session_packages(id, name, total_sessions),
+          session:sessions(id, scheduled_at, billing_mode)
+        `)
         .eq("user_id", userId)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      return { data: data || [], error: null };
+      return { data: (data || []) as FinancialTransaction[], error: null };
     } catch (err: unknown) {
       logSafeError("Error in BillingService.getTransactions()", err);
       return { data: null, error: GENERIC_SERVICE_ERROR };
@@ -245,7 +255,9 @@ export const BillingService = {
           paid_at: new Date().toISOString(),
           payment_method: method,
         })
-        .eq("id", id);
+        .eq("id", id)
+        .eq("status", "pending")
+        .eq("type", "income");
 
       if (error) throw error;
       return { data: true, error: null };
@@ -328,13 +340,17 @@ export const BillingService = {
     }
   },
 
-  async deleteTransaction(id: string): Promise<ServiceResponse<boolean>> {
+  async cancelTransaction(id: string): Promise<ServiceResponse<boolean>> {
     try {
-      const { error } = await supabase.from("cash_flow").delete().eq("id", id);
+      const { error } = await supabase
+        .from("cash_flow")
+        .update({ status: "cancelled" })
+        .eq("id", id)
+        .eq("status", "pending");
       if (error) throw error;
       return { data: true, error: null };
     } catch (err: unknown) {
-      logSafeError(`Error in BillingService.deleteTransaction(${id})`, err);
+      logSafeError(`Error in BillingService.cancelTransaction(${id})`, err);
       return { data: false, error: GENERIC_SERVICE_ERROR };
     }
   },

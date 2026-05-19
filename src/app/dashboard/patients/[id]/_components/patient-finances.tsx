@@ -27,6 +27,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatDate } from "@/lib/constants";
+import type { FinancialTransaction } from "@/services/billing-service";
+import {
+  getCashFlowOriginLabel,
+  getCashFlowStatusLabel,
+} from "@/services/financial-transaction-rules";
 import {
   calculateSessionPackageUnitAmount,
   calculateSessionPackageUsagePercent,
@@ -35,7 +40,7 @@ import {
   getSessionPackageStatusLabel,
   validateSessionPackageBasics,
 } from "@/services/session-package-rules";
-import type { CashFlow, SessionPackageManageStatus, SessionPackageWithBalance } from "@/types/database";
+import type { SessionPackageManageStatus, SessionPackageWithBalance } from "@/types/database";
 
 type GuardianOption = {
   id?: string | null;
@@ -47,7 +52,7 @@ interface PatientFinancesProps {
   patientId: string;
   totalPatientIncome: number;
   pendingPatientIncome: number;
-  patientCashFlow: CashFlow[];
+  patientCashFlow: FinancialTransaction[];
   guardian?: GuardianOption | null;
   onPackagesChanged?: () => Promise<void> | void;
 }
@@ -78,10 +83,6 @@ function parseAmount(value: string): number {
   return Number(value.replace(",", "."));
 }
 
-function shortId(value?: string | null) {
-  return value ? value.slice(0, 8) : null;
-}
-
 function statusBadgeClass(status?: string | null) {
   if (status === "active" || status === "paid") return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (status === "paused" || status === "pending" || status === "partial") return "border-amber-200 bg-amber-50 text-amber-700";
@@ -90,9 +91,7 @@ function statusBadgeClass(status?: string | null) {
 }
 
 function billingStatusLabel(status?: string | null) {
-  if (status === "confirmed") return "Confirmada";
-  if (status === "pending") return "Pendente";
-  if (status === "cancelled") return "Cancelada";
+  if (status) return getCashFlowStatusLabel(status);
   return "Sem cobrança";
 }
 
@@ -302,6 +301,13 @@ export function PatientFinances({
     () => packages.find((item) => item.status === "active") ?? null,
     [packages]
   );
+  const displayedTotalPatientIncome = useMemo(() => {
+    const confirmedTotal = patientCashFlow
+      .filter((item) => item.type === "income" && item.status === "confirmed")
+      .reduce((sum, item) => sum + Number(item.amount), 0);
+
+    return patientCashFlow.length > 0 ? confirmedTotal : totalPatientIncome;
+  }, [patientCashFlow, totalPatientIncome]);
 
   useEffect(() => {
     let mounted = true;
@@ -486,7 +492,7 @@ export function PatientFinances({
               </div>
               <div>
                 <p className="mb-0.5 text-[10px] font-black uppercase tracking-widest text-emerald-700/60">Total Recebido</p>
-                <p className="text-3xl font-black tracking-tight text-emerald-700">{formatCurrency(totalPatientIncome)}</p>
+                <p className="text-3xl font-black tracking-tight text-emerald-700">{formatCurrency(displayedTotalPatientIncome)}</p>
               </div>
             </div>
           </CardContent>
@@ -640,16 +646,16 @@ export function PatientFinances({
                         <div>
                           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cobrança vinculada</p>
                           <p className="mt-1 text-sm font-black text-slate-800">
-                            {billingStatusLabel(sessionPackage.cash_flow_status)}
-                            {sessionPackage.cash_flow_id ? ` · #${shortId(sessionPackage.cash_flow_id)}` : ""}
+                            {sessionPackage.cash_flow_id ? billingStatusLabel(sessionPackage.cash_flow_status) : "Sem cobrança vinculada"}
                           </p>
                           <p className="text-xs font-semibold text-slate-500">
                             Vencimento: {sessionPackage.cash_flow_due_date ? formatDate(sessionPackage.cash_flow_due_date) : "Não informado"}
+                            {sessionPackage.cash_flow_paid_at ? ` · Pago em ${formatDate(sessionPackage.cash_flow_paid_at)}` : ""}
                           </p>
                         </div>
                         <Button variant="outline" size="sm" className="rounded-2xl bg-white font-bold" onClick={() => window.location.assign("/dashboard/finances")}>
                           <ArrowUpRight className="size-4" />
-                          Financeiro
+                          {sessionPackage.cash_flow_status === "pending" ? "Dar baixa no financeiro" : "Abrir financeiro"}
                         </Button>
                       </div>
                     </div>
@@ -702,6 +708,8 @@ export function PatientFinances({
         ) : (
           patientCashFlow.map((tx) => {
             const isPackage = tx.category === "package";
+            const packageName = tx.session_package?.name;
+            const originLabel = getCashFlowOriginLabel(tx);
 
             return (
               <Card key={tx.id} className="glass-panel rounded-[24px] border border-white/20 bg-white/40 shadow-sm transition-all hover:bg-white/60">
@@ -723,8 +731,9 @@ export function PatientFinances({
                         )}
                       </div>
                       <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                        {formatDate(tx.due_date ?? tx.created_at ?? new Date().toISOString())}
-                        {isPackage && tx.package_id ? ` · pacote #${shortId(tx.package_id)}` : ""}
+                        {formatDate(tx.due_date ?? tx.paid_at ?? tx.created_at ?? new Date().toISOString())}
+                        {` · ${originLabel}`}
+                        {isPackage && packageName ? ` · ${packageName}` : ""}
                       </p>
                     </div>
                   </div>
@@ -741,7 +750,7 @@ export function PatientFinances({
                             : "bg-slate-100 text-slate-500"
                       )}
                     >
-                      {tx.status === "confirmed" ? "Confirmado" : tx.status === "pending" ? "Pendente" : "Cancelado"}
+                      {getCashFlowStatusLabel(tx.status)}
                     </Badge>
                   </div>
                 </CardContent>

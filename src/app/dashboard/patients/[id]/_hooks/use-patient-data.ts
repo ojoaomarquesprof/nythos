@@ -7,7 +7,7 @@ import { PatientService } from "@/services/patient-service";
 import { BillingService } from "@/services/billing-service";
 import { TreatmentPlanService } from "@/services/treatment-plan-service";
 import { PatientSupportService } from "@/services/patient-support-service";
-import type { TherapistSessionInRange } from "@/services/billing-service";
+import type { FinancialTransaction, TherapistSessionInRange } from "@/services/billing-service";
 import { useSubscription } from "@/hooks/use-subscription";
 import { usePdfExport } from "@/hooks/use-pdf-export";
 import { SESSION_STATUS, formatDate, formatTime } from "@/lib/constants";
@@ -15,7 +15,6 @@ import type {
   Patient,
   Session,
   Profile,
-  CashFlow,
   PatientTask,
   PatientTreatmentPlan,
   PatientMoodCheckin,
@@ -65,7 +64,7 @@ export function usePatientData() {
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [patientCashFlow, setPatientCashFlow] = useState<CashFlow[]>([]);
+  const [patientCashFlow, setPatientCashFlow] = useState<FinancialTransaction[]>([]);
   const [patientTasks, setPatientTasks] = useState<PatientTask[]>([]);
   const [anamnesisSummaries, setAnamnesisSummaries] = useState<PatientAnamnesisSummary[]>([]);
   const [protocolSummaries, setProtocolSummaries] = useState<PatientProtocolSummary[]>([]);
@@ -219,10 +218,14 @@ export function usePatientData() {
 
     const { data: cashFlowData } = await supabase
       .from("cash_flow")
-      .select("*")
+      .select(`
+        *,
+        session_package:session_packages(id, name, total_sessions),
+        session:sessions(id, scheduled_at, billing_mode)
+      `)
       .eq("patient_id", idStr)
       .order("created_at", { ascending: false });
-    setPatientCashFlow(cashFlowData || []);
+    setPatientCashFlow((cashFlowData || []) as FinancialTransaction[]);
     
     if (authRes.data.user) {
       const { data: profileData } = await supabase.from("profiles").select("*").eq("id", authRes.data.user.id).single();
