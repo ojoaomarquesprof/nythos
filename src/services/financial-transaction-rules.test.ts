@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   CASH_FLOW_IMMUTABLE_FIELDS,
+  buildCashFlowReceiptPayload,
   canCancelCashFlow,
   canConfirmCashFlowPayment,
+  canGenerateCashFlowReceipt,
   deriveSessionPackagePaymentStatusFromCashFlow,
   getCashFlowImmutableFieldChanges,
+  getCashFlowReceiptOriginLabel,
   getOverdueTransactions,
   getCashFlowCategoryLabel,
   getCashFlowOriginLabel,
@@ -35,6 +38,87 @@ describe("financial transaction rules", () => {
     expect(canCancelCashFlow({ status: "pending" })).toBe(true);
     expect(canCancelCashFlow({ status: "confirmed" })).toBe(false);
     expect(canCancelCashFlow({ status: "cancelled" })).toBe(false);
+  });
+
+  it("allows receipts only for confirmed patient income from sessions or packages", () => {
+    expect(canGenerateCashFlowReceipt({
+      status: "confirmed",
+      type: "income",
+      category: "session",
+      patient_id: "patient-1",
+    })).toBe(true);
+
+    expect(canGenerateCashFlowReceipt({
+      status: "confirmed",
+      type: "income",
+      category: "package",
+      package_id: "package-1",
+      patient_id: "patient-1",
+    })).toBe(true);
+
+    expect(canGenerateCashFlowReceipt({
+      status: "pending",
+      type: "income",
+      category: "session",
+      patient_id: "patient-1",
+    })).toBe(false);
+    expect(canGenerateCashFlowReceipt({
+      status: "cancelled",
+      type: "income",
+      category: "session",
+      patient_id: "patient-1",
+    })).toBe(false);
+    expect(canGenerateCashFlowReceipt({
+      status: "confirmed",
+      type: "expense",
+      category: "rent",
+      patient_id: "patient-1",
+    })).toBe(false);
+    expect(canGenerateCashFlowReceipt({
+      status: "confirmed",
+      type: "income",
+      category: "other_income",
+    })).toBe(false);
+  });
+
+  it("builds receipt payloads without clinical or internal notes", () => {
+    const payload = buildCashFlowReceiptPayload({
+      id: "cash-flow-123",
+      status: "confirmed",
+      type: "income",
+      category: "package",
+      package_id: "package-1",
+      patient_id: "patient-1",
+      amount: 900,
+      description: "Pacote de sessoes - Ana",
+      paid_at: "2026-05-19T12:00:00Z",
+      payment_method: "pix",
+      notes: "Diagnostico e evolucao nao devem entrar no recibo",
+      patient: { id: "patient-1", full_name: "Ana" },
+      session_package: { id: "package-1", name: "Pacote Maio", total_sessions: 6 },
+    });
+
+    expect(payload).toMatchObject({
+      id: "cash-flow-123",
+      origin: "package",
+      originLabel: "Pacote de sessões",
+      patientName: "Ana",
+      description: "Pacote de sessoes - Ana",
+      amount: 900,
+      paidAt: "2026-05-19T12:00:00Z",
+      paymentMethod: "pix",
+      packageName: "Pacote Maio",
+      packageTotalSessions: 6,
+      packageUnitAmount: 150,
+    });
+    expect(JSON.stringify(payload)).not.toContain("Diagnostico");
+    expect(JSON.stringify(payload)).not.toContain("evolucao");
+  });
+
+  it("labels receipt origins explicitly", () => {
+    expect(getCashFlowReceiptOriginLabel({ category: "session" })).toBe("Sessão avulsa");
+    expect(getCashFlowReceiptOriginLabel({ category: "package" })).toBe("Pacote de sessões");
+    expect(getCashFlowReceiptOriginLabel({ type: "expense" })).toBe("");
   });
 
   it("detects immutable cash flow field changes without blocking transition metadata", () => {

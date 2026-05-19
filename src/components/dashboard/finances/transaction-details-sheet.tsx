@@ -19,6 +19,7 @@ import {
   Calendar,
   CheckCircle2,
   CreditCard,
+  Download,
   FileCheck,
   Info,
   Package,
@@ -37,6 +38,7 @@ import {
   MANUAL_PAYMENT_METHODS,
   canCancelCashFlow,
   canConfirmCashFlowPayment,
+  canGenerateCashFlowReceipt,
   getCashFlowCategoryLabel,
   getCashFlowOriginLabel,
   getCashFlowStatusLabel,
@@ -54,7 +56,9 @@ interface TransactionDetailsSheetProps {
     paidAt?: string | null
   ) => Promise<void>;
   onCancelTransaction: (id: string) => Promise<void>;
+  onGenerateReceipt: (transaction: FinancialTransaction) => Promise<void>;
   actionPending?: boolean;
+  receiptPending?: boolean;
 }
 
 function todayIsoDate(): string {
@@ -94,7 +98,9 @@ export function TransactionDetailsSheet({
   transaction,
   onConfirmPayment,
   onCancelTransaction,
+  onGenerateReceipt,
   actionPending = false,
+  receiptPending = false,
 }: TransactionDetailsSheetProps) {
   const [paymentMethod, setPaymentMethod] = useState<ManualPaymentMethod>("pix");
   const [paidAt, setPaidAt] = useState(todayIsoDate());
@@ -110,6 +116,7 @@ export function TransactionDetailsSheet({
   const isIncome = transaction.type === "income";
   const canConfirm = canConfirmCashFlowPayment(transaction);
   const canCancel = canCancelCashFlow(transaction);
+  const canGenerateReceipt = canGenerateCashFlowReceipt(transaction);
   const originLabel = getCashFlowOriginLabel(transaction);
   const categoryLabel = getCashFlowCategoryLabel(transaction.category);
   const statusLabel = getCashFlowStatusLabel(transaction.status);
@@ -133,6 +140,11 @@ export function TransactionDetailsSheet({
     const confirmed = window.confirm("Cancelar este lançamento pendente? O histórico financeiro será preservado.");
     if (!confirmed) return;
     await onCancelTransaction(transactionId);
+  }
+
+  async function handleGenerateReceipt() {
+    if (!transaction || !canGenerateReceipt || actionPending || receiptPending) return;
+    await onGenerateReceipt(transaction);
   }
 
   return (
@@ -266,7 +278,7 @@ export function TransactionDetailsSheet({
             variant="outline"
             className="h-11 flex-1 rounded-xl bg-white font-bold text-slate-600"
             onClick={() => onOpenChange(false)}
-            disabled={actionPending}
+            disabled={actionPending || receiptPending}
           >
             <X className="h-4 w-4" />
             Fechar
@@ -276,17 +288,28 @@ export function TransactionDetailsSheet({
               variant="outline"
               className="h-11 flex-1 rounded-xl bg-white font-black text-rose-700 hover:bg-rose-50"
               onClick={handleCancel}
-              disabled={actionPending}
+              disabled={actionPending || receiptPending}
             >
               <Ban className="h-4 w-4" />
               Cancelar lançamento
+            </Button>
+          )}
+          {canGenerateReceipt && (
+            <Button
+              variant="outline"
+              className="h-11 flex-1 rounded-xl bg-white font-black text-emerald-700 hover:bg-emerald-50"
+              onClick={handleGenerateReceipt}
+              disabled={actionPending || receiptPending}
+            >
+              <Download className="h-4 w-4" />
+              {receiptPending ? "Gerando..." : "Baixar recibo"}
             </Button>
           )}
           {canConfirm && (
             <Button
               className="h-11 flex-1 rounded-xl bg-emerald-600 font-black text-white hover:bg-emerald-700"
               onClick={handleConfirm}
-              disabled={actionPending}
+              disabled={actionPending || receiptPending}
             >
               {actionPending ? "Registrando..." : "Dar baixa"}
             </Button>

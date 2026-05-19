@@ -7,7 +7,13 @@ const supabase = createClient() as any;
 const GENERIC_SERVICE_ERROR = safeClientError("Nao foi possivel concluir a operacao.");
 export type FinancialTransaction = CashFlow & {
   patient?: { id: string; full_name: string | null } | null;
-  session_package?: { id: string; name: string | null; total_sessions: number | null } | null;
+  session_package?: {
+    id: string;
+    name: string | null;
+    total_sessions: number | null;
+    total_amount?: number | null;
+    unit_amount?: number | null;
+  } | null;
   session?: { id: string; scheduled_at: string | null; billing_mode: string | null } | null;
 };
 export type TherapistSessionInRange = {
@@ -232,7 +238,7 @@ export const BillingService = {
         .select(`
           *,
           patient:patients(id, full_name),
-          session_package:session_packages(id, name, total_sessions),
+          session_package:session_packages(id, name, total_sessions, total_amount, unit_amount),
           session:sessions(id, scheduled_at, billing_mode)
         `)
         .eq("user_id", userId)

@@ -37,10 +37,13 @@ import {
 } from "@/lib/constants";
 import type { Profile } from "@/types/database";
 import { usePdfExport } from "@/hooks/use-pdf-export";
+import { getBase64ImageFromUrl } from "@/lib/pdf-generator";
 import { toast } from "sonner";
 import { confirmCashFlowPayment, cancelPendingCashFlow } from "@/app/actions/financial-transactions";
 import { BillingService, type FinancialTransaction } from "@/services/billing-service";
 import {
+  buildCashFlowReceiptPayload,
+  canGenerateCashFlowReceipt,
   canConfirmCashFlowPayment,
   getCashFlowOrigin,
   getCashFlowCategoryLabel,
@@ -60,6 +63,26 @@ type TypeFilter = "all" | "income" | "expense";
 type StatusFilter = "all" | "pending" | "confirmed" | "cancelled";
 type OriginFilter = "all" | "session" | "package" | "expense" | "other";
 type PaymentMethodFilter = "all" | ManualPaymentMethod | "none";
+
+function paymentMethodLabel(method: string | null | undefined): string {
+  if (!method) return "NÃ£o informado";
+  return PAYMENT_METHODS[method as keyof typeof PAYMENT_METHODS]?.label ?? method;
+}
+
+function receiptFileSlug(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80) || "recibo";
+}
+
+function compactInternalCode(id: string | null): string {
+  if (!id) return "NÃ£o informado";
+  return id.replace(/-/g, "").slice(0, 10).toUpperCase();
+}
 
 function SummaryCard({
   title,
@@ -193,6 +216,146 @@ export default function FinancesPage() {
       toast.error(result.error || "Não foi possível cancelar o lançamento.");
     }
     setTransactionActionId(null);
+  };
+
+  const handleGenerateReceipt = async (transaction: FinancialTransaction) => {
+    if (!profile) {
+      showError(
+        "Perfil nÃ£o encontrado",
+        "Complete os dados da clÃ­nica/profissional para emitir um recibo mais completo."
+      );
+      return;
+    }
+
+    if (!canGenerateCashFlowReceipt(transaction)) {
+      toast.error("Recibo disponÃ­vel apenas para receitas confirmadas de sessÃ£o ou pacote.");
+      return;
+    }
+
+    const receipt = buildCashFlowReceiptPayload(transaction);
+    if (!receipt) {
+      toast.error("NÃ£o foi possÃ­vel preparar os dados do recibo.");
+      return;
+    }
+
+    const missingProfileData = !profile.full_name || !profile.clinic_name || !profile.crp;
+    if (missingProfileData) {
+      toast.warning("Complete os dados da clÃ­nica/profissional para emitir um recibo mais completo.");
+    }
+
+    let signatureBase64: string | null = null;
+    if (profile.signature_url) {
+      try {
+        signatureBase64 = await getBase64ImageFromUrl(profile.signature_url);
+      } catch {
+        signatureBase64 = null;
+      }
+    }
+
+    const serviceRows = receipt.origin === "package"
+      ? [
+          ["Origem", receipt.originLabel],
+          ["Pacote", receipt.packageName || "Pacote de sessÃµes"],
+          ["Quantidade de sessÃµes", receipt.packageTotalSessions ? String(receipt.packageTotalSessions) : "NÃ£o informado"],
+          ["Valor por sessÃ£o", receipt.packageUnitAmount ? formatCurrency(receipt.packageUnitAmount) : "NÃ£o informado"],
+          ["DescriÃ§Ã£o", receipt.description],
+        ]
+      : [
+          ["Origem", receipt.originLabel],
+          ["Data da sessÃ£o", receipt.sessionDate ? formatDate(receipt.sessionDate) : "NÃ£o informado"],
+          ["DescriÃ§Ã£o", receipt.description],
+        ];
+
+    const receiverRows = [
+      ["Profissional", profile.full_name || "NÃ£o informado"],
+      ["ClÃ­nica", profile.clinic_name || "NÃ£o informado"],
+      ["CRP", profile.crp || "NÃ£o informado"],
+      ...(profile.cpf ? [["CPF", profile.cpf]] : []),
+      ...(profile.phone ? [["Contato", profile.phone]] : []),
+      ...(profile.address ? [["EndereÃ§o", profile.address]] : []),
+    ];
+
+    await exportPdf({
+      title: "Recibo",
+      subtitle: `Comprovante de pagamento - ${receipt.originLabel}`,
+      profile,
+      fileName: `recibo_${receiptFileSlug(receipt.patientName)}_${compactInternalCode(receipt.id).toLowerCase()}.pdf`,
+      content: [
+        {
+          columns: [
+            {
+              width: "*",
+              stack: [
+                { text: "Recebemos de", fontSize: 9, bold: true, color: "#64748b", margin: [0, 0, 0, 4] },
+                { text: receipt.patientName, fontSize: 15, bold: true, color: "#0f172a" },
+                { text: "Pagador/paciente", fontSize: 9, color: "#64748b", margin: [0, 3, 0, 0] },
+              ],
+            },
+            {
+              width: 170,
+              stack: [
+                { text: "Valor pago", fontSize: 9, bold: true, color: "#047857", alignment: "right" },
+                { text: formatCurrency(receipt.amount), fontSize: 22, bold: true, color: "#047857", alignment: "right" },
+              ],
+            },
+          ],
+          margin: [0, 0, 0, 22],
+        },
+        {
+          table: {
+            widths: [130, "*"],
+            body: [
+              [{ text: "Dados do pagamento", colSpan: 2, bold: true, color: "#0f172a", fillColor: "#f8fafc" }, {}],
+              ["Data de pagamento", receipt.paidAt ? formatDate(receipt.paidAt) : "NÃ£o informado"],
+              ["MÃ©todo", paymentMethodLabel(receipt.paymentMethod)],
+              ["CÃ³digo interno", compactInternalCode(receipt.id)],
+            ],
+          },
+          layout: "lightHorizontalLines",
+          margin: [0, 0, 0, 18],
+        },
+        {
+          table: {
+            widths: [130, "*"],
+            body: [
+              [{ text: "ServiÃ§o", colSpan: 2, bold: true, color: "#0f172a", fillColor: "#f8fafc" }, {}],
+              ...serviceRows,
+            ],
+          },
+          layout: "lightHorizontalLines",
+          margin: [0, 0, 0, 18],
+        },
+        {
+          table: {
+            widths: [130, "*"],
+            body: [
+              [{ text: "Recebedor", colSpan: 2, bold: true, color: "#0f172a", fillColor: "#f8fafc" }, {}],
+              ...receiverRows,
+            ],
+          },
+          layout: "lightHorizontalLines",
+          margin: [0, 0, 0, 24],
+        },
+        { text: "Este documento e um comprovante interno de pagamento registrado no Nythos.", fontSize: 9, color: "#64748b", alignment: "center", margin: [0, 4, 0, 18] },
+        signatureBase64
+          ? { image: signatureBase64, width: 120, alignment: "center", margin: [0, 0, 0, 6] }
+          : null,
+        {
+          canvas: [{ type: "line", x1: 160, y1: 0, x2: 355, y2: 0, lineWidth: 1, lineColor: "#cbd5e1" }],
+          margin: [0, 0, 0, 6],
+        },
+        {
+          text: profile.full_name || profile.clinic_name || "Profissional responsÃ¡vel",
+          alignment: "center",
+          bold: true,
+          color: "#0f172a",
+          fontSize: 10,
+        },
+        profile.crp
+          ? { text: `CRP ${profile.crp}`, alignment: "center", color: "#64748b", fontSize: 9 }
+          : null,
+      ].filter(Boolean),
+    }, "Recibo gerado com sucesso.");
   };
 
   const handleAddExpense = async (e: React.FormEvent) => {
@@ -863,7 +1026,9 @@ export default function FinancesPage() {
         transaction={selectedTransaction}
         onConfirmPayment={handleConfirmPayment}
         onCancelTransaction={handleCancelTransaction}
+        onGenerateReceipt={handleGenerateReceipt}
         actionPending={transactionActionId === selectedTransaction?.id}
+        receiptPending={isExporting}
       />
     </div>
   );

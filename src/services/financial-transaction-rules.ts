@@ -51,6 +51,7 @@ export type CashFlowOrigin = keyof typeof CASH_FLOW_ORIGIN_LABELS;
 export type CashFlowImmutableField = (typeof CASH_FLOW_IMMUTABLE_FIELDS)[number];
 
 export type CashFlowLike = {
+  id?: string | null;
   user_id?: string | null;
   status?: string | null;
   type?: string | null;
@@ -58,13 +59,39 @@ export type CashFlowLike = {
   package_id?: string | null;
   session_id?: string | null;
   amount?: number | string | null;
+  description?: string | null;
   due_date?: string | null;
   paid_at?: string | null;
   created_at?: string | null;
   payment_method?: string | null;
+  notes?: string | null;
   patient_id?: string | null;
   guardian_id?: string | null;
   patient?: { id?: string | null; full_name?: string | null } | null;
+  session?: { id?: string | null; scheduled_at?: string | null; billing_mode?: string | null } | null;
+  session_package?: {
+    id?: string | null;
+    name?: string | null;
+    total_sessions?: number | null;
+    unit_amount?: number | string | null;
+  } | null;
+};
+
+export type CashFlowReceiptOrigin = "session" | "package";
+
+export type CashFlowReceiptPayload = {
+  id: string | null;
+  origin: CashFlowReceiptOrigin;
+  originLabel: string;
+  patientName: string;
+  description: string;
+  amount: number;
+  paidAt: string | null;
+  paymentMethod: string | null;
+  sessionDate: string | null;
+  packageName: string | null;
+  packageTotalSessions: number | null;
+  packageUnitAmount: number | null;
 };
 
 export type CashFlowSummary = {
@@ -121,6 +148,63 @@ export function canConfirmCashFlowPayment(transaction: CashFlowLike): boolean {
 
 export function canCancelCashFlow(transaction: CashFlowLike): boolean {
   return transaction.status === "pending";
+}
+
+export function getCashFlowReceiptOrigin(transaction: CashFlowLike): CashFlowReceiptOrigin | null {
+  const origin = getCashFlowOrigin(transaction);
+  if (origin === "session" || origin === "package") return origin;
+  return null;
+}
+
+export function getCashFlowReceiptOriginLabel(transaction: CashFlowLike): string {
+  const origin = getCashFlowReceiptOrigin(transaction);
+  if (origin === "session") return CASH_FLOW_ORIGIN_LABELS.session;
+  if (origin === "package") return CASH_FLOW_ORIGIN_LABELS.package;
+  return "";
+}
+
+export function canGenerateCashFlowReceipt(transaction: CashFlowLike): boolean {
+  return transaction.status === "confirmed"
+    && transaction.type === "income"
+    && getCashFlowReceiptOrigin(transaction) !== null
+    && Boolean(transaction.patient_id || transaction.patient?.id);
+}
+
+function cleanReceiptText(value: string | null | undefined, fallback: string): string {
+  const cleaned = String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || fallback;
+}
+
+export function buildCashFlowReceiptPayload(transaction: CashFlowLike): CashFlowReceiptPayload | null {
+  if (!canGenerateCashFlowReceipt(transaction)) return null;
+
+  const origin = getCashFlowReceiptOrigin(transaction);
+  if (!origin) return null;
+
+  const amount = toAmount(transaction.amount);
+  const packageTotalSessions = transaction.session_package?.total_sessions ?? null;
+  const packageUnitAmount = packageTotalSessions && packageTotalSessions > 0
+    ? amount / packageTotalSessions
+    : toAmount(transaction.session_package?.unit_amount) || null;
+
+  return {
+    id: transaction.id ?? null,
+    origin,
+    originLabel: getCashFlowReceiptOriginLabel(transaction),
+    patientName: cleanReceiptText(transaction.patient?.full_name, "Paciente vinculado"),
+    description: cleanReceiptText(transaction.description, origin === "package" ? "Pacote de sessoes" : "Sessao avulsa"),
+    amount,
+    paidAt: transaction.paid_at ?? null,
+    paymentMethod: transaction.payment_method ?? null,
+    sessionDate: transaction.session?.scheduled_at ?? transaction.due_date ?? null,
+    packageName: origin === "package"
+      ? cleanReceiptText(transaction.session_package?.name, "Pacote de sessoes")
+      : null,
+    packageTotalSessions,
+    packageUnitAmount,
+  };
 }
 
 function normalizeImmutableFieldValue(
