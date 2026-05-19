@@ -84,13 +84,13 @@ function SummaryCard({
   }[tone];
 
   return (
-    <Card className={cn("overflow-hidden rounded-2xl border shadow-sm", toneClass)}>
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
+    <Card className={cn("h-full min-h-[116px] overflow-hidden rounded-2xl border shadow-sm", toneClass)}>
+      <CardContent className="h-full p-5">
+        <div className="flex h-full items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <p className="text-[10px] font-black uppercase tracking-widest opacity-70">{title}</p>
-            <p className="mt-2 truncate text-xl font-black tracking-tight">{value}</p>
-            <p className="mt-1 text-[10px] font-bold uppercase tracking-wider opacity-70">{detail}</p>
+            <p className="mt-2 whitespace-nowrap text-2xl font-black leading-tight tracking-tight tabular-nums">{value}</p>
+            <p className="mt-2 text-[10px] font-bold uppercase tracking-wider opacity-70">{detail}</p>
           </div>
           <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white/70">
             {icon}
@@ -372,7 +372,7 @@ export default function FinancesPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
         <SummaryCard
           title="Recebido"
           value={formatCurrency(monthSummary.receivedTotal)}
@@ -395,6 +395,13 @@ export default function FinancesPage() {
           icon={<CalendarX className="size-4" />}
         />
         <SummaryCard
+          title="Saldo"
+          value={formatCurrency(monthSummary.balanceTotal)}
+          detail="recebido - despesas"
+          tone={monthSummary.balanceTotal >= 0 ? "slate" : "rose"}
+          icon={monthSummary.balanceTotal >= 0 ? <TrendingUp className="size-4" /> : <TrendingDown className="size-4" />}
+        />
+        <SummaryCard
           title="Pacotes"
           value={formatCurrency(monthSummary.packagePendingTotal)}
           detail={`${monthSummary.packagePendingCount} pendente(s)`}
@@ -414,13 +421,6 @@ export default function FinancesPage() {
           detail={`${monthSummary.expensesCount} no mês`}
           tone="rose"
           icon={<ArrowDownRight className="size-4" />}
-        />
-        <SummaryCard
-          title="Saldo"
-          value={formatCurrency(monthSummary.balanceTotal)}
-          detail="recebido - despesas"
-          tone={monthSummary.balanceTotal >= 0 ? "slate" : "rose"}
-          icon={monthSummary.balanceTotal >= 0 ? <TrendingUp className="size-4" /> : <TrendingDown className="size-4" />}
         />
       </div>
 
