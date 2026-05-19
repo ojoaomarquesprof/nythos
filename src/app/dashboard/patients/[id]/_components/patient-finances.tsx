@@ -2,11 +2,9 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle,
   ArrowUpRight,
   Ban,
   CalendarDays,
-  CheckCircle2,
   ChevronDown,
   ChevronUp,
   Edit3,
@@ -30,7 +28,10 @@ import { formatCurrency, formatDate } from "@/lib/constants";
 import type { FinancialTransaction } from "@/services/billing-service";
 import {
   getCashFlowOriginLabel,
+  getCashFlowOrigin,
   getCashFlowStatusLabel,
+  getOverdueTransactions,
+  summarizeCashFlow,
 } from "@/services/financial-transaction-rules";
 import {
   calculateSessionPackageUnitAmount,
@@ -93,6 +94,37 @@ function statusBadgeClass(status?: string | null) {
 function billingStatusLabel(status?: string | null) {
   if (status) return getCashFlowStatusLabel(status);
   return "Sem cobrança";
+}
+
+function PatientMetricCard({
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone: "emerald" | "amber" | "rose" | "violet" | "slate" | "teal";
+}) {
+  const toneClass = {
+    emerald: "border-emerald-100 bg-emerald-50/70 text-emerald-700",
+    amber: "border-amber-100 bg-amber-50/70 text-amber-700",
+    rose: "border-rose-100 bg-rose-50/70 text-rose-700",
+    violet: "border-violet-100 bg-violet-50/70 text-violet-700",
+    slate: "border-slate-100 bg-slate-50/80 text-slate-700",
+    teal: "border-teal-100 bg-teal-50/70 text-teal-700",
+  }[tone];
+
+  return (
+    <Card className={cn("rounded-2xl border shadow-sm", toneClass)}>
+      <CardContent className="p-4">
+        <p className="text-[10px] font-black uppercase tracking-widest opacity-70">{label}</p>
+        <p className="mt-2 truncate text-xl font-black tracking-tight">{value}</p>
+        <p className="mt-1 text-[10px] font-bold uppercase tracking-wider opacity-70">{detail}</p>
+      </CardContent>
+    </Card>
+  );
 }
 
 function PackageModal({
@@ -301,13 +333,37 @@ export function PatientFinances({
     () => packages.find((item) => item.status === "active") ?? null,
     [packages]
   );
+  const today = useMemo(() => new Date(), []);
+  const patientSummary = useMemo(
+    () => summarizeCashFlow(patientCashFlow, today),
+    [patientCashFlow, today]
+  );
+  const patientOverdueTransactions = useMemo(
+    () => getOverdueTransactions(patientCashFlow, today),
+    [patientCashFlow, today]
+  );
+  const singleSessionTransactions = useMemo(
+    () => patientCashFlow.filter((item) => getCashFlowOrigin(item) === "session"),
+    [patientCashFlow]
+  );
+  const pendingSingleSessionTransactions = useMemo(
+    () => singleSessionTransactions.filter((item) => item.status === "pending"),
+    [singleSessionTransactions]
+  );
+  const activePackageCount = useMemo(
+    () => packages.filter((item) => item.status === "active").length,
+    [packages]
+  );
+  const pendingPackageCount = useMemo(
+    () => packages.filter((item) => item.payment_status === "pending").length,
+    [packages]
+  );
   const displayedTotalPatientIncome = useMemo(() => {
-    const confirmedTotal = patientCashFlow
-      .filter((item) => item.type === "income" && item.status === "confirmed")
-      .reduce((sum, item) => sum + Number(item.amount), 0);
-
-    return patientCashFlow.length > 0 ? confirmedTotal : totalPatientIncome;
-  }, [patientCashFlow, totalPatientIncome]);
+    return patientCashFlow.length > 0 ? patientSummary.receivedTotal : totalPatientIncome;
+  }, [patientCashFlow.length, patientSummary.receivedTotal, totalPatientIncome]);
+  const displayedPendingPatientIncome = patientCashFlow.length > 0
+    ? patientSummary.pendingTotal
+    : pendingPatientIncome;
 
   useEffect(() => {
     let mounted = true;
@@ -483,33 +539,49 @@ export function PatientFinances({
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Card className="glass-panel overflow-hidden rounded-[32px] border-0 bg-emerald-50/20 shadow-lg">
-          <CardContent className="p-8">
-            <div className="flex items-center gap-4">
-              <div className="flex size-12 items-center justify-center rounded-2xl bg-emerald-100">
-                <Wallet className="size-6 text-emerald-600" />
-              </div>
-              <div>
-                <p className="mb-0.5 text-[10px] font-black uppercase tracking-widest text-emerald-700/60">Total Recebido</p>
-                <p className="text-3xl font-black tracking-tight text-emerald-700">{formatCurrency(displayedTotalPatientIncome)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="glass-panel overflow-hidden rounded-[32px] border-0 bg-amber-50/20 shadow-lg">
-          <CardContent className="p-8">
-            <div className="flex items-center gap-4">
-              <div className="flex size-12 items-center justify-center rounded-2xl bg-amber-100">
-                <AlertCircle className="size-6 text-amber-600" />
-              </div>
-              <div>
-                <p className="mb-0.5 text-[10px] font-black uppercase tracking-widest text-amber-700/60">Valor Pendente</p>
-                <p className="text-3xl font-black tracking-tight text-amber-700">{formatCurrency(pendingPatientIncome)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+        <PatientMetricCard
+          label="Pago"
+          value={formatCurrency(displayedTotalPatientIncome)}
+          detail="confirmado"
+          tone="emerald"
+        />
+        <PatientMetricCard
+          label="Pendente"
+          value={formatCurrency(displayedPendingPatientIncome)}
+          detail={`${patientSummary.pendingCount} em aberto`}
+          tone="amber"
+        />
+        <PatientMetricCard
+          label="Atrasado"
+          value={formatCurrency(patientOverdueTransactions.reduce((sum, item) => sum + Number(item.amount), 0))}
+          detail={`${patientOverdueTransactions.length} vencido(s)`}
+          tone="rose"
+        />
+        <PatientMetricCard
+          label="Cancelado"
+          value={formatCurrency(patientSummary.cancelledTotal)}
+          detail={`${patientSummary.cancelledCount} histórico`}
+          tone="slate"
+        />
+        <PatientMetricCard
+          label="Pacotes ativos"
+          value={String(activePackageCount)}
+          detail="em uso"
+          tone="violet"
+        />
+        <PatientMetricCard
+          label="Pacotes pend."
+          value={String(pendingPackageCount)}
+          detail="pagamento"
+          tone="amber"
+        />
+        <PatientMetricCard
+          label="Avulsas pend."
+          value={String(pendingSingleSessionTransactions.length)}
+          detail={formatCurrency(patientSummary.sessionPendingTotal)}
+          tone="teal"
+        />
       </div>
 
       <section className="space-y-4">
@@ -692,10 +764,78 @@ export function PatientFinances({
         )}
       </section>
 
+      <section className="space-y-4">
+        <div className="ml-2 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="h-6 w-2 rounded-full bg-teal-500" />
+            <h3 className="text-sm font-black uppercase tracking-widest text-primary/40">Sessões avulsas</h3>
+          </div>
+          {pendingSingleSessionTransactions.length > 0 && (
+            <Badge className="rounded-full border-0 bg-amber-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-amber-700">
+              {pendingSingleSessionTransactions.length} pendente(s)
+            </Badge>
+          )}
+        </div>
+
+        {singleSessionTransactions.length === 0 ? (
+          <Card className="rounded-[28px] border border-dashed border-slate-200 bg-white/50 shadow-sm">
+            <CardContent className="py-10 text-center">
+              <Wallet className="mx-auto mb-3 size-9 text-slate-300" />
+              <p className="text-sm font-bold text-slate-700">Nenhuma sessão avulsa faturada para este paciente.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {singleSessionTransactions.slice(0, 6).map((tx) => (
+              <Card key={tx.id} className="rounded-[24px] border border-teal-100 bg-white/70 shadow-sm">
+                <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "rounded-full border-0 px-2 text-[9px] font-black uppercase tracking-widest",
+                          tx.status === "confirmed" ? "bg-emerald-100 text-emerald-700"
+                            : tx.status === "pending" ? "bg-amber-100 text-amber-700"
+                              : "bg-slate-100 text-slate-500"
+                        )}
+                      >
+                        {getCashFlowStatusLabel(tx.status)}
+                      </Badge>
+                      {tx.status === "pending" && tx.due_date && patientOverdueTransactions.some((item) => item.id === tx.id) && (
+                        <Badge className="rounded-full border-0 bg-rose-100 px-2 text-[9px] font-black uppercase tracking-widest text-rose-700">
+                          Atrasada
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="truncate text-sm font-black text-slate-900">
+                      {tx.session?.scheduled_at ? `Sessão de ${formatDate(tx.session.scheduled_at)}` : tx.description}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      Vencimento: {tx.due_date ? formatDate(tx.due_date) : "Não informado"}
+                      {tx.paid_at ? ` · Pago em ${formatDate(tx.paid_at)}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center justify-between gap-3 sm:flex-col sm:items-end">
+                    <p className="text-lg font-black text-emerald-700">{formatCurrency(Number(tx.amount))}</p>
+                    {tx.status === "pending" && (
+                      <Button variant="outline" size="sm" className="rounded-2xl bg-white font-bold" onClick={() => window.location.assign("/dashboard/finances")}>
+                        <ArrowUpRight className="size-4" />
+                        Financeiro
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
+
       <div className="space-y-3">
         <div className="mb-4 ml-2 flex items-center gap-2">
           <div className="h-6 w-2 rounded-full bg-primary" />
-          <h3 className="text-sm font-black uppercase tracking-widest text-primary/40">Últimos Lançamentos</h3>
+          <h3 className="text-sm font-black uppercase tracking-widest text-primary/40">Histórico financeiro</h3>
         </div>
 
         {patientCashFlow.length === 0 ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Wallet,
   Plus,
@@ -8,12 +8,15 @@ import {
   TrendingDown,
   CheckCircle2,
   Clock,
+  CalendarX,
   ArrowUpRight,
   ArrowDownRight,
   Download,
   AlertCircle,
   ChevronLeft,
   ChevronRight,
+  Package,
+  Users,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,6 +33,7 @@ import {
   formatCurrency,
   formatDate,
   CASH_FLOW_CATEGORIES,
+  PAYMENT_METHODS,
 } from "@/lib/constants";
 import type { Profile } from "@/types/database";
 import { usePdfExport } from "@/hooks/use-pdf-export";
@@ -38,13 +42,64 @@ import { confirmCashFlowPayment, cancelPendingCashFlow } from "@/app/actions/fin
 import { BillingService, type FinancialTransaction } from "@/services/billing-service";
 import {
   canConfirmCashFlowPayment,
+  getCashFlowOrigin,
   getCashFlowCategoryLabel,
   getCashFlowOriginLabel,
   getCashFlowStatusLabel,
+  getOverdueTransactions,
+  groupPendingByPatient,
+  isTransactionInMonth,
+  MANUAL_PAYMENT_METHODS,
+  summarizeCashFlow,
   type ManualPaymentMethod,
 } from "@/services/financial-transaction-rules";
 import { FinancialEvolutionChart } from "@/components/dashboard/finances/evolution-chart";
 import { TransactionDetailsSheet } from "@/components/dashboard/finances/transaction-details-sheet";
+
+type TypeFilter = "all" | "income" | "expense";
+type StatusFilter = "all" | "pending" | "confirmed" | "cancelled";
+type OriginFilter = "all" | "session" | "package" | "expense" | "other";
+type PaymentMethodFilter = "all" | ManualPaymentMethod | "none";
+
+function SummaryCard({
+  title,
+  value,
+  detail,
+  icon,
+  tone,
+}: {
+  title: string;
+  value: string;
+  detail: string;
+  icon: ReactNode;
+  tone: "emerald" | "amber" | "rose" | "violet" | "slate" | "teal";
+}) {
+  const toneClass = {
+    emerald: "border-emerald-100 bg-emerald-50/70 text-emerald-700",
+    amber: "border-amber-100 bg-amber-50/70 text-amber-700",
+    rose: "border-rose-100 bg-rose-50/70 text-rose-700",
+    violet: "border-violet-100 bg-violet-50/70 text-violet-700",
+    slate: "border-slate-100 bg-slate-50/80 text-slate-700",
+    teal: "border-teal-100 bg-teal-50/70 text-teal-700",
+  }[tone];
+
+  return (
+    <Card className={cn("overflow-hidden rounded-2xl border shadow-sm", toneClass)}>
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-widest opacity-70">{title}</p>
+            <p className="mt-2 truncate text-xl font-black tracking-tight">{value}</p>
+            <p className="mt-1 text-[10px] font-bold uppercase tracking-wider opacity-70">{detail}</p>
+          </div>
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white/70">
+            {icon}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function FinancesPage() {
   const { therapistId } = useSubscription();
@@ -60,7 +115,11 @@ export default function FinancesPage() {
   const [saving, setSaving] = useState(false);
   const { exportPdf, isExporting } = usePdfExport();
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [filter, setFilter] = useState<"all" | "income" | "expense">("all");
+  const [filter, setFilter] = useState<TypeFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [originFilter, setOriginFilter] = useState<OriginFilter>("all");
+  const [patientFilter, setPatientFilter] = useState("all");
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<PaymentMethodFilter>("all");
   const [errorDialog, setErrorDialog] = useState({ open: false, title: "", message: "" });
 
   function showError(title: string, message: string) {
@@ -157,34 +216,64 @@ export default function FinancesPage() {
     setSaving(false);
   };
 
-  // Calculations (Time Travel!)
   const selectedMonth = currentDate.getMonth();
   const selectedYear = currentDate.getFullYear();
-  const monthTransactions = transactions.filter((t) => {
-    const d = new Date(t.due_date ?? t.paid_at ?? t.created_at ?? new Date().toISOString());
-    return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
-  });
-
-  const totalIncome = monthTransactions
-    .filter((t) => t.type === "income" && t.status === "confirmed")
-    .reduce((sum, t) => sum + Number(t.amount), 0);
-
-  const totalExpenses = monthTransactions
-    .filter((t) => t.type === "expense" && t.status === "confirmed")
-    .reduce((sum, t) => sum + Number(t.amount), 0);
-
-  const pendingIncome = monthTransactions
-    .filter((t) => t.type === "income" && t.status === "pending")
-    .reduce((sum, t) => sum + Number(t.amount), 0);
-
-  const netProfit = totalIncome - totalExpenses;
-  const pendingCount = monthTransactions.filter(
-    (t) => t.type === "income" && t.status === "pending"
-  ).length;
-
-  const filtered = transactions.filter(
-    (t) => filter === "all" || t.type === filter
+  const today = useMemo(() => new Date(), []);
+  const monthTransactions = useMemo(
+    () => transactions.filter((transaction) => isTransactionInMonth(transaction, selectedMonth, selectedYear)),
+    [transactions, selectedMonth, selectedYear]
   );
+  const monthSummary = useMemo(
+    () => summarizeCashFlow(monthTransactions, today),
+    [monthTransactions, today]
+  );
+  const overdueTransactions = useMemo(
+    () => getOverdueTransactions(transactions, today),
+    [transactions, today]
+  );
+  const overdueSummary = useMemo(
+    () => summarizeCashFlow(overdueTransactions, today),
+    [overdueTransactions, today]
+  );
+  const pendingPatientGroups = useMemo(
+    () => groupPendingByPatient(transactions).slice(0, 3),
+    [transactions]
+  );
+  const pendingPackages = useMemo(
+    () => transactions
+      .filter((transaction) => transaction.status === "pending" && getCashFlowOrigin(transaction) === "package")
+      .slice(0, 3),
+    [transactions]
+  );
+  const patientOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    transactions.forEach((transaction) => {
+      const patientId = transaction.patient?.id || transaction.patient_id;
+      if (!patientId) return;
+      options.set(patientId, transaction.patient?.full_name || "Paciente vinculado");
+    });
+    return Array.from(options.entries()).sort((a, b) => a[1].localeCompare(b[1], "pt-BR"));
+  }, [transactions]);
+
+  const filtered = monthTransactions.filter((transaction) => {
+    const origin = getCashFlowOrigin(transaction);
+    const patientId = transaction.patient?.id || transaction.patient_id || "none";
+
+    if (filter !== "all" && transaction.type !== filter) return false;
+    if (statusFilter !== "all" && transaction.status !== statusFilter) return false;
+    if (originFilter !== "all" && origin !== originFilter) return false;
+    if (patientFilter !== "all" && patientId !== patientFilter) return false;
+    if (paymentMethodFilter === "none" && transaction.payment_method) return false;
+    if (
+      paymentMethodFilter !== "all"
+      && paymentMethodFilter !== "none"
+      && transaction.payment_method !== paymentMethodFilter
+    ) {
+      return false;
+    }
+
+    return true;
+  });
 
   const handleExportPdf = async () => {
     if (!profile) {
@@ -283,98 +372,110 @@ export default function FinancesPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="border-0 shadow-lg shadow-emerald-500/5 bg-white overflow-hidden relative group hover:-translate-y-2 transition-all duration-300 rounded-[32px] border-b-4 border-emerald-500/20">
-          <CardContent className="p-7">
-            <div className="flex flex-col gap-6">
-              <div className="flex items-start justify-between gap-3">
-                <div className="w-12 h-12 shrink-0 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20 group-hover:scale-110 transition-transform">
-                  <ArrowUpRight className="w-6 h-6" />
-                </div>
-                <p className="text-[9px] md:text-[10px] font-black text-emerald-600/40 uppercase tracking-[0.2em] text-right leading-tight">Receita Bruta</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-emerald-600 tracking-tight leading-none mb-2">
-                  {formatCurrency(totalIncome)}
-                </p>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                  <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Fluxo Confirmado</span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-0 shadow-lg shadow-rose-500/5 bg-white overflow-hidden relative group hover:-translate-y-2 transition-all duration-300 rounded-[32px] border-b-4 border-rose-500/20">
-          <CardContent className="p-7">
-            <div className="flex flex-col gap-6">
-              <div className="flex items-start justify-between gap-3">
-                <div className="w-12 h-12 shrink-0 rounded-2xl bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-500/20 group-hover:scale-110 transition-transform">
-                  <ArrowDownRight className="w-6 h-6" />
-                </div>
-                <p className="text-[9px] md:text-[10px] font-black text-rose-600/40 uppercase tracking-[0.2em] text-right leading-tight">Total Despesas</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-rose-600 tracking-tight leading-none mb-2">
-                  {formatCurrency(totalExpenses)}
-                </p>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
-                  <span className="text-[9px] font-black text-rose-600 uppercase tracking-widest">Saídas do Mês</span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-0 shadow-lg shadow-teal-500/5 bg-white overflow-hidden relative group hover:-translate-y-2 transition-all duration-300 rounded-[32px] border-b-4 border-teal-500/20">
-          <CardContent className="p-7">
-            <div className="flex flex-col gap-6">
-              <div className="flex items-start justify-between gap-3">
-                <div className="w-12 h-12 shrink-0 rounded-2xl bg-teal-500 text-white flex items-center justify-center shadow-lg shadow-teal-500/20 group-hover:scale-110 transition-transform">
-                  {netProfit >= 0 ? <TrendingUp className="w-6 h-6" /> : <TrendingDown className="w-6 h-6" />}
-                </div>
-                <p className="text-[9px] md:text-[10px] font-black text-teal-600/40 uppercase tracking-[0.2em] text-right leading-tight">Lucro Líquido</p>
-              </div>
-              <div>
-                <p className={cn(
-                  "text-2xl font-bold tracking-tight leading-none mb-2",
-                  netProfit >= 0 ? "text-teal-600" : "text-rose-600"
-                )}>
-                  {formatCurrency(netProfit)}
-                </p>
-                <div className="flex items-center gap-2">
-                  <span className="text-[9px] font-black text-teal-600/60 uppercase tracking-widest">Resultado Real</span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-0 shadow-lg shadow-amber-500/5 bg-white overflow-hidden relative group hover:-translate-y-2 transition-all duration-300 rounded-[32px] border-b-4 border-amber-500/20">
-          <CardContent className="p-7">
-            <div className="flex flex-col gap-6">
-              <div className="flex items-start justify-between gap-3">
-                <div className="w-12 h-12 shrink-0 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:scale-110 transition-transform">
-                  <Clock className="w-6 h-6" />
-                </div>
-                <p className="text-[9px] md:text-[10px] font-black text-amber-600/40 uppercase tracking-[0.2em] text-right leading-tight">A Receber</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-amber-600 tracking-tight leading-none mb-2">
-                  {formatCurrency(pendingIncome)}
-                </p>
-                <div className="flex items-center gap-2">
-                  <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">
-                    {pendingCount} lançamento{pendingCount !== 1 ? "s" : ""} pendente{pendingCount !== 1 ? "s" : ""}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+        <SummaryCard
+          title="Recebido"
+          value={formatCurrency(monthSummary.receivedTotal)}
+          detail="no mês"
+          tone="emerald"
+          icon={<ArrowUpRight className="size-4" />}
+        />
+        <SummaryCard
+          title="Pendente"
+          value={formatCurrency(monthSummary.pendingTotal)}
+          detail={`${monthSummary.pendingCount} em aberto`}
+          tone="amber"
+          icon={<Clock className="size-4" />}
+        />
+        <SummaryCard
+          title="Atrasado"
+          value={formatCurrency(overdueSummary.overdueTotal)}
+          detail={`${overdueSummary.overdueCount} vencido(s)`}
+          tone="rose"
+          icon={<CalendarX className="size-4" />}
+        />
+        <SummaryCard
+          title="Pacotes"
+          value={formatCurrency(monthSummary.packagePendingTotal)}
+          detail={`${monthSummary.packagePendingCount} pendente(s)`}
+          tone="violet"
+          icon={<Package className="size-4" />}
+        />
+        <SummaryCard
+          title="Avulsas"
+          value={formatCurrency(monthSummary.sessionPendingTotal)}
+          detail={`${monthSummary.sessionPendingCount} pendente(s)`}
+          tone="teal"
+          icon={<Wallet className="size-4" />}
+        />
+        <SummaryCard
+          title="Despesas"
+          value={formatCurrency(monthSummary.expensesTotal)}
+          detail={`${monthSummary.expensesCount} no mês`}
+          tone="rose"
+          icon={<ArrowDownRight className="size-4" />}
+        />
+        <SummaryCard
+          title="Saldo"
+          value={formatCurrency(monthSummary.balanceTotal)}
+          detail="recebido - despesas"
+          tone={monthSummary.balanceTotal >= 0 ? "slate" : "rose"}
+          icon={monthSummary.balanceTotal >= 0 ? <TrendingUp className="size-4" /> : <TrendingDown className="size-4" />}
+        />
       </div>
+
+      <Card className="rounded-3xl border-0 bg-white/80 shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-black text-slate-800">Pendências principais</CardTitle>
+          <CardDescription className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">
+            Maiores valores em aberto, pacotes pendentes e vencidos.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
+            <div className="mb-3 flex items-center gap-2 text-amber-800">
+              <Users className="size-4" />
+              <p className="text-[10px] font-black uppercase tracking-widest">Pacientes</p>
+            </div>
+            {pendingPatientGroups.length === 0 ? (
+              <p className="text-xs font-semibold text-amber-900/60">Sem pacientes com pendência.</p>
+            ) : pendingPatientGroups.map((group) => (
+              <div key={group.patientId || "unlinked"} className="flex items-center justify-between gap-3 py-1.5 text-xs font-bold text-amber-950">
+                <span className="truncate">{group.patientName}</span>
+                <span className="shrink-0">{formatCurrency(group.total)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
+            <div className="mb-3 flex items-center gap-2 text-violet-800">
+              <Package className="size-4" />
+              <p className="text-[10px] font-black uppercase tracking-widest">Pacotes</p>
+            </div>
+            {pendingPackages.length === 0 ? (
+              <p className="text-xs font-semibold text-violet-900/60">Nenhum pacote pendente.</p>
+            ) : pendingPackages.map((transaction) => (
+              <div key={transaction.id} className="flex items-center justify-between gap-3 py-1.5 text-xs font-bold text-violet-950">
+                <span className="truncate">{transaction.session_package?.name || transaction.description}</span>
+                <span className="shrink-0">{formatCurrency(Number(transaction.amount))}</span>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4">
+            <div className="mb-3 flex items-center gap-2 text-rose-800">
+              <CalendarX className="size-4" />
+              <p className="text-[10px] font-black uppercase tracking-widest">Vencidos</p>
+            </div>
+            {overdueTransactions.length === 0 ? (
+              <p className="text-xs font-semibold text-rose-900/60">Sem lançamentos vencidos.</p>
+            ) : overdueTransactions.slice(0, 3).map((transaction) => (
+              <div key={transaction.id} className="flex items-center justify-between gap-3 py-1.5 text-xs font-bold text-rose-950">
+                <span className="truncate">{transaction.patient?.full_name || transaction.description}</span>
+                <span className="shrink-0">{formatCurrency(Number(transaction.amount))}</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Financial Evolution Chart */}
       <FinancialEvolutionChart data={chartData} loading={chartLoading} />
@@ -417,6 +518,67 @@ export default function FinancesPage() {
                 ))}
               </div>
             </div>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            <select
+              className="h-10 rounded-xl border border-slate-100 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-teal-300"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+            >
+              <option value="all">Todos os status</option>
+              <option value="pending">Pendente</option>
+              <option value="confirmed">Pago</option>
+              <option value="cancelled">Cancelado</option>
+            </select>
+            <select
+              className="h-10 rounded-xl border border-slate-100 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-teal-300"
+              value={originFilter}
+              onChange={(event) => setOriginFilter(event.target.value as OriginFilter)}
+            >
+              <option value="all">Todas as origens</option>
+              <option value="session">Sessão avulsa</option>
+              <option value="package">Pacote</option>
+              <option value="expense">Despesa</option>
+              <option value="other">Outro</option>
+            </select>
+            <select
+              className="h-10 rounded-xl border border-slate-100 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-teal-300"
+              value={patientFilter}
+              onChange={(event) => setPatientFilter(event.target.value)}
+            >
+              <option value="all">Todos os pacientes</option>
+              <option value="none">Sem paciente</option>
+              {patientOptions.map(([patientId, patientName]) => (
+                <option key={patientId} value={patientId}>{patientName}</option>
+              ))}
+            </select>
+            <select
+              className="h-10 rounded-xl border border-slate-100 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-teal-300"
+              value={paymentMethodFilter}
+              onChange={(event) => setPaymentMethodFilter(event.target.value as PaymentMethodFilter)}
+            >
+              <option value="all">Todos os métodos</option>
+              <option value="none">Sem método</option>
+              {MANUAL_PAYMENT_METHODS.map((method) => (
+                <option key={method} value={method}>
+                  {PAYMENT_METHODS[method]?.label ?? method}
+                </option>
+              ))}
+            </select>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-10 rounded-xl bg-white text-xs font-black uppercase tracking-widest text-slate-600"
+              onClick={() => {
+                setFilter("all");
+                setStatusFilter("all");
+                setOriginFilter("all");
+                setPatientFilter("all");
+                setPaymentMethodFilter("all");
+              }}
+            >
+              Limpar filtros
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="px-6 pb-6 pt-2">
@@ -492,7 +654,13 @@ export default function FinancesPage() {
                       </div>
                       <div className="flex items-center gap-3">
                         <p className="text-[10px] font-black text-teal-600 uppercase tracking-[0.15em] flex flex-wrap items-center gap-2">
-                          <span>{formatDate(tx.due_date ?? tx.paid_at ?? tx.created_at ?? new Date().toISOString())}</span>
+                          <span>Vence {tx.due_date ? formatDate(tx.due_date) : "sem data"}</span>
+                          {tx.paid_at && (
+                            <>
+                              <span className="w-1 h-1 rounded-full bg-teal-500" />
+                              <span>Pago em {formatDate(tx.paid_at)}</span>
+                            </>
+                          )}
                           <span className="w-1 h-1 rounded-full bg-teal-500" />
                           <span className="text-teal-600/60">{originLabel}</span>
                           <span className="w-1 h-1 rounded-full bg-teal-500" />

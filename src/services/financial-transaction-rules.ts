@@ -44,6 +44,40 @@ export type CashFlowLike = {
   category?: string | null;
   package_id?: string | null;
   session_id?: string | null;
+  amount?: number | string | null;
+  due_date?: string | null;
+  paid_at?: string | null;
+  created_at?: string | null;
+  payment_method?: string | null;
+  patient_id?: string | null;
+  patient?: { id?: string | null; full_name?: string | null } | null;
+};
+
+export type CashFlowSummary = {
+  receivedTotal: number;
+  pendingTotal: number;
+  cancelledTotal: number;
+  overdueTotal: number;
+  expensesTotal: number;
+  balanceTotal: number;
+  packageReceivedTotal: number;
+  packagePendingTotal: number;
+  sessionReceivedTotal: number;
+  sessionPendingTotal: number;
+  otherReceivedTotal: number;
+  pendingCount: number;
+  overdueCount: number;
+  packagePendingCount: number;
+  sessionPendingCount: number;
+  expensesCount: number;
+  cancelledCount: number;
+};
+
+export type PendingPatientGroup = {
+  patientId: string | null;
+  patientName: string;
+  total: number;
+  count: number;
 };
 
 export function getCashFlowStatusLabel(status: string | null | undefined): string {
@@ -65,6 +99,8 @@ export function getCashFlowOriginLabel(transaction: CashFlowLike): string {
   return CASH_FLOW_ORIGIN_LABELS[getCashFlowOrigin(transaction)];
 }
 
+export const getTransactionOriginLabel = getCashFlowOriginLabel;
+
 export function canConfirmCashFlowPayment(transaction: CashFlowLike): boolean {
   return transaction.status === "pending" && transaction.type === "income";
 }
@@ -83,4 +119,148 @@ export function deriveSessionPackagePaymentStatusFromCashFlow(
   if (status === "confirmed") return "paid";
   if (status === "cancelled") return "cancelled";
   return "pending";
+}
+
+function toAmount(value: number | string | null | undefined): number {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function parseIsoDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function startOfLocalDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+export function getTransactionReferenceDate(transaction: CashFlowLike): Date | null {
+  return parseIsoDate(transaction.due_date)
+    ?? parseIsoDate(transaction.paid_at)
+    ?? parseIsoDate(transaction.created_at);
+}
+
+export function isTransactionInMonth(
+  transaction: CashFlowLike,
+  monthIndex: number,
+  year: number
+): boolean {
+  const date = getTransactionReferenceDate(transaction);
+  return !!date && date.getMonth() === monthIndex && date.getFullYear() === year;
+}
+
+export function isOverdueTransaction(
+  transaction: CashFlowLike,
+  referenceDate: Date = new Date()
+): boolean {
+  if (transaction.status !== "pending") return false;
+  const dueDate = parseIsoDate(transaction.due_date);
+  if (!dueDate) return false;
+  return startOfLocalDay(dueDate).getTime() < startOfLocalDay(referenceDate).getTime();
+}
+
+export function getOverdueTransactions<T extends CashFlowLike>(
+  transactions: T[],
+  referenceDate: Date = new Date()
+): T[] {
+  return transactions.filter((transaction) => isOverdueTransaction(transaction, referenceDate));
+}
+
+export function summarizeCashFlow(
+  transactions: CashFlowLike[],
+  referenceDate: Date = new Date()
+): CashFlowSummary {
+  return transactions.reduce<CashFlowSummary>((summary, transaction) => {
+    const amount = toAmount(transaction.amount);
+    const origin = getCashFlowOrigin(transaction);
+    const isIncome = transaction.type === "income";
+    const isExpense = transaction.type === "expense";
+    const isConfirmed = transaction.status === "confirmed";
+    const isPending = transaction.status === "pending";
+    const isCancelled = transaction.status === "cancelled";
+    const isOverdue = isOverdueTransaction(transaction, referenceDate);
+
+    if (isIncome && isConfirmed) {
+      summary.receivedTotal += amount;
+      if (origin === "package") summary.packageReceivedTotal += amount;
+      else if (origin === "session") summary.sessionReceivedTotal += amount;
+      else summary.otherReceivedTotal += amount;
+    }
+
+    if (isIncome && isPending) {
+      summary.pendingTotal += amount;
+      summary.pendingCount += 1;
+      if (origin === "package") {
+        summary.packagePendingTotal += amount;
+        summary.packagePendingCount += 1;
+      } else if (origin === "session") {
+        summary.sessionPendingTotal += amount;
+        summary.sessionPendingCount += 1;
+      }
+    }
+
+    if (isCancelled) {
+      summary.cancelledTotal += amount;
+      summary.cancelledCount += 1;
+    }
+
+    if (isOverdue) {
+      summary.overdueTotal += amount;
+      summary.overdueCount += 1;
+    }
+
+    if (isExpense && isConfirmed) {
+      summary.expensesTotal += amount;
+      summary.expensesCount += 1;
+    }
+
+    summary.balanceTotal = summary.receivedTotal - summary.expensesTotal;
+    return summary;
+  }, {
+    receivedTotal: 0,
+    pendingTotal: 0,
+    cancelledTotal: 0,
+    overdueTotal: 0,
+    expensesTotal: 0,
+    balanceTotal: 0,
+    packageReceivedTotal: 0,
+    packagePendingTotal: 0,
+    sessionReceivedTotal: 0,
+    sessionPendingTotal: 0,
+    otherReceivedTotal: 0,
+    pendingCount: 0,
+    overdueCount: 0,
+    packagePendingCount: 0,
+    sessionPendingCount: 0,
+    expensesCount: 0,
+    cancelledCount: 0,
+  });
+}
+
+export function groupPendingByPatient(transactions: CashFlowLike[]): PendingPatientGroup[] {
+  const groups = new Map<string, PendingPatientGroup>();
+
+  transactions.forEach((transaction) => {
+    if (transaction.status !== "pending" || transaction.type !== "income") return;
+    const patientId = transaction.patient?.id || transaction.patient_id || null;
+    const key = patientId || "unlinked";
+    const existing = groups.get(key) ?? {
+      patientId,
+      patientName: transaction.patient?.full_name || "Paciente não vinculado",
+      total: 0,
+      count: 0,
+    };
+
+    existing.total += toAmount(transaction.amount);
+    existing.count += 1;
+    groups.set(key, existing);
+  });
+
+  return Array.from(groups.values()).sort((a, b) => b.total - a.total);
 }
