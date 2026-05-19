@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  CASH_FLOW_IMMUTABLE_FIELDS,
   canCancelCashFlow,
   canConfirmCashFlowPayment,
   deriveSessionPackagePaymentStatusFromCashFlow,
+  getCashFlowImmutableFieldChanges,
   getOverdueTransactions,
   getCashFlowCategoryLabel,
   getCashFlowOriginLabel,
   getCashFlowStatusLabel,
   groupPendingByPatient,
+  hasCashFlowImmutableFieldChanges,
   summarizeCashFlow,
   isManualPaymentMethod,
   isTransactionInMonth,
@@ -32,6 +35,42 @@ describe("financial transaction rules", () => {
     expect(canCancelCashFlow({ status: "pending" })).toBe(true);
     expect(canCancelCashFlow({ status: "confirmed" })).toBe(false);
     expect(canCancelCashFlow({ status: "cancelled" })).toBe(false);
+  });
+
+  it("detects immutable cash flow field changes without blocking transition metadata", () => {
+    const before = {
+      user_id: "user-1",
+      session_id: "session-1",
+      package_id: null,
+      patient_id: "patient-1",
+      type: "income",
+      category: "session",
+      amount: "100.00",
+      guardian_id: null,
+      status: "pending",
+      paid_at: null,
+      payment_method: null,
+    };
+
+    expect(hasCashFlowImmutableFieldChanges(before, {
+      ...before,
+      amount: 100,
+      status: "confirmed",
+      paid_at: "2026-05-19T12:00:00Z",
+      payment_method: "pix",
+    })).toBe(false);
+
+    expect(getCashFlowImmutableFieldChanges(before, {
+      ...before,
+      user_id: "user-2",
+      session_id: "session-2",
+      package_id: "package-1",
+      patient_id: "patient-2",
+      type: "expense",
+      category: "rent",
+      amount: 120,
+      guardian_id: "guardian-1",
+    })).toEqual([...CASH_FLOW_IMMUTABLE_FIELDS]);
   });
 
   it("derives package payment status from cash flow status", () => {

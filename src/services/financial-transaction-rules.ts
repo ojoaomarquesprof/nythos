@@ -35,10 +35,23 @@ export const MANUAL_PAYMENT_METHODS = [
   "other",
 ] as const;
 
+export const CASH_FLOW_IMMUTABLE_FIELDS = [
+  "user_id",
+  "session_id",
+  "package_id",
+  "patient_id",
+  "type",
+  "category",
+  "amount",
+  "guardian_id",
+] as const;
+
 export type ManualPaymentMethod = (typeof MANUAL_PAYMENT_METHODS)[number];
 export type CashFlowOrigin = keyof typeof CASH_FLOW_ORIGIN_LABELS;
+export type CashFlowImmutableField = (typeof CASH_FLOW_IMMUTABLE_FIELDS)[number];
 
 export type CashFlowLike = {
+  user_id?: string | null;
   status?: string | null;
   type?: string | null;
   category?: string | null;
@@ -50,6 +63,7 @@ export type CashFlowLike = {
   created_at?: string | null;
   payment_method?: string | null;
   patient_id?: string | null;
+  guardian_id?: string | null;
   patient?: { id?: string | null; full_name?: string | null } | null;
 };
 
@@ -107,6 +121,31 @@ export function canConfirmCashFlowPayment(transaction: CashFlowLike): boolean {
 
 export function canCancelCashFlow(transaction: CashFlowLike): boolean {
   return transaction.status === "pending";
+}
+
+function normalizeImmutableFieldValue(
+  transaction: CashFlowLike,
+  field: CashFlowImmutableField
+): string | number | null {
+  if (field === "amount") {
+    const amount = Number(transaction.amount);
+    return Number.isFinite(amount) ? amount : null;
+  }
+
+  return transaction[field] ?? null;
+}
+
+export function getCashFlowImmutableFieldChanges(
+  before: CashFlowLike,
+  after: CashFlowLike
+): CashFlowImmutableField[] {
+  return CASH_FLOW_IMMUTABLE_FIELDS.filter(
+    (field) => normalizeImmutableFieldValue(before, field) !== normalizeImmutableFieldValue(after, field)
+  );
+}
+
+export function hasCashFlowImmutableFieldChanges(before: CashFlowLike, after: CashFlowLike): boolean {
+  return getCashFlowImmutableFieldChanges(before, after).length > 0;
 }
 
 export function isManualPaymentMethod(method: string | null | undefined): method is ManualPaymentMethod {
