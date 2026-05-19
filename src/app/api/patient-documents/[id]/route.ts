@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { logSafeError, safeClientError } from "@/lib/errors/safe-error";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/audit-events";
+import { recordAuditEvent } from "@/lib/audit/server";
 import { PATIENT_DOCUMENT_BUCKET } from "@/lib/patient-documents/file-rules";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -107,6 +109,19 @@ export async function DELETE(
         });
       }
     }
+
+    await recordAuditEvent({
+      actorId: user.id,
+      action: AUDIT_ACTIONS.DELETE_PATIENT_DOCUMENT,
+      entityType: AUDIT_ENTITY_TYPES.PATIENT_DOCUMENT,
+      entityId: document.id,
+      patientId: document.patient_id,
+      documentId: document.id,
+      metadata: {
+        had_file: Boolean(document.storage_path),
+        storage_removal_warning: Boolean(warning),
+      },
+    });
 
     return NextResponse.json({
       documents: await getDocuments(supabase, document.patient_id),

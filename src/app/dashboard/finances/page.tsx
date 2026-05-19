@@ -39,7 +39,7 @@ import type { Profile } from "@/types/database";
 import { usePdfExport } from "@/hooks/use-pdf-export";
 import { getBase64ImageFromUrl } from "@/lib/pdf-generator";
 import { toast } from "sonner";
-import { confirmCashFlowPayment, cancelPendingCashFlow } from "@/app/actions/financial-transactions";
+import { confirmCashFlowPayment, cancelPendingCashFlow, recordReceiptGenerated } from "@/app/actions/financial-transactions";
 import { BillingService, type FinancialTransaction } from "@/services/billing-service";
 import {
   buildCashFlowReceiptPayload,
@@ -236,6 +236,10 @@ export default function FinancesPage() {
     if (!receipt) {
       toast.error("NÃ£o foi possÃ­vel preparar os dados do recibo.");
       return;
+    }
+
+    if (transaction.id) {
+      void recordReceiptGenerated(transaction.id).catch(() => undefined);
     }
 
     const missingProfileData = !profile.full_name || !profile.clinic_name || !profile.crp;

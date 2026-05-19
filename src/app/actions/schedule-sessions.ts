@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/audit-events";
+import { recordAuditEvent } from "@/lib/audit/server";
 import {
   decryptGoogleTokenIfNeeded,
   decryptGoogleTokenFields,
@@ -1219,6 +1221,28 @@ export async function completeScheduleSession(
     revalidatePath(`/dashboard/patients/${session.patient_id}`);
     revalidatePath("/dashboard/finances");
 
+    await recordAuditEvent({
+      actorId: user.id,
+      actorRole: actorProfile.role ?? null,
+      action: AUDIT_ACTIONS.COMPLETE_SESSION,
+      entityType: AUDIT_ENTITY_TYPES.SESSION,
+      entityId: session.id,
+      patientId: session.patient_id,
+      sessionId: session.id,
+      packageId: session.package_id,
+      metadata: {
+        old_status: session.status,
+        new_status: "completed",
+        billing_mode: billingMode,
+        billing_created: billingCreated,
+        billing_already_exists: billingAlreadyExists,
+        billing_skipped_reason: billingSkippedReason ?? null,
+        package_credit_consumed: packageCreditConsumed,
+        package_credit_already_consumed: packageCreditAlreadyConsumed,
+        needs_evolution: !updatedSession.session_notes_encrypted,
+      },
+    });
+
     return {
       success: true,
       billingCreated,
@@ -1268,6 +1292,22 @@ export async function reverseCompletedScheduleSession(
     revalidatePath("/dashboard/schedule");
     if (patientId) revalidatePath(`/dashboard/patients/${patientId}`);
     revalidatePath("/dashboard/finances");
+
+    await recordAuditEvent({
+      actorId: user.id,
+      action: AUDIT_ACTIONS.REVERSE_COMPLETED_SESSION,
+      entityType: AUDIT_ENTITY_TYPES.SESSION,
+      entityId: parsedPayload.sessionId,
+      patientId,
+      sessionId: parsedPayload.sessionId,
+      metadata: {
+        billing_mode: typeof result.billing_mode === "string" ? result.billing_mode : null,
+        cash_flow_cancelled: result.cash_flow_cancelled === true,
+        package_credit_reversed: result.package_credit_reversed === true,
+        had_evolution: result.had_evolution === true,
+        warning: typeof result.warning === "string" ? result.warning : null,
+      },
+    });
 
     return {
       success: true,

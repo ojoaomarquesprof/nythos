@@ -2,11 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { logSafeError, safeClientError } from "@/lib/errors/safe-error";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/audit-events";
+import { recordAuditEvent } from "@/lib/audit/server";
 import { createClient } from "@/lib/supabase/server";
 import { hasOnlyAllowedKeys, isPlainObject, isValidIsoDate, isValidUuid } from "@/lib/validation/input";
 import {
   canCancelCashFlow,
   canConfirmCashFlowPayment,
+  canGenerateCashFlowReceipt,
   isManualPaymentMethod,
   type ManualPaymentMethod,
 } from "@/services/financial-transaction-rules";
@@ -34,10 +37,10 @@ async function getAuthenticatedClient() {
   } = await supabase.auth.getUser();
 
   if (error || !user || user.user_metadata?.user_type === "patient") {
-    return { supabase, error: "Sessão profissional inválida." };
+    return { supabase, user: null, error: "Sessão profissional inválida." };
   }
 
-  return { supabase, error: null };
+  return { supabase, user, error: null };
 }
 
 function normalizePaidAt(value: string | null | undefined): { value?: string; error?: string } {
@@ -101,7 +104,7 @@ export async function confirmCashFlowPayment(
   }
 
   try {
-    const { supabase, error: authError } = await getAuthenticatedClient();
+    const { supabase, user, error: authError } = await getAuthenticatedClient();
     if (authError) return { success: false, error: authError };
 
     const { data: transaction, error: loadError } = await supabase
@@ -131,6 +134,26 @@ export async function confirmCashFlowPayment(
     if (error) throw error;
     if (!data) return { success: false, error: "Lançamento financeiro já foi atualizado." };
 
+    await recordAuditEvent({
+      actorId: user?.id ?? null,
+      action: AUDIT_ACTIONS.CONFIRM_CASH_FLOW,
+      entityType: AUDIT_ENTITY_TYPES.CASH_FLOW,
+      entityId: data.id,
+      patientId: data.patient_id,
+      sessionId: data.session_id,
+      packageId: data.package_id,
+      cashFlowId: data.id,
+      metadata: {
+        old_status: transaction.status,
+        new_status: data.status,
+        amount: data.amount,
+        type: data.type,
+        category: data.category,
+        payment_method: data.payment_method,
+        paid_at: data.paid_at,
+      },
+    });
+
     revalidateFinancialPaths(data);
     return { success: true, data };
   } catch (err: unknown) {
@@ -147,7 +170,7 @@ export async function cancelPendingCashFlow(
   }
 
   try {
-    const { supabase, error: authError } = await getAuthenticatedClient();
+    const { supabase, user, error: authError } = await getAuthenticatedClient();
     if (authError) return { success: false, error: authError };
 
     const { data: transaction, error: loadError } = await supabase
@@ -173,10 +196,77 @@ export async function cancelPendingCashFlow(
     if (error) throw error;
     if (!data) return { success: false, error: "Lançamento financeiro já foi atualizado." };
 
+    await recordAuditEvent({
+      actorId: user?.id ?? null,
+      action: AUDIT_ACTIONS.CANCEL_CASH_FLOW,
+      entityType: AUDIT_ENTITY_TYPES.CASH_FLOW,
+      entityId: data.id,
+      patientId: data.patient_id,
+      sessionId: data.session_id,
+      packageId: data.package_id,
+      cashFlowId: data.id,
+      metadata: {
+        old_status: transaction.status,
+        new_status: data.status,
+        amount: data.amount,
+        type: data.type,
+        category: data.category,
+      },
+    });
+
     revalidateFinancialPaths(data);
     return { success: true, data };
   } catch (err: unknown) {
     logSafeError("[cancelPendingCashFlow] Exception", err, { cashFlowId });
+    return { success: false, error: GENERIC_FINANCIAL_ERROR };
+  }
+}
+
+export async function recordReceiptGenerated(
+  cashFlowId: string
+): Promise<FinancialTransactionActionResult<null>> {
+  if (!isValidUuid(cashFlowId)) {
+    return { success: false, error: "Lançamento financeiro inválido." };
+  }
+
+  try {
+    const { supabase, user, error: authError } = await getAuthenticatedClient();
+    if (authError) return { success: false, error: authError };
+
+    const { data: transaction, error: loadError } = await supabase
+      .from("cash_flow")
+      .select("*")
+      .eq("id", cashFlowId)
+      .maybeSingle();
+
+    if (loadError) throw loadError;
+    if (!transaction) return { success: false, error: "Lançamento financeiro não encontrado." };
+    if (!canGenerateCashFlowReceipt(transaction)) {
+      return { success: false, error: "Recibo indisponível para este lançamento." };
+    }
+
+    await recordAuditEvent({
+      actorId: user?.id ?? null,
+      action: AUDIT_ACTIONS.GENERATE_RECEIPT,
+      entityType: AUDIT_ENTITY_TYPES.CASH_FLOW,
+      entityId: transaction.id,
+      patientId: transaction.patient_id,
+      sessionId: transaction.session_id,
+      packageId: transaction.package_id,
+      cashFlowId: transaction.id,
+      metadata: {
+        status: transaction.status,
+        amount: transaction.amount,
+        type: transaction.type,
+        category: transaction.category,
+        payment_method: transaction.payment_method,
+        paid_at: transaction.paid_at,
+      },
+    });
+
+    return { success: true, data: null };
+  } catch (err: unknown) {
+    logSafeError("[recordReceiptGenerated] Exception", err, { cashFlowId });
     return { success: false, error: GENERIC_FINANCIAL_ERROR };
   }
 }

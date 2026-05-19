@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { logSafeError, safeClientError } from "@/lib/errors/safe-error";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/audit-events";
+import { recordAuditEvent } from "@/lib/audit/server";
 import { createClient } from "@/lib/supabase/server";
 import {
   hasOnlyAllowedKeys,
@@ -99,10 +101,10 @@ async function getAuthenticatedClient() {
   } = await supabase.auth.getUser();
 
   if (error || !user || user.user_metadata?.user_type === "patient") {
-    return { supabase, error: "Sessao profissional invalida." };
+    return { supabase, user: null, error: "Sessao profissional invalida." };
   }
 
-  return { supabase, error: null };
+  return { supabase, user, error: null };
 }
 
 function normalizeDate(value: string | null | undefined, fieldName: string): { value?: string | null; error?: string } {
@@ -255,7 +257,7 @@ export async function createSessionPackage(
   }
 
   try {
-    const { supabase, error: authError } = await getAuthenticatedClient();
+    const { supabase, user, error: authError } = await getAuthenticatedClient();
     if (authError) return { success: false, error: authError };
 
     const { data, error } = await supabase.rpc("create_session_package_with_billing", {
@@ -276,6 +278,23 @@ export async function createSessionPackage(
 
     const sessionPackage = castPackage(data);
     if (!sessionPackage) return { success: false, error: GENERIC_PACKAGE_ERROR };
+
+    await recordAuditEvent({
+      actorId: user?.id ?? null,
+      action: AUDIT_ACTIONS.CREATE_SESSION_PACKAGE,
+      entityType: AUDIT_ENTITY_TYPES.SESSION_PACKAGE,
+      entityId: sessionPackage.id,
+      patientId: sessionPackage.patient_id,
+      packageId: sessionPackage.id,
+      cashFlowId: sessionPackage.cash_flow_id,
+      metadata: {
+        total_sessions: sessionPackage.total_sessions,
+        total_amount: sessionPackage.total_amount,
+        payment_status: sessionPackage.payment_status,
+        cash_flow_status: sessionPackage.cash_flow_status,
+        allow_use_before_payment: sessionPackage.allow_use_before_payment,
+      },
+    });
 
     revalidatePackagePaths(sessionPackage.patient_id);
     return { success: true, data: sessionPackage };
@@ -415,7 +434,7 @@ export async function setSessionPackageStatus(
   }
 
   try {
-    const { supabase, error: authError } = await getAuthenticatedClient();
+    const { supabase, user, error: authError } = await getAuthenticatedClient();
     if (authError) return { success: false, error: authError };
 
     const { data, error } = await supabase.rpc("set_session_package_status_secure", {
@@ -430,6 +449,23 @@ export async function setSessionPackageStatus(
 
     const sessionPackage = castPackage(data);
     if (!sessionPackage) return { success: false, error: GENERIC_PACKAGE_ERROR };
+
+    await recordAuditEvent({
+      actorId: user?.id ?? null,
+      action: AUDIT_ACTIONS.SET_SESSION_PACKAGE_STATUS,
+      entityType: AUDIT_ENTITY_TYPES.SESSION_PACKAGE,
+      entityId: sessionPackage.id,
+      patientId: sessionPackage.patient_id,
+      packageId: sessionPackage.id,
+      cashFlowId: sessionPackage.cash_flow_id,
+      metadata: {
+        requested_status: status,
+        resulting_status: sessionPackage.status,
+        payment_status: sessionPackage.payment_status,
+        cash_flow_status: sessionPackage.cash_flow_status,
+        warning: sessionPackage.warning ?? null,
+      },
+    });
 
     revalidatePackagePaths(sessionPackage.patient_id);
     return { success: true, data: sessionPackage };

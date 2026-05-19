@@ -438,6 +438,71 @@ export type Database = {
         Relationships: never[];
       };
 
+      audit_logs: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          actor_role: string | null;
+          action: string;
+          table_name: string | null;
+          record_id: string | null;
+          entity_type: string | null;
+          entity_id: string | null;
+          patient_id: string | null;
+          session_id: string | null;
+          package_id: string | null;
+          cash_flow_id: string | null;
+          document_id: string | null;
+          metadata: Json | null;
+          ip_hash: string | null;
+          user_agent_hash: string | null;
+          old_data: Json | null;
+          new_data: Json | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          actor_role?: string | null;
+          action: string;
+          table_name?: string | null;
+          record_id?: string | null;
+          entity_type?: string | null;
+          entity_id?: string | null;
+          patient_id?: string | null;
+          session_id?: string | null;
+          package_id?: string | null;
+          cash_flow_id?: string | null;
+          document_id?: string | null;
+          metadata?: Json | null;
+          ip_hash?: string | null;
+          user_agent_hash?: string | null;
+          old_data?: Json | null;
+          new_data?: Json | null;
+          created_at?: string | null;
+        };
+        Update: {
+          user_id?: string | null;
+          actor_role?: string | null;
+          action?: string;
+          table_name?: string | null;
+          record_id?: string | null;
+          entity_type?: string | null;
+          entity_id?: string | null;
+          patient_id?: string | null;
+          session_id?: string | null;
+          package_id?: string | null;
+          cash_flow_id?: string | null;
+          document_id?: string | null;
+          metadata?: Json | null;
+          ip_hash?: string | null;
+          user_agent_hash?: string | null;
+          old_data?: Json | null;
+          new_data?: Json | null;
+        };
+        Relationships: never[];
+      };
+
       session_package_usages: {
         Row: {
           id: string;
@@ -1179,6 +1244,7 @@ export type Session            = Database['public']['Tables']['sessions']['Row']
 export type ExternalCalendarEvent = Database['public']['Tables']['external_calendar_events']['Row'];
 export type Subscription       = Database['public']['Tables']['subscriptions']['Row'];
 export type CashFlow           = Database['public']['Tables']['cash_flow']['Row'];
+export type AuditLog           = Database['public']['Tables']['audit_logs']['Row'];
 export type PatientTask        = Database['public']['Tables']['patient_tasks']['Row'];
 export type EmotionDiary       = Database['public']['Tables']['emotion_diary']['Row'];
 export type AnamnesisTemplate  = Database['public']['Tables']['anamnesis_templates']['Row'];

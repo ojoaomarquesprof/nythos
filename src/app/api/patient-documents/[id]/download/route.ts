@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { logSafeError, safeClientError } from "@/lib/errors/safe-error";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/audit-events";
+import { recordAuditEvent } from "@/lib/audit/server";
 import {
   PATIENT_DOCUMENT_BUCKET,
   PATIENT_DOCUMENT_SIGNED_URL_TTL_SECONDS,
@@ -85,6 +87,19 @@ export async function GET(
     if (error || !data?.signedUrl) {
       throw error || new Error("Signed URL was not returned.");
     }
+
+    await recordAuditEvent({
+      actorId: user.id,
+      action: AUDIT_ACTIONS.DOWNLOAD_PATIENT_DOCUMENT,
+      entityType: AUDIT_ENTITY_TYPES.PATIENT_DOCUMENT,
+      entityId: document.id,
+      patientId: document.patient_id,
+      documentId: document.id,
+      metadata: {
+        has_file: true,
+        expires_in_seconds: PATIENT_DOCUMENT_SIGNED_URL_TTL_SECONDS,
+      },
+    });
 
     return NextResponse.json({
       url: data.signedUrl,

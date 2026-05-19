@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { logSafeError, safeClientError } from "@/lib/errors/safe-error";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/audit-events";
+import { recordAuditEvent } from "@/lib/audit/server";
 import {
   PATIENT_DOCUMENT_BUCKET,
 } from "@/lib/patient-documents/file-rules";
@@ -174,6 +176,22 @@ export async function POST(request: Request) {
         throw updateError;
       }
     }
+
+    await recordAuditEvent({
+      actorId: user.id,
+      action: AUDIT_ACTIONS.UPLOAD_PATIENT_DOCUMENT,
+      entityType: AUDIT_ENTITY_TYPES.PATIENT_DOCUMENT,
+      entityId: createdDocumentId,
+      patientId: patient.id,
+      documentId: createdDocumentId,
+      metadata: {
+        category,
+        has_file: Boolean(file),
+        mime_type: file?.type ?? null,
+        size_bytes: file?.size ?? null,
+        document_date: documentDate || null,
+      },
+    });
 
     return NextResponse.json({
       documents: await getDocuments(supabase, patient.id),

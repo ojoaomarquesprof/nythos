@@ -1385,14 +1385,32 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   action TEXT NOT NULL, -- INSERT, UPDATE, DELETE
-  table_name TEXT NOT NULL,
-  record_id UUID NOT NULL,
+  table_name TEXT,
+  record_id UUID,
+  actor_role TEXT,
+  entity_type TEXT,
+  entity_id UUID,
+  patient_id UUID,
+  session_id UUID,
+  package_id UUID,
+  cash_flow_id UUID,
+  document_id UUID,
+  metadata JSONB,
+  ip_hash TEXT,
+  user_agent_hash TEXT,
   old_data JSONB,
   new_data JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON public.audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON public.audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON public.audit_logs(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_patient_id ON public.audit_logs(patient_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at);
+
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+REVOKE INSERT, UPDATE, DELETE ON public.audit_logs FROM anon, authenticated;
 
 -- Ninguém via API pública pode inserir, alterar ou deletar logs.
 -- Apenas service_role ou lógica de admin futura terá acesso de leitura.
@@ -1403,23 +1421,80 @@ CREATE POLICY "Audit logs are read-only for system"
 -- Função trigger para Auditoria
 CREATE OR REPLACE FUNCTION public.handle_audit_log()
 RETURNS TRIGGER AS $$
+DECLARE
+  v_new JSONB := CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE to_jsonb(NEW) END;
+  v_old JSONB := CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE to_jsonb(OLD) END;
+  v_row JSONB := COALESCE(v_new, v_old);
+  v_entity_id UUID := NULL;
+  v_patient_id UUID := NULL;
+  v_session_id UUID := NULL;
+  v_metadata JSONB := '{}'::jsonb;
 BEGIN
-  IF (TG_OP = 'INSERT') THEN
-    INSERT INTO public.audit_logs (user_id, action, table_name, record_id, new_data)
-    VALUES (auth.uid(), TG_OP, TG_TABLE_NAME, NEW.id, to_jsonb(NEW));
-    RETURN NEW;
-  ELSIF (TG_OP = 'UPDATE') THEN
-    INSERT INTO public.audit_logs (user_id, action, table_name, record_id, old_data, new_data)
-    VALUES (auth.uid(), TG_OP, TG_TABLE_NAME, NEW.id, to_jsonb(OLD), to_jsonb(NEW));
-    RETURN NEW;
-  ELSIF (TG_OP = 'DELETE') THEN
-    INSERT INTO public.audit_logs (user_id, action, table_name, record_id, old_data)
-    VALUES (auth.uid(), TG_OP, TG_TABLE_NAME, OLD.id, to_jsonb(OLD));
+  IF v_row ? 'id' AND NULLIF(v_row->>'id', '') IS NOT NULL THEN
+    v_entity_id := (v_row->>'id')::UUID;
+  END IF;
+
+  IF TG_TABLE_NAME = 'patients' THEN
+    v_patient_id := v_entity_id;
+    v_metadata := jsonb_build_object(
+      'old_status', v_old->>'status',
+      'new_status', v_new->>'status',
+      'has_auth_user', COALESCE(v_new ? 'auth_user_id', v_old ? 'auth_user_id', FALSE)
+    );
+  ELSIF TG_TABLE_NAME = 'sessions' THEN
+    v_session_id := v_entity_id;
+    IF v_row ? 'patient_id' AND NULLIF(v_row->>'patient_id', '') IS NOT NULL THEN
+      v_patient_id := (v_row->>'patient_id')::UUID;
+    END IF;
+    v_metadata := jsonb_build_object(
+      'old_status', v_old->>'status',
+      'new_status', v_new->>'status',
+      'billing_mode', v_row->>'billing_mode',
+      'has_evolution', NULLIF(COALESCE(v_new->>'session_notes_encrypted', v_old->>'session_notes_encrypted'), '') IS NOT NULL
+    );
+  ELSIF TG_TABLE_NAME = 'patient_tasks' THEN
+    IF v_row ? 'patient_id' AND NULLIF(v_row->>'patient_id', '') IS NOT NULL THEN
+      v_patient_id := (v_row->>'patient_id')::UUID;
+    END IF;
+    v_metadata := jsonb_build_object(
+      'old_status', v_old->>'status',
+      'new_status', v_new->>'status',
+      'old_task_type', v_old->>'task_type',
+      'new_task_type', v_new->>'task_type'
+    );
+  END IF;
+
+  INSERT INTO public.audit_logs (
+    user_id,
+    action,
+    table_name,
+    record_id,
+    entity_type,
+    entity_id,
+    patient_id,
+    session_id,
+    metadata
+  )
+  VALUES (
+    auth.uid(),
+    lower(TG_OP) || '_' || TG_TABLE_NAME,
+    TG_TABLE_NAME,
+    v_entity_id,
+    TG_TABLE_NAME,
+    v_entity_id,
+    v_patient_id,
+    v_session_id,
+    v_metadata
+  );
+
+  IF TG_OP = 'DELETE' THEN
     RETURN OLD;
   END IF;
-  RETURN NULL;
+  RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
+REVOKE EXECUTE ON FUNCTION public.handle_audit_log() FROM PUBLIC, anon, authenticated;
 
 -- Aplicar trigger nas tabelas solicitadas
 DROP TRIGGER IF EXISTS audit_patients ON public.patients;
