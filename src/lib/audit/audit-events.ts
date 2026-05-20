@@ -1,8 +1,15 @@
 import type { Json } from "@/types/database";
 
 export const AUDIT_ACTIONS = {
+  CREATE_SESSION: "create_session",
+  CREATE_RECURRING_SESSIONS: "create_recurring_sessions",
+  CANCEL_SESSION: "cancel_session",
+  RESCHEDULE_SESSION: "reschedule_session",
   COMPLETE_SESSION: "complete_session",
   REVERSE_COMPLETED_SESSION: "reverse_completed_session",
+  CREATE_SESSION_EVOLUTION: "create_session_evolution",
+  UPDATE_SESSION_EVOLUTION: "update_session_evolution",
+  APPEND_GENERAL_NOTE: "append_general_note",
   CONFIRM_CASH_FLOW: "confirm_cash_flow",
   CANCEL_CASH_FLOW: "cancel_cash_flow",
   GENERATE_RECEIPT: "generate_receipt",
@@ -15,6 +22,7 @@ export const AUDIT_ACTIONS = {
 
 export const AUDIT_ENTITY_TYPES = {
   SESSION: "session",
+  PATIENT: "patient",
   CASH_FLOW: "cash_flow",
   SESSION_PACKAGE: "session_package",
   PATIENT_DOCUMENT: "patient_document",
@@ -35,14 +43,21 @@ const SENSITIVE_KEY_PATTERNS = [
   /access[_-]?path/i,
   /file[_-]?name/i,
   /notes?$/i,
+  /clinical[_-]?note/i,
   /note[_-]?content/i,
   /evolution[_-]?(text|content|notes?|encrypted|raw)/i,
+  /^(mood[_-]?happy[_-]?sad|mood[_-]?anxious[_-]?calm|scale[_-]?value)$/i,
   /diagnosis/i,
+  /diagnostic/i,
+  /hypothesis/i,
   /prontuario/i,
   /anamnese/i,
   /clinical/i,
+  /therapeutic/i,
   /description[_-]?encrypted/i,
   /session[_-]?notes[_-]?encrypted/i,
+  /google[_-]?(response|payload|event|token|calendar)/i,
+  /^(payload|form[_-]?data|request|response|error)$/i,
   /^headers?$/i,
 ] as const;
 

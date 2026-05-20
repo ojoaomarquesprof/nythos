@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/audit-events";
-import { recordAuditEvent } from "@/lib/audit/server";
+import {
+  recordAuditEvent,
+  recordSessionCancelled,
+  recordSessionCreated,
+  recordSessionRescheduled,
+} from "@/lib/audit/server";
 import {
   decryptGoogleTokenIfNeeded,
   decryptGoogleTokenFields,
@@ -61,6 +66,24 @@ export interface CancelSessionPayload {
 export interface CancelSessionResult {
   success: boolean;
   warning?: string;
+  error?: string;
+}
+
+export interface CancelPatientScheduleSessionsPayload {
+  sessionId: string;
+  recurrenceRule?: string | null;
+  scheduledAt?: string | null;
+  allFollowing?: boolean;
+}
+
+export interface RescheduleSessionPayload {
+  sessionId: string;
+  scheduledAt: string;
+  conflictChecked?: boolean;
+}
+
+export interface RescheduleSessionResult {
+  success: boolean;
   error?: string;
 }
 
@@ -155,6 +178,17 @@ const ALLOWED_SESSION_TYPES = new Set([
 ]);
 
 const ALLOWED_CANCEL_SESSION_KEYS = ["sessionId"] as const;
+const ALLOWED_CANCEL_PATIENT_SESSION_KEYS = [
+  "sessionId",
+  "recurrenceRule",
+  "scheduledAt",
+  "allFollowing",
+] as const;
+const ALLOWED_RESCHEDULE_SESSION_KEYS = [
+  "sessionId",
+  "scheduledAt",
+  "conflictChecked",
+] as const;
 const ALLOWED_COMPLETE_SESSION_KEYS = ["sessionId", "allowFutureCompletion"] as const;
 const ALLOWED_REVERSE_SESSION_KEYS = ["sessionId", "reason"] as const;
 
@@ -292,6 +326,63 @@ function parseCancelPayload(payload: CancelSessionPayload): { ok: true; sessionI
   }
 
   return { ok: true, sessionId: payload.sessionId.trim() };
+}
+
+function parseCancelPatientScheduleSessionsPayload(
+  payload: CancelPatientScheduleSessionsPayload
+): {
+  ok: true;
+  sessionId: string;
+  recurrenceRule: string | null;
+  scheduledAt: string | null;
+  allFollowing: boolean;
+} | { ok: false; error: string } {
+  if (!isPlainObject(payload) || !hasOnlyAllowedKeys(payload, ALLOWED_CANCEL_PATIENT_SESSION_KEYS)) {
+    return { ok: false, error: "Payload inválido para cancelamento." };
+  }
+
+  if (!isValidUuid(payload.sessionId)) {
+    return { ok: false, error: "Sessão inválida." };
+  }
+
+  const recurrenceRule = typeof payload.recurrenceRule === "string"
+    ? payload.recurrenceRule.trim()
+    : null;
+  const scheduledAt = typeof payload.scheduledAt === "string"
+    ? payload.scheduledAt.trim()
+    : null;
+
+  return {
+    ok: true,
+    sessionId: payload.sessionId.trim(),
+    recurrenceRule: recurrenceRule || null,
+    scheduledAt: scheduledAt || null,
+    allFollowing: payload.allFollowing === true,
+  };
+}
+
+function parseReschedulePayload(
+  payload: RescheduleSessionPayload
+): { ok: true; sessionId: string; scheduledAt: Date; conflictChecked: boolean } | { ok: false; error: string } {
+  if (!isPlainObject(payload) || !hasOnlyAllowedKeys(payload, ALLOWED_RESCHEDULE_SESSION_KEYS)) {
+    return { ok: false, error: "Payload inválido para remarcação." };
+  }
+
+  if (!isValidUuid(payload.sessionId)) {
+    return { ok: false, error: "Sessão inválida." };
+  }
+
+  const scheduledAt = new Date(String(payload.scheduledAt ?? ""));
+  if (Number.isNaN(scheduledAt.getTime())) {
+    return { ok: false, error: "Data/horário inválidos." };
+  }
+
+  return {
+    ok: true,
+    sessionId: payload.sessionId.trim(),
+    scheduledAt,
+    conflictChecked: payload.conflictChecked === true,
+  };
 }
 
 function parseCompletePayload(payload: CompleteSessionPayload): { ok: true; sessionId: string; allowFutureCompletion: boolean } | { ok: false; error: string } {
@@ -792,6 +883,7 @@ export async function createScheduleSessions(
     }
 
     let googleCreatedCount = 0;
+    const googleSyncedSessionIds = new Set<string>();
     let warning: string | undefined;
 
     // service_role is needed only for encrypted Google token reads/decryption.
@@ -867,6 +959,7 @@ export async function createScheduleSessions(
               .is("google_event_id", null);
 
             googleCreatedCount++;
+            googleSyncedSessionIds.add(created.id);
           } catch {
             warning = "SessÃµes criadas no Nythos, mas falha de comunicaÃ§Ã£o impediu envio ao Google Calendar.";
           }
@@ -875,6 +968,26 @@ export async function createScheduleSessions(
     }
 
     revalidatePath("/dashboard/schedule");
+    revalidatePath(`/dashboard/patients/${input.patientId}`);
+
+    for (const created of createdSessions) {
+      await recordSessionCreated({
+        actorId: user.id,
+        actorRole: actorProfile.role ?? null,
+        sessionId: created.id,
+        patientId: input.patientId,
+        packageId: resolvedPackageId,
+        isRecurring: input.isRecurring,
+        scheduledAt: created.scheduled_at,
+        durationMinutes: created.duration_minutes ?? duration,
+        billingMode: input.billingMode,
+        sessionPrice: resolvedSessionPrice,
+        recurrenceCount: seriesCount,
+        googleSynced: googleSyncedSessionIds.has(created.id),
+        conflictChecked: true,
+      });
+    }
+
     return { success: true, createdCount: rows.length, googleCreatedCount, warning };
   } catch (err: unknown) {
     logSafeError("[createScheduleSessions] Unexpected error", err);
@@ -911,7 +1024,7 @@ export async function cancelScheduleSession(
 
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
-      .select("id, user_id, status, google_event_id")
+      .select("id, user_id, patient_id, scheduled_at, duration_minutes, status, google_event_id, billing_mode, package_id, session_price")
       .eq("id", parsedPayload.sessionId)
       .maybeSingle();
 
@@ -990,10 +1103,205 @@ export async function cancelScheduleSession(
     }
 
     revalidatePath("/dashboard/schedule");
+    revalidatePath(`/dashboard/patients/${session.patient_id}`);
+
+    await recordSessionCancelled({
+      actorId: user.id,
+      actorRole: actorProfile.role ?? null,
+      sessionId: session.id,
+      patientId: session.patient_id,
+      packageId: session.package_id,
+      scheduledAt: session.scheduled_at,
+      oldStatus: session.status,
+      newStatus: "cancelled",
+      durationMinutes: session.duration_minutes,
+      billingMode: session.billing_mode,
+      sessionPrice: session.session_price,
+      googleSynced: Boolean(session.google_event_id && !warning),
+    });
+
     return { success: true, warning };
   } catch (err: unknown) {
     logSafeError("[cancelScheduleSession] Unexpected error", err);
     return { success: false, error: "Erro ao cancelar sessão." };
+  }
+}
+
+export async function cancelPatientScheduleSessions(
+  payload: CancelPatientScheduleSessionsPayload
+): Promise<CancelSessionResult> {
+  try {
+    const parsedPayload = parseCancelPatientScheduleSessionsPayload(payload);
+    if (!parsedPayload.ok) {
+      return { success: false, error: parsedPayload.error };
+    }
+
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return { success: false, error: "Sessão inválida." };
+
+    const { data: actorProfile } = await supabase
+      .from("profiles")
+      .select("id, employer_id, role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (!actorProfile) return { success: false, error: "Perfil não encontrado." };
+    if (!["therapist", "admin", "secretary"].includes(actorProfile.role ?? "")) {
+      return { success: false, error: "Perfil sem permissão para alterar sessões." };
+    }
+
+    const { data: session, error: sessionError } = await supabase
+      .from("sessions")
+      .select("id, user_id, patient_id, scheduled_at, duration_minutes, status, billing_mode, package_id, session_price")
+      .eq("id", parsedPayload.sessionId)
+      .maybeSingle();
+
+    if (sessionError) {
+      logSafeError("[cancelPatientScheduleSessions] Failed to load session", sessionError);
+      return { success: false, error: "Não foi possível carregar a sessão." };
+    }
+    if (!session) return { success: false, error: "Sessão não encontrada." };
+
+    const canWriteForTherapist =
+      actorProfile.id === session.user_id || actorProfile.employer_id === session.user_id;
+    if (!canWriteForTherapist) {
+      return { success: false, error: "Você não tem permissão para alterar esta sessão." };
+    }
+
+    let query = supabase
+      .from("sessions")
+      .update({ status: "cancelled" });
+
+    if (parsedPayload.allFollowing && parsedPayload.recurrenceRule && parsedPayload.scheduledAt) {
+      query = query
+        .eq("recurrence_rule", parsedPayload.recurrenceRule)
+        .gte("scheduled_at", parsedPayload.scheduledAt);
+    } else {
+      query = query.eq("id", parsedPayload.sessionId);
+    }
+
+    const { data: cancelledSessions, error: cancelError } = await query
+      .select("id, patient_id, scheduled_at, duration_minutes, status, billing_mode, package_id, session_price");
+
+    if (cancelError) {
+      logSafeError("[cancelPatientScheduleSessions] Failed to cancel session", cancelError);
+      return { success: false, error: "Não foi possível cancelar a sessão." };
+    }
+
+    const auditedSessions = cancelledSessions?.length ? cancelledSessions : [session];
+    for (const cancelled of auditedSessions) {
+      await recordSessionCancelled({
+        actorId: user.id,
+        actorRole: actorProfile.role ?? null,
+        sessionId: cancelled.id,
+        patientId: cancelled.patient_id,
+        packageId: cancelled.package_id,
+        scheduledAt: cancelled.scheduled_at,
+        oldStatus: cancelled.id === session.id ? session.status : null,
+        newStatus: "cancelled",
+        durationMinutes: cancelled.duration_minutes,
+        billingMode: cancelled.billing_mode,
+        sessionPrice: cancelled.session_price,
+        isRecurring: parsedPayload.allFollowing,
+        recurrenceCount: auditedSessions.length,
+        googleSynced: false,
+      });
+    }
+
+    revalidatePath("/dashboard/schedule");
+    revalidatePath(`/dashboard/patients/${session.patient_id}`);
+    return { success: true };
+  } catch (err: unknown) {
+    logSafeError("[cancelPatientScheduleSessions] Unexpected error", err);
+    return { success: false, error: "Erro ao cancelar sessão." };
+  }
+}
+
+export async function rescheduleScheduleSession(
+  payload: RescheduleSessionPayload
+): Promise<RescheduleSessionResult> {
+  try {
+    const parsedPayload = parseReschedulePayload(payload);
+    if (!parsedPayload.ok) {
+      return { success: false, error: parsedPayload.error };
+    }
+
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return { success: false, error: "Sessão inválida." };
+
+    const { data: actorProfile } = await supabase
+      .from("profiles")
+      .select("id, employer_id, role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (!actorProfile) return { success: false, error: "Perfil não encontrado." };
+    if (!["therapist", "admin", "secretary"].includes(actorProfile.role ?? "")) {
+      return { success: false, error: "Perfil sem permissão para alterar sessões." };
+    }
+
+    const { data: session, error: sessionError } = await supabase
+      .from("sessions")
+      .select("id, user_id, patient_id, scheduled_at, duration_minutes, status, billing_mode, package_id, session_price")
+      .eq("id", parsedPayload.sessionId)
+      .maybeSingle();
+
+    if (sessionError) {
+      logSafeError("[rescheduleScheduleSession] Failed to load session", sessionError);
+      return { success: false, error: "Não foi possível carregar a sessão." };
+    }
+    if (!session) return { success: false, error: "Sessão não encontrada." };
+
+    const canWriteForTherapist =
+      actorProfile.id === session.user_id || actorProfile.employer_id === session.user_id;
+    if (!canWriteForTherapist) {
+      return { success: false, error: "Você não tem permissão para alterar esta sessão." };
+    }
+
+    const { error: updateError } = await supabase
+      .from("sessions")
+      .update({
+        scheduled_at: parsedPayload.scheduledAt.toISOString(),
+        status: "scheduled",
+      })
+      .eq("id", session.id);
+
+    if (updateError) {
+      logSafeError("[rescheduleScheduleSession] Failed to reschedule session", updateError);
+      return { success: false, error: "Não foi possível remarcar a sessão." };
+    }
+
+    revalidatePath("/dashboard/schedule");
+    revalidatePath(`/dashboard/patients/${session.patient_id}`);
+
+    await recordSessionRescheduled({
+      actorId: user.id,
+      actorRole: actorProfile.role ?? null,
+      sessionId: session.id,
+      patientId: session.patient_id,
+      packageId: session.package_id,
+      previousScheduledAt: session.scheduled_at,
+      newScheduledAt: parsedPayload.scheduledAt.toISOString(),
+      oldStatus: session.status,
+      newStatus: "scheduled",
+      durationMinutes: session.duration_minutes,
+      billingMode: session.billing_mode,
+      sessionPrice: session.session_price,
+      conflictChecked: parsedPayload.conflictChecked,
+    });
+
+    return { success: true };
+  } catch (err: unknown) {
+    logSafeError("[rescheduleScheduleSession] Unexpected error", err);
+    return { success: false, error: "Erro ao remarcar sessão." };
   }
 }
 

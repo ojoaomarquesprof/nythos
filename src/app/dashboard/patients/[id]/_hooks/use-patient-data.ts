@@ -1,7 +1,13 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { completeScheduleSession, reverseCompletedScheduleSession } from "@/app/actions/schedule-sessions";
+import {
+  cancelPatientScheduleSessions,
+  completeScheduleSession,
+  rescheduleScheduleSession,
+  reverseCompletedScheduleSession,
+} from "@/app/actions/schedule-sessions";
+import { appendGeneralNote, saveSessionEvolution } from "@/app/actions/patient-record";
 import { createClient } from "@/lib/supabase/client";
 import { PatientService } from "@/services/patient-service";
 import { BillingService } from "@/services/billing-service";
@@ -239,7 +245,11 @@ export function usePatientData() {
     if (!newNote.trim() || !patient) return;
     setSavingNote(true);
 
-    const { data, error } = await PatientService.updatePatientNotes(patient.id, newNote.trim());
+    const { data, error } = await appendGeneralNote({
+      patientId: patient.id,
+      note: newNote.trim(),
+      source: "patient",
+    });
 
     if (!error && data) {
       setPatient(data);
@@ -395,12 +405,14 @@ export function usePatientData() {
     setIsSaving(true);
 
     try {
-      const { data: updatedSession, error } = await BillingService.updateSessionEvolution(
-        viewingSession.id,
+      const params = new URLSearchParams(window.location.search);
+      const { data: updatedSession, error } = await saveSessionEvolution({
+        sessionId: viewingSession.id,
         notes,
-        sessionEditForm.mood_happy_sad,
-        sessionEditForm.mood_anxious_calm
-      );
+        moodHappy: sessionEditForm.mood_happy_sad,
+        moodAnxious: sessionEditForm.mood_anxious_calm,
+        source: params.get("evolution") === "1" ? "schedule" : "patient",
+      });
 
       if (error) throw new Error(error);
       if (!updatedSession) {
@@ -430,13 +442,13 @@ export function usePatientData() {
     setIsSaving(true);
 
     try {
-      const { error } = await BillingService.cancelSession(
-        cancellingSession.id,
-        cancellingSession.recurrence_rule,
-        cancellingSession.scheduled_at,
-        allFollowing
-      );
-      if (error) throw new Error(error);
+      const result = await cancelPatientScheduleSessions({
+        sessionId: cancellingSession.id,
+        recurrenceRule: cancellingSession.recurrence_rule,
+        scheduledAt: cancellingSession.scheduled_at,
+        allFollowing,
+      });
+      if (!result.success) throw new Error(result.error || "Falha ao cancelar sessão.");
 
       setShowCancelSeriesModal(false);
       setCancellingSession(null);
@@ -475,9 +487,13 @@ export function usePatientData() {
         throw new Error("Este horário já está ocupado por outro paciente.");
       }
 
-      const { error } = await BillingService.rescheduleSession(rescheduleSession.id, scheduledAt);
+      const result = await rescheduleScheduleSession({
+        sessionId: rescheduleSession.id,
+        scheduledAt: scheduledAt.toISOString(),
+        conflictChecked: true,
+      });
 
-      if (error) throw new Error(error);
+      if (!result.success) throw new Error(result.error || "Falha ao remarcar sessão.");
 
       setShowRescheduleModal(false);
       setRescheduleSession(null);
