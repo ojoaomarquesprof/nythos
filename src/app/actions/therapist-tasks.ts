@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { AUDIT_ACTIONS } from "@/lib/audit/audit-events";
+import { recordPatientTaskEvent } from "@/lib/audit/server";
 import { logSafeError, safeClientError } from "@/lib/errors/safe-error";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -140,6 +142,17 @@ export async function createPatientTask(
     }
 
     revalidatePath(`/dashboard/patients/${payload.patient_id}`);
+    await recordPatientTaskEvent({
+      actorId: user.id,
+      action: AUDIT_ACTIONS.CREATE_PATIENT_TASK,
+      patientId: payload.patient_id,
+      taskId: task?.id ?? null,
+      category: payload.category || "general",
+      newStatus: "pending",
+      dueDate: payload.due_date || null,
+      priority: payload.priority || "medium",
+    });
+
     return { success: true, taskId: task?.id };
   } catch (err: unknown) {
     logSafeError("[createPatientTask] Exception", err);
@@ -223,6 +236,13 @@ export async function updatePatientTaskStatus(
       return { success: false, error: "Acesso negado." };
     }
 
+    const { data: existingTask } = await supabase
+      .from("patient_tasks")
+      .select("id, status, category, due_date, priority")
+      .eq("id", payload.task_id)
+      .eq("patient_id", payload.patient_id)
+      .maybeSingle();
+
     const { error: updateErr } = await supabase
       .from("patient_tasks")
       .update({
@@ -239,6 +259,22 @@ export async function updatePatientTaskStatus(
     }
 
     revalidatePath(`/dashboard/patients/${payload.patient_id}`);
+    await recordPatientTaskEvent({
+      actorId: user.id,
+      action: payload.status === "completed"
+        ? AUDIT_ACTIONS.COMPLETE_PATIENT_TASK_BY_THERAPIST
+        : payload.status === "cancelled"
+          ? AUDIT_ACTIONS.CANCEL_PATIENT_TASK
+          : AUDIT_ACTIONS.UPDATE_PATIENT_TASK,
+      patientId: payload.patient_id,
+      taskId: payload.task_id,
+      category: existingTask?.category ?? null,
+      oldStatus: existingTask?.status ?? null,
+      newStatus: payload.status,
+      dueDate: existingTask?.due_date ?? null,
+      priority: existingTask?.priority ?? null,
+    });
+
     return { success: true, taskId: payload.task_id };
   } catch (err: unknown) {
     logSafeError("[updatePatientTaskStatus] Exception", err);

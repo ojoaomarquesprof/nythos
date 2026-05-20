@@ -45,6 +45,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { auditPublicAnamnesisInvalidAccess } from "@/app/actions/clinical-audit";
 
 type AnamnesisRequest = AnamnesisResponse & {
   public_token?: string | null;
@@ -189,6 +190,17 @@ export function AnamnesisRequestCard({ patientId }: { patientId: string }) {
     setMutatingId(requestId);
     const { error } = await AnamnesisService.revokePublicLink(requestId);
     if (error) alert(error);
+    if (!error) {
+      const request = requests.find((item) => item.id === requestId);
+      await auditPublicAnamnesisInvalidAccess({
+        patientId,
+        templateId: request?.anamnesis_templates?.id ?? request?.template_id ?? null,
+        responseId: requestId,
+        requestId,
+        status: "revoked",
+        tokenValid: false,
+      });
+    }
     await loadData();
     setMutatingId(null);
   };

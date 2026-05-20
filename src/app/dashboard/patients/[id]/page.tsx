@@ -60,6 +60,7 @@ import { AbcRecordCard } from "@/components/dashboard/patients/abc-record-card";
 import { AnamnesisRequestCard } from "@/components/dashboard/patients/anamnesis-request-card";
 import { PatientEngagementCard } from "@/components/dashboard/patients/patient-engagement-card";
 import { PatientTasksManager } from "@/components/dashboard/patients/patient-tasks-manager";
+import { auditClinicalPdfExported } from "@/app/actions/clinical-audit";
 
 import type { Session, Patient } from "@/types/database";
 
@@ -1562,7 +1563,7 @@ export default function PatientDetailPage() {
       SESSION_STATUS[s.status as keyof typeof SESSION_STATUS]?.label || ""
     ]);
 
-    await exportPdf({
+    const exported = await exportPdf({
       title: "Relatório de Sessões",
       subtitle: `Paciente: ${patient.full_name}\nData de Geração: ${new Date().toLocaleDateString("pt-BR")}`,
       profile,
@@ -1593,6 +1594,16 @@ export default function PatientDetailPage() {
         }
       ]
     });
+    if (exported) {
+      await auditClinicalPdfExported({
+        action: "session",
+        patientId: patient.id,
+        exportType: "sessions",
+        source: "patient_dashboard",
+        includesSections: ["sessions"],
+        generatedAt: new Date().toISOString(),
+      });
+    }
   };
 
   const handleExportNotes = async () => {
@@ -1620,18 +1631,28 @@ export default function PatientDetailPage() {
       });
     }
 
-    await exportPdf({
+    const exported = await exportPdf({
       title: "Prontuário de Evolução",
       subtitle: `Paciente: ${patient.full_name}\nData: ${new Date().toLocaleDateString("pt-BR")}`,
       profile,
       fileName: `prontuario_evolucao_${patient.full_name.replace(/\s+/g, '_')}.pdf`,
       content: contentBody
     });
+    if (exported) {
+      await auditClinicalPdfExported({
+        action: "patient_record",
+        patientId: patient.id,
+        exportType: "patient_record",
+        source: "patient_dashboard",
+        includesSections: ["general_notes", "session_evolutions"],
+        generatedAt: new Date().toISOString(),
+      });
+    }
   };
 
   const handleExportFullRecord = async () => {
     // Keep placeholder or existing export
-    handleExportNotes();
+    await handleExportNotes();
   };
 
   const handleExportSingleSession = async (session: Session) => {
@@ -1643,7 +1664,7 @@ export default function PatientDetailPage() {
       evolution = { notes: session.session_notes_encrypted };
     }
 
-    await exportPdf({
+    const exported = await exportPdf({
       title: "Relatório de Atendimento Individual",
       subtitle: `Paciente: ${patient.full_name} | Data: ${formatDate(session.scheduled_at)}`,
       profile,
@@ -1653,6 +1674,17 @@ export default function PatientDetailPage() {
         { text: evolution.notes || session.session_notes_encrypted || "Nenhuma nota registrada.", style: "normalText" }
       ]
     });
+    if (exported) {
+      await auditClinicalPdfExported({
+        action: "session",
+        patientId: patient.id,
+        sessionId: session.id,
+        exportType: "session",
+        source: "patient_dashboard",
+        includesSections: ["session_evolution"],
+        generatedAt: new Date().toISOString(),
+      });
+    }
   };
 
   return (

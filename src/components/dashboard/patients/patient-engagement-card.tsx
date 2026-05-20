@@ -16,6 +16,7 @@ import {
   UserX,
 } from "lucide-react";
 import { getPatientEngagement } from "@/app/actions/patient-engagement";
+import { auditPatientLinkEvent } from "@/app/actions/clinical-audit";
 import type { PatientEngagementStats } from "@/app/actions/patient-engagement";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -137,6 +138,13 @@ export function PatientEngagementCard({
     if (result.error) {
       window.alert(result.error);
     } else {
+      await auditPatientLinkEvent({
+        patientId,
+        actionType: "revoke",
+        expiresAt: result.data?.access_token_expires_at ?? null,
+        linkStatus: "revoked",
+        tokenRotated: false,
+      });
       await refreshAccessData();
     }
     setAccessActionPending(null);
@@ -157,6 +165,13 @@ export function PatientEngagementCard({
     if (result.error) {
       window.alert(result.error);
     } else {
+      await auditPatientLinkEvent({
+        patientId,
+        actionType: accessToken ? "regenerate" : "generate",
+        expiresAt: result.data?.access_token_expires_at ?? null,
+        linkStatus: "active",
+        tokenRotated: Boolean(accessToken),
+      });
       setCopied(false);
       await refreshAccessData();
     }

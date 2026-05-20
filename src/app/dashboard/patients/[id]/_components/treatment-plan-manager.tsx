@@ -33,6 +33,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/constants";
+import { auditTreatmentGoalEvent, auditTreatmentPlanEvent } from "@/app/actions/clinical-audit";
 import { TreatmentPlanService } from "@/services/treatment-plan-service";
 import type {
   PatientTreatmentGoal,
@@ -286,6 +287,20 @@ export function TreatmentPlanManager({
       return;
     }
 
+    await auditTreatmentPlanEvent({
+      action: !treatmentPlan
+        ? "create"
+        : treatmentPlan.status !== planForm.status
+          ? "change_status"
+          : "update",
+      patientId,
+      planId: data.id,
+      oldStatus: treatmentPlan?.status ?? null,
+      newStatus: data.status,
+      hasReviewDate: Boolean(data.review_date),
+      goalsCount: data.goals?.length ?? 0,
+    });
+
     onChanged(data);
     setPlanDialogOpen(false);
   }
@@ -322,6 +337,21 @@ export function TreatmentPlanManager({
       return;
     }
 
+    const savedGoal = goalForm.id
+      ? data.goals?.find((goal) => goal.id === goalForm.id)
+      : data.goals?.[0];
+    const oldGoal = goalForm.id
+      ? goals.find((goal) => goal.id === goalForm.id)
+      : null;
+    await auditTreatmentGoalEvent({
+      action: goalForm.id ? "update" : "create",
+      patientId,
+      planId: data.id,
+      goalId: savedGoal?.id ?? goalForm.id ?? null,
+      oldStatus: oldGoal?.status ?? null,
+      newStatus: savedGoal?.status ?? goalForm.status,
+    });
+
     onChanged(data);
     setGoalDialogOpen(false);
   }
@@ -341,6 +371,15 @@ export function TreatmentPlanManager({
       setError(serviceError || "Não foi possível atualizar o objetivo.");
       return;
     }
+
+    await auditTreatmentGoalEvent({
+      action: status === "completed" ? "complete" : status === "paused" ? "pause" : "update",
+      patientId,
+      planId: data.id ?? treatmentPlan?.id ?? null,
+      goalId: goal.id,
+      oldStatus: goal.status,
+      newStatus: status,
+    });
 
     onChanged(data);
   }

@@ -8,6 +8,11 @@ import { createClient } from "@/lib/supabase/server";
 import { logSafeError } from "@/lib/errors/safe-error";
 import type { EmotionDiary, PatientTask } from "@/types/database";
 import {
+  recordEmotionDiaryEntryCreated,
+  recordPatientCheckinCreated,
+  recordPatientTaskAnswered,
+} from "@/lib/audit/server";
+import {
   hasOnlyAllowedKeys,
   isPlainObject,
   isValidUuid,
@@ -302,7 +307,7 @@ export async function saveDiaryEntry(formData: {
         triggers: formData.triggers?.trim() || null,
         coping_strategy: formData.coping_strategy?.trim() || null,
       })
-      .select("id")
+      .select("id,created_at")
       .single();
 
     if (error) {
@@ -311,6 +316,15 @@ export async function saveDiaryEntry(formData: {
     }
 
     revalidatePath("/patient/dashboard");
+    await recordEmotionDiaryEntryCreated({
+      actorId: null,
+      actorRole: "patient_portal",
+      patientId,
+      diaryEntryId: entry?.id ?? null,
+      hasEmotionLabel: true,
+      hasText: Boolean(formData.context?.trim() || notes || formData.triggers?.trim() || formData.coping_strategy?.trim()),
+      createdAt: entry?.created_at ?? null,
+    });
     return { success: true, id: entry?.id };
   } catch (err: unknown) {
     logSafeError("[saveDiaryEntry] Exception", err);
@@ -386,6 +400,17 @@ export async function saveMoodCheckin(formData: {
     }
 
     revalidatePath("/patient/dashboard");
+    await recordPatientCheckinCreated({
+      actorId: null,
+      actorRole: "patient_portal",
+      patientId,
+      checkinId: checkin.id,
+      hasMood: scores.mood_score !== null,
+      hasAnxiety: scores.anxiety_score !== null,
+      hasSleep: scores.sleep_quality !== null,
+      hasEnergy: scores.energy_score !== null,
+      createdAt: checkin.created_at,
+    });
     return {
       success: true,
       checkin: {
@@ -426,19 +451,27 @@ export async function respondToTask(formData: {
 
   try {
     const admin = createAdminClient();
+    const now = new Date().toISOString();
+    const { data: existingTask } = await admin
+      .from("patient_tasks")
+      .select("id,status,viewed_at")
+      .eq("id", formData.task_id)
+      .eq("patient_id", patientId)
+      .maybeSingle();
+
     const { data: updatedRows, error } = await admin
       .from("patient_tasks")
       .update({
         patient_feedback: response,
-        responded_at: new Date().toISOString(),
+        responded_at: now,
         status: "completed",
-        completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        completed_at: now,
+        updated_at: now,
       })
       .eq("id", formData.task_id)
       .eq("patient_id", patientId)
       .neq("status", "cancelled")
-      .select("id");
+      .select("id,status,responded_at,viewed_at");
 
     if (error) {
       logSafeError("[respondToTask] Supabase error", error);
@@ -450,6 +483,17 @@ export async function respondToTask(formData: {
     }
 
     revalidatePath("/patient/dashboard");
+    const updatedTask = updatedRows[0];
+    await recordPatientTaskAnswered({
+      actorId: null,
+      actorRole: "patient_portal",
+      patientId,
+      taskId: updatedTask.id,
+      oldStatus: existingTask?.status ?? null,
+      newStatus: updatedTask.status ?? "completed",
+      answeredAt: updatedTask.responded_at ?? now,
+      viewedAt: updatedTask.viewed_at ?? existingTask?.viewed_at ?? null,
+    });
     return { success: true };
   } catch (err: unknown) {
     logSafeError("[respondToTask] Exception", err);

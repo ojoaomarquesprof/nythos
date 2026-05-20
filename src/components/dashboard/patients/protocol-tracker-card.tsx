@@ -14,6 +14,7 @@ import {
   Download
 } from "lucide-react";
 import { usePdfExport } from "@/hooks/use-pdf-export";
+import { auditClinicalPdfExported } from "@/app/actions/clinical-audit";
 import type { Profile, Patient } from "@/types/database";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -170,7 +171,7 @@ export function ProtocolTrackerCard({
       e.status === "completed" ? "Concluído" : "Em andamento"
     ]);
 
-    await exportPdf({
+    const exported = await exportPdf({
       title: "Relatório de Protocolos e Avaliações",
       subtitle: patientDetails,
       profile,
@@ -200,6 +201,16 @@ export function ProtocolTrackerCard({
         }
       ]
     });
+    if (exported) {
+      await auditClinicalPdfExported({
+        action: "clinical",
+        patientId,
+        exportType: "protocols",
+        source: "patient_dashboard",
+        includesSections: ["clinical_protocols"],
+        generatedAt: new Date().toISOString(),
+      });
+    }
   }
 
   return (

@@ -22,6 +22,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  auditPublicAnamnesisInvalidAccess,
+  auditPublicAnamnesisOpened,
+  auditPublicAnamnesisSubmitted,
+} from "@/app/actions/clinical-audit";
 import { createClient } from "@/lib/supabase/client";
 import { isValidPublicToken } from "@/lib/validation/input";
 
@@ -73,6 +78,10 @@ export default function PublicAnamnesisPage() {
   useEffect(() => {
     async function loadData() {
       if (!publicToken || !isValidPublicToken(publicToken)) {
+        void auditPublicAnamnesisInvalidAccess({
+          status: "invalid_token",
+          tokenValid: false,
+        });
         setError("Link de anamnese indisponivel.");
         setLoading(false);
         return;
@@ -84,12 +93,20 @@ export default function PublicAnamnesisPage() {
       );
 
       if (resError) {
+        void auditPublicAnamnesisInvalidAccess({
+          status: "unavailable",
+          tokenValid: false,
+        });
         setError(mapPublicAnamnesisError(resError.message));
         setLoading(false);
         return;
       }
 
       if (!publicData || publicData.error) {
+        void auditPublicAnamnesisInvalidAccess({
+          status: typeof publicData?.error === "string" ? publicData.error : "unavailable",
+          tokenValid: false,
+        });
         setError(mapPublicAnamnesisError(publicData?.error));
         setLoading(false);
         return;
@@ -97,6 +114,8 @@ export default function PublicAnamnesisPage() {
 
       const responseData = {
         id: publicData.response_id,
+        patientId: publicData.patient_id ?? null,
+        templateId: publicData.template?.id ?? publicData.template_id ?? null,
         status: publicData.status,
         expiresAt: publicData.expires_at ?? null,
         revokedAt: publicData.revoked_at ?? null,
@@ -109,6 +128,14 @@ export default function PublicAnamnesisPage() {
       setResponseRecord(responseData);
       setTemplate(publicData.template);
       setProfile(publicData.profile);
+      void auditPublicAnamnesisOpened({
+        patientId: publicData.patient_id ?? null,
+        templateId: publicData.template?.id ?? publicData.template_id ?? null,
+        responseId: publicData.response_id ?? null,
+        requestId: publicData.request_id ?? publicData.response_id ?? null,
+        status: publicData.status ?? null,
+        tokenValid: true,
+      });
 
       if (responseData.status !== "completed") {
         const initialResponses: Record<string, string> = {};
@@ -166,6 +193,15 @@ export default function PublicAnamnesisPage() {
     if (submitError || !submitResult?.success) {
       setError(mapPublicAnamnesisError(submitResult?.error ?? submitError?.message));
     } else {
+      void auditPublicAnamnesisSubmitted({
+        patientId: responseRecord?.patientId ?? null,
+        templateId: responseRecord?.templateId ?? template?.id ?? null,
+        responseId: responseRecord?.id ?? null,
+        requestId: responseRecord?.id ?? null,
+        submittedAt: new Date().toISOString(),
+        status: "completed",
+        tokenValid: true,
+      });
       setSubmitted(true);
     }
 

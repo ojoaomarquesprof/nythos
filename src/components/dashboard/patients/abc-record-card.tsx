@@ -16,6 +16,7 @@ import {
   Download,
 } from "lucide-react";
 import { usePdfExport } from "@/hooks/use-pdf-export";
+import { auditClinicalPdfExported } from "@/app/actions/clinical-audit";
 import type { Profile, Patient } from "@/types/database";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -157,7 +158,7 @@ export function AbcRecordCard({
       r.intensity.toString(),
     ]);
 
-    await exportPdf({
+    const exported = await exportPdf({
       title: "Registro de AnÃ¡lise do Comportamento (ABC)",
       subtitle: patientDetails,
       profile,
@@ -188,6 +189,16 @@ export function AbcRecordCard({
         },
       ],
     });
+    if (exported) {
+      await auditClinicalPdfExported({
+        action: "clinical",
+        patientId,
+        exportType: "abc_record",
+        source: "patient_dashboard",
+        includesSections: ["abc_records"],
+        generatedAt: new Date().toISOString(),
+      });
+    }
   }
 
   return (

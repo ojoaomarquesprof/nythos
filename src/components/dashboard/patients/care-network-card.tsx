@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useSubscription } from "@/hooks/use-subscription";
 import { usePdfExport } from "@/hooks/use-pdf-export";
+import { auditCareContactEvent } from "@/app/actions/clinical-audit";
 import { PatientSupportService } from "@/services/patient-support-service";
 import type { Patient, Profile, SupportContact } from "@/types/database";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -160,6 +161,23 @@ export function CareNetworkCard({
       return;
     }
 
+    const createdContact =
+      data.find((contact) =>
+        contact.contact_type === formData.contactType &&
+        contact.is_active === formData.isActive &&
+        contact.can_contact === formData.canContact
+      ) ?? data[0];
+    await auditCareContactEvent({
+      action: "create",
+      patientId,
+      contactId: createdContact?.id ?? null,
+      contactType: formData.contactType,
+      newActive: formData.isActive,
+      newAuthorized: formData.canContact,
+      isEmergencyContact: formData.contactType === "emergency",
+      isFinancialResponsible: formData.contactType === "financial_guardian",
+    });
+
     syncContacts(data);
     setFormData(defaultForm);
     setOpen(false);
@@ -167,8 +185,21 @@ export function CareNetworkCard({
   }
 
   async function handleDelete(id: string) {
+    const contact = contacts.find((item) => item.id === id);
     const { data, error: serviceError } = await PatientSupportService.deleteContact(id);
     if (!serviceError && data) {
+      await auditCareContactEvent({
+        action: "remove",
+        patientId,
+        contactId: id,
+        contactType: contact?.contact_type ?? null,
+        oldActive: contact?.is_active ?? null,
+        newActive: false,
+        oldAuthorized: contact?.can_contact ?? null,
+        newAuthorized: false,
+        isEmergencyContact: contact?.contact_type === "emergency",
+        isFinancialResponsible: contact?.contact_type === "financial_guardian",
+      });
       syncContacts(data);
     }
   }

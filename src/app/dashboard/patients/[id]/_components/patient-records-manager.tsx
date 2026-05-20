@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { PatientSupportService } from "@/services/patient-support-service";
+import { auditPatientConsentEvent } from "@/app/actions/clinical-audit";
 import type { PatientConsent, PatientDocument } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -185,6 +186,22 @@ export function PatientRecordsManager({
       return;
     }
 
+    const createdConsent =
+      data.find((consent) =>
+        consent.consent_type === consentForm.consentType &&
+        consent.status === consentForm.status &&
+        (consent.signed_at ?? null) === (consentForm.signedAt || null)
+      ) ?? data[0];
+    await auditPatientConsentEvent({
+      action: "create",
+      patientId,
+      consentId: createdConsent?.id ?? null,
+      consentType: consentForm.consentType,
+      newStatus: consentForm.status,
+      signedAt: consentForm.signedAt || null,
+      revokedAt: consentForm.status === "revoked" ? new Date().toISOString() : null,
+    });
+
     onConsentsChanged(data);
     setConsentForm(defaultConsentForm);
     setConsentOpen(false);
@@ -220,8 +237,18 @@ export function PatientRecordsManager({
   }
 
   async function handleDeleteConsent(id: string) {
+    const consent = consents.find((item) => item.id === id);
     const { data, error: serviceError } = await PatientSupportService.deleteConsent(id);
-    if (!serviceError && data) onConsentsChanged(data);
+    if (!serviceError && data) {
+      await auditPatientConsentEvent({
+        action: "delete",
+        patientId,
+        consentId: id,
+        consentType: consent?.consent_type ?? null,
+        oldStatus: consent?.status ?? null,
+      });
+      onConsentsChanged(data);
+    }
   }
 
   async function handleDeleteDocument(id: string) {
