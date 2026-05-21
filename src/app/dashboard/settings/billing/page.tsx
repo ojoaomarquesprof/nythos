@@ -56,6 +56,12 @@ export default function BillingPage() {
               Esta tela prepara a estrutura comercial do Nythos. Checkout e
               cobranca real ainda nao estao ativos nesta fase.
             </p>
+            <Link
+              href="/precos"
+              className="mt-4 inline-flex text-sm font-semibold text-primary transition-colors hover:text-primary/80"
+            >
+              Ver pagina publica de precos
+            </Link>
           </div>
           <Badge className="w-fit rounded-full bg-teal-100 px-4 py-1.5 text-teal-700 hover:bg-teal-100">
             Sem cobranca ativa

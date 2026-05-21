@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
+import { PLAN_DEFINITIONS, type SubscriptionPlanId } from "@/lib/subscription/plan-rules";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -187,6 +188,65 @@ const securityPoints = [
   ["Dados sensiveis", "Boas praticas para apoiar privacidade e responsabilidade.", ShieldCheck],
 ] as const;
 
+const landingPlanCards: Array<{
+  id: Extract<SubscriptionPlanId, "free" | "professional" | "clinic">;
+  eyebrow: string;
+  description: string;
+  cta: string;
+  featured?: boolean;
+  features: string[];
+}> = [
+  {
+    id: "free",
+    eyebrow: "Starter",
+    description: "Para comecar a organizar os primeiros atendimentos.",
+    cta: "Comecar gratis",
+    features: [
+      "Ate 5 pacientes ativos",
+      "Agenda basica",
+      "Prontuario basico",
+      "Financeiro simples",
+    ],
+  },
+  {
+    id: "professional",
+    eyebrow: "Professional",
+    description: "Para usar o Nythos como central da rotina clinica.",
+    cta: "Comecar teste profissional",
+    featured: true,
+    features: [
+      "Ate 100 pacientes ativos",
+      "Agenda, prontuario e financeiro",
+      "Pacotes, recibos e portal do paciente",
+      "Google Calendar",
+      "Documentos e auditoria",
+    ],
+  },
+  {
+    id: "clinic",
+    eyebrow: "Clinic",
+    description: "Para clinicas e equipes que precisam de mais estrutura.",
+    cta: "Criar conta",
+    features: [
+      "Mais pacientes",
+      "Equipe e secretaria",
+      "Relatorios avancados",
+      "Armazenamento maior",
+    ],
+  },
+];
+
+function formatPlanPrice(value: number | null) {
+  if (value === null) return "Sob consulta";
+  if (value === 0) return "R$ 0";
+
+  return `${new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    maximumFractionDigits: 0,
+  }).format(value)}/mes`;
+}
+
 function publicAssetExists(src: string) {
   return existsSync(join(process.cwd(), "public", src.replace(/^\//, "")));
 }
@@ -209,6 +269,72 @@ function SectionLabel({ children, light = false }: { children: ReactNode; light?
     <p className={cn("text-sm font-semibold uppercase tracking-[0.2em]", light ? "text-teal-200" : "text-teal-600")}>
       {children}
     </p>
+  );
+}
+
+function LandingPlanPreviewCard({
+  plan,
+}: {
+  plan: (typeof landingPlanCards)[number];
+}) {
+  const definition = PLAN_DEFINITIONS[plan.id];
+
+  return (
+    <article
+      className={cn(
+        "relative flex h-full flex-col rounded-[1.65rem] border p-5 shadow-[0_18px_54px_rgba(15,23,42,0.08)] transition-all duration-300 hover:-translate-y-1 md:p-6",
+        plan.featured
+          ? "border-violet-300 bg-[#10142f] text-white shadow-[0_28px_78px_rgba(88,55,180,0.22)]"
+          : "border-slate-200 bg-white text-slate-950"
+      )}
+    >
+      {plan.featured && (
+        <div className="absolute inset-x-5 top-0 h-1 rounded-b-full bg-[linear-gradient(90deg,#2dd4bf,#a78bfa,#38bdf8)]" />
+      )}
+
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className={cn("text-xs font-bold uppercase tracking-[0.2em]", plan.featured ? "text-teal-200" : "text-teal-700")}>
+            {plan.eyebrow}
+          </p>
+          <p className="mt-3 text-3xl font-semibold tracking-tight">
+            {formatPlanPrice(definition.monthlyPrice)}
+          </p>
+        </div>
+        {plan.featured && (
+          <span className="rounded-full bg-teal-300 px-3 py-1 text-xs font-bold text-slate-950">
+            Mais indicado
+          </span>
+        )}
+      </div>
+
+      <p className={cn("mt-4 min-h-12 text-sm leading-6", plan.featured ? "text-violet-100/78" : "text-slate-600")}>
+        {plan.description}
+      </p>
+
+      <ul className="mt-5 space-y-2.5">
+        {plan.features.map((feature) => (
+          <li key={feature} className={cn("flex gap-2.5 text-sm leading-6", plan.featured ? "text-violet-50/86" : "text-slate-700")}>
+            <CheckCircle2 className={cn("mt-0.5 size-4 shrink-0", plan.featured ? "text-teal-200" : "text-teal-600")} />
+            <span>{feature}</span>
+          </li>
+        ))}
+      </ul>
+
+      <Link
+        href="/register"
+        className={cn(
+          buttonVariants({ size: "lg" }),
+          "mt-6 h-11 rounded-2xl font-semibold",
+          plan.featured
+            ? "bg-teal-300 text-slate-950 hover:bg-teal-200"
+            : "bg-slate-950 text-white hover:bg-slate-800"
+        )}
+      >
+        {plan.cta}
+        <ArrowRight className="size-4" />
+      </Link>
+    </article>
   );
 }
 
@@ -681,6 +807,7 @@ export default async function LandingPage() {
           <nav className="hidden items-center gap-7 text-sm font-medium text-violet-100/70 md:flex">
             <a href="#produto" className="transition-colors hover:text-white">Produto</a>
             <a href="#recursos" className="transition-colors hover:text-white">Recursos</a>
+            <Link href="/precos" className="transition-colors hover:text-white">Precos</Link>
             <a href="#seguranca" className="transition-colors hover:text-white">Seguranca</a>
           </nav>
 
@@ -722,6 +849,9 @@ export default async function LandingPage() {
               <a href="#recursos" className={cn(buttonVariants({ variant: "outline", size: "lg" }), "h-12 rounded-2xl border-white/18 bg-white/[0.08] px-6 text-white hover:bg-white/[0.14] hover:text-white")}>
                 Ver recursos
               </a>
+              <Link href="/precos" className={cn(buttonVariants({ variant: "ghost", size: "lg" }), "h-12 rounded-2xl px-6 text-violet-50 hover:bg-white/10 hover:text-white")}>
+                Ver precos
+              </Link>
             </div>
 
             <div className="mt-8 grid max-w-xl grid-cols-3 gap-3">
@@ -917,6 +1047,52 @@ export default async function LandingPage() {
         </div>
       </section>
 
+      <section id="planos" className="relative overflow-hidden bg-[#f8fafc] px-4 py-20 text-slate-950 md:px-6 md:py-24">
+        <div className="absolute inset-x-0 top-0 h-48 bg-[linear-gradient(180deg,rgba(20,184,166,0.14),transparent)]" />
+        <div className="relative mx-auto max-w-7xl">
+          <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+            <div className="max-w-3xl">
+              <SectionLabel>Planos</SectionLabel>
+              <h2 className="mt-4 text-3xl font-semibold tracking-tight md:text-5xl">
+                Planos simples para comecar e crescer com o Nythos.
+              </h2>
+            </div>
+            <div className="max-w-lg">
+              <p className="text-sm leading-6 text-slate-600">
+                Comece gratis, teste o Professional e escolha o plano que acompanha a sua rotina clinica.
+              </p>
+              <p className="mt-3 text-xs font-medium leading-5 text-slate-500">
+                Pagamento online em preparacao. Voce pode criar sua conta e comecar a configurar seu espaco.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-10 grid items-stretch gap-5 lg:grid-cols-3">
+            {landingPlanCards.map((plan) => (
+              <LandingPlanPreviewCard key={plan.id} plan={plan} />
+            ))}
+          </div>
+
+          <div className="mt-8 flex flex-col items-start gap-3 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)] sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-950">
+                Precisa comparar limites, recursos e detalhes?
+              </p>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                A pagina de precos traz a visao completa dos planos Starter, Professional e Clinic.
+              </p>
+            </div>
+            <Link
+              href="/precos"
+              className={cn(buttonVariants({ variant: "outline", size: "lg" }), "h-11 shrink-0 rounded-2xl border-slate-300 bg-white px-5 text-slate-950 hover:bg-slate-50")}
+            >
+              Ver comparacao completa
+              <ArrowRight className="size-4" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
       <section className="relative overflow-hidden bg-[#080b1d] px-4 py-20 text-white md:px-6 md:py-24">
         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(124,58,237,0.28),transparent_42%),linear-gradient(315deg,rgba(20,184,166,0.2),transparent_42%)]" />
         <div className="relative mx-auto grid max-w-7xl gap-8 rounded-[2rem] border border-white/12 bg-white/[0.065] p-6 shadow-[0_30px_100px_rgba(0,0,0,0.35)] backdrop-blur-xl md:p-10 lg:grid-cols-[1fr_0.92fr] lg:items-center">
@@ -953,6 +1129,7 @@ export default async function LandingPage() {
           </Link>
           <div className="flex flex-wrap gap-4 text-sm font-medium text-violet-100/65">
             <Link href="/" className="transition-colors hover:text-white">Inicio</Link>
+            <Link href="/precos" className="transition-colors hover:text-white">Precos</Link>
             <Link href="/termos" className="transition-colors hover:text-white">Termos</Link>
             <Link href="/privacidade" className="transition-colors hover:text-white">Privacidade</Link>
             <Link href="/login" className="transition-colors hover:text-white">Entrar</Link>

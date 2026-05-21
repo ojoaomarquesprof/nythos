@@ -55,6 +55,9 @@ export function LegalPage({
             <Link href="/" className="transition-colors hover:text-white">
               Inicio
             </Link>
+            <Link href="/precos" className="transition-colors hover:text-white">
+              Precos
+            </Link>
             <Link href="/termos" className="transition-colors hover:text-white">
               Termos
             </Link>
@@ -181,6 +184,9 @@ export function LegalPage({
           <div className="flex flex-wrap gap-4 text-sm font-medium text-violet-100/65">
             <Link href="/" className="transition-colors hover:text-white">
               Inicio
+            </Link>
+            <Link href="/precos" className="transition-colors hover:text-white">
+              Precos
             </Link>
             <Link href="/termos" className="transition-colors hover:text-white">
               Termos
