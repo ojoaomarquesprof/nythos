@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Eye, EyeOff } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -183,6 +184,14 @@ export default function LoginPage() {
                     Cadastre-se grátis
                   </a>
                 </p>
+                <div className="mt-4 flex items-center justify-center gap-4 text-[11px] font-bold text-slate-400">
+                  <Link href="/termos" className="transition-colors hover:text-teal-600">
+                    Termos
+                  </Link>
+                  <Link href="/privacidade" className="transition-colors hover:text-teal-600">
+                    Privacidade
+                  </Link>
+                </div>
               </div>
             </form>
           </CardContent>
