@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   canCreatePatient,
   canInviteTeamMember,
+  canManageSubscription,
   canUploadDocument,
   getEffectiveSubscriptionStatus,
   getPlanLabel,
@@ -64,6 +65,8 @@ export function useSubscription() {
   const [isTrial, setIsTrial] = useState(false);
   const [daysLeft, setDaysLeft] = useState(0);
   const [isSecretary, setIsSecretary] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [therapistId, setTherapistId] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<AccountSubscriptionState>(LEGACY_SUBSCRIPTION);
   const [usage, setUsage] = useState<SubscriptionUsage>({});
@@ -93,7 +96,7 @@ export function useSubscription() {
 
         const role = profile?.role || "therapist";
         const employerId = profile?.employer_id ?? null;
-        const ownerUserId = role === "secretary" && employerId ? employerId : user.id;
+        const ownerUserId = employerId || user.id;
 
         const [
           subscriptionResult,
@@ -146,6 +149,8 @@ export function useSubscription() {
 
         if (!cancelled) {
           setIsSecretary(role === "secretary");
+          setUserRole(role);
+          setCurrentUserId(user.id);
           setTherapistId(ownerUserId);
           setSubscription(nextSubscription);
           setUsage(nextUsage);
@@ -162,6 +167,8 @@ export function useSubscription() {
           setUsage({});
           setHasSubscription(true);
           setIsTrial(false);
+          setUserRole(null);
+          setCurrentUserId(null);
           setDaysLeft(0);
         }
       } finally {
@@ -180,6 +187,12 @@ export function useSubscription() {
   const statusLabel = getSubscriptionStateLabel(subscription.status);
   const limits: PlanLimits = getPlanLimits(subscription.planId);
   const usageAgainstLimits: UsageLimitState[] = getUsageAgainstLimits(usage, limits);
+  const canManagePlan = canManageSubscription({
+    role: userRole,
+    isSecretary,
+    userId: currentUserId,
+    ownerUserId: subscription.ownerUserId,
+  });
 
   const gateAction = (action: () => void) => {
     if (loading) return;
@@ -193,8 +206,11 @@ export function useSubscription() {
     loading,
     gateAction,
     isSecretary,
+    isTeamMember: Boolean(currentUserId && subscription.ownerUserId && currentUserId !== subscription.ownerUserId),
+    userRole,
     therapistId,
     subscription,
+    canManagePlan,
     planId: subscription.planId,
     planName,
     subscriptionStatus: subscription.status,

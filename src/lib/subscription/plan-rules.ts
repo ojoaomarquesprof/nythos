@@ -39,6 +39,7 @@ export type UsageLimitState = {
   percent: number | null;
   isNearLimit: boolean;
   isOverLimit: boolean;
+  tone: UsageTone;
 };
 
 export type SubscriptionSnapshot = {
@@ -46,6 +47,21 @@ export type SubscriptionSnapshot = {
   status?: string | null;
   trialEndsAt?: string | null;
   currentPeriodEndsAt?: string | null;
+};
+
+export type UsageTone = "normal" | "near" | "over" | "unlimited";
+
+export type SubscriptionActor = {
+  role?: string | null;
+  isSecretary?: boolean | null;
+  userId?: string | null;
+  ownerUserId?: string | null;
+};
+
+export type PlanCtaState = {
+  label: string;
+  disabled: boolean;
+  reason: "current_plan" | "managed_by_owner" | "can_request_change";
 };
 
 export const PLAN_DEFINITIONS: Record<
@@ -231,13 +247,64 @@ export function getSubscriptionStateLabel(status?: string | null): string {
   return STATUS_LABELS[normalizeSubscriptionStatus(status)];
 }
 
+export function getPlanStatusLabel(status?: string | null): string {
+  return getSubscriptionStateLabel(status);
+}
+
+export function getUsagePercent(used: number, limit: number | null): number | null {
+  if (limit === null || limit <= 0) return null;
+  return Math.min(100, Math.round((used / limit) * 100));
+}
+
+export function getUsageTone(used: number, limit: number | null): UsageTone {
+  if (limit === null) return "unlimited";
+  if (used > limit) return "over";
+  if (limit > 0 && used / limit >= 0.8) return "near";
+  return "normal";
+}
+
+export function canManageSubscription(actor: SubscriptionActor): boolean {
+  if (actor.isSecretary || actor.role === "secretary") return false;
+  if (actor.userId && actor.ownerUserId) return actor.userId === actor.ownerUserId;
+  return true;
+}
+
+export function getPlanCtaState(input: {
+  currentPlanId?: string | null;
+  targetPlanId: SubscriptionPlanId;
+  canManage: boolean;
+}): PlanCtaState {
+  if (normalizePlanId(input.currentPlanId) === input.targetPlanId) {
+    return {
+      label: "Plano atual",
+      disabled: true,
+      reason: "current_plan",
+    };
+  }
+
+  if (!input.canManage) {
+    return {
+      label: "Gerenciado pelo responsavel",
+      disabled: true,
+      reason: "managed_by_owner",
+    };
+  }
+
+  return {
+    label: "Solicitar alteracao",
+    disabled: false,
+    reason: "can_request_change",
+  };
+}
+
 function buildUsageLimitState(
   key: keyof SubscriptionUsage,
   label: string,
   used: number,
   limit: number | null
 ): UsageLimitState {
-  const percent = limit && limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : null;
+  const percent = getUsagePercent(used, limit);
+  const tone = getUsageTone(used, limit);
 
   return {
     key,
@@ -245,8 +312,9 @@ function buildUsageLimitState(
     used,
     limit,
     percent,
-    isNearLimit: typeof percent === "number" && percent >= 80 && used <= (limit ?? 0),
-    isOverLimit: limit !== null && used >= limit,
+    isNearLimit: tone === "near",
+    isOverLimit: tone === "over",
+    tone,
   };
 }
 

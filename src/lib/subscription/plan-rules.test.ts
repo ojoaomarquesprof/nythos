@@ -3,12 +3,17 @@ import {
   canCreatePackage,
   canCreatePatient,
   canInviteTeamMember,
+  canManageSubscription,
   canUploadDocument,
   getFeatureAccess,
+  getPlanCtaState,
   getPlanLabel,
   getPlanLimits,
+  getPlanStatusLabel,
   getSubscriptionStateLabel,
   getUsageAgainstLimits,
+  getUsagePercent,
+  getUsageTone,
   isTrialExpired,
   normalizePlanId,
 } from "./plan-rules";
@@ -30,7 +35,7 @@ describe("subscription plan rules", () => {
 
   it("detects usage near and over limits", () => {
     const states = getUsageAgainstLimits(
-      { activePatients: 5, documents: 18, teamMembers: 0, storageMb: 200 },
+      { activePatients: 5, documents: 18, teamMembers: 1, storageMb: 251 },
       getPlanLimits("free")
     );
 
@@ -38,12 +43,35 @@ describe("subscription plan rules", () => {
       used: 5,
       limit: 5,
       percent: 100,
-      isOverLimit: true,
+      isNearLimit: true,
+      isOverLimit: false,
+      tone: "near",
     });
     expect(states.find((state) => state.key === "documents")).toMatchObject({
       percent: 90,
       isNearLimit: true,
     });
+    expect(states.find((state) => state.key === "teamMembers")).toMatchObject({
+      limit: 0,
+      percent: null,
+      isOverLimit: true,
+      tone: "over",
+    });
+    expect(states.find((state) => state.key === "storageMb")).toMatchObject({
+      percent: 100,
+      isOverLimit: true,
+      tone: "over",
+    });
+  });
+
+  it("calculates usage tone for normal, near, over and unlimited limits", () => {
+    expect(getUsagePercent(2, 10)).toBe(20);
+    expect(getUsagePercent(12, 10)).toBe(100);
+    expect(getUsagePercent(2, null)).toBeNull();
+    expect(getUsageTone(2, 10)).toBe("normal");
+    expect(getUsageTone(8, 10)).toBe("near");
+    expect(getUsageTone(11, 10)).toBe("over");
+    expect(getUsageTone(999, null)).toBe("unlimited");
   });
 
   it("checks soft limits for creation actions", () => {
@@ -68,5 +96,45 @@ describe("subscription plan rules", () => {
     expect(getSubscriptionStateLabel("trialing")).toBe("Periodo de teste");
     expect(getSubscriptionStateLabel("canceled")).toBe("Cancelado");
     expect(getSubscriptionStateLabel(undefined)).toBe("Legado");
+    expect(getPlanStatusLabel("past_due")).toBe("Pagamento pendente");
+  });
+
+  it("allows only owners to manage subscription changes", () => {
+    expect(canManageSubscription({ role: "therapist", userId: "owner", ownerUserId: "owner" })).toBe(true);
+    expect(canManageSubscription({ role: "admin", userId: "owner", ownerUserId: "owner" })).toBe(true);
+    expect(canManageSubscription({ role: "secretary", userId: "team", ownerUserId: "owner" })).toBe(false);
+    expect(canManageSubscription({ isSecretary: true, userId: "team", ownerUserId: "owner" })).toBe(false);
+    expect(canManageSubscription({ role: "therapist", userId: "team", ownerUserId: "owner" })).toBe(false);
+  });
+
+  it("builds plan CTA state without real checkout side effects", () => {
+    expect(getPlanCtaState({
+      currentPlanId: "professional",
+      targetPlanId: "professional",
+      canManage: true,
+    })).toMatchObject({
+      label: "Plano atual",
+      disabled: true,
+      reason: "current_plan",
+    });
+
+    expect(getPlanCtaState({
+      currentPlanId: "free",
+      targetPlanId: "professional",
+      canManage: false,
+    })).toMatchObject({
+      disabled: true,
+      reason: "managed_by_owner",
+    });
+
+    expect(getPlanCtaState({
+      currentPlanId: "free",
+      targetPlanId: "professional",
+      canManage: true,
+    })).toMatchObject({
+      label: "Solicitar alteracao",
+      disabled: false,
+      reason: "can_request_change",
+    });
   });
 });
