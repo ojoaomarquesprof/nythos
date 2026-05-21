@@ -349,6 +349,106 @@ export type Database = {
         Relationships: never[];
       };
 
+      subscription_plans: {
+        Row: {
+          id: string;
+          name: string;
+          description: string | null;
+          monthly_price: number | null;
+          yearly_price: number | null;
+          limits: Json;
+          features: Json;
+          provider: string | null;
+          provider_price_id: string | null;
+          is_active: boolean;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          name: string;
+          description?: string | null;
+          monthly_price?: number | null;
+          yearly_price?: number | null;
+          limits?: Json;
+          features?: Json;
+          provider?: string | null;
+          provider_price_id?: string | null;
+          is_active?: boolean;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          name?: string;
+          description?: string | null;
+          monthly_price?: number | null;
+          yearly_price?: number | null;
+          limits?: Json;
+          features?: Json;
+          provider?: string | null;
+          provider_price_id?: string | null;
+          is_active?: boolean;
+          sort_order?: number;
+          updated_at?: string;
+        };
+        Relationships: never[];
+      };
+
+      account_subscriptions: {
+        Row: {
+          id: string;
+          owner_user_id: string;
+          plan_id: string;
+          status: string;
+          trial_started_at: string | null;
+          trial_ends_at: string | null;
+          current_period_started_at: string | null;
+          current_period_ends_at: string | null;
+          cancel_at_period_end: boolean;
+          provider: string | null;
+          provider_customer_id: string | null;
+          provider_subscription_id: string | null;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_user_id: string;
+          plan_id: string;
+          status: string;
+          trial_started_at?: string | null;
+          trial_ends_at?: string | null;
+          current_period_started_at?: string | null;
+          current_period_ends_at?: string | null;
+          cancel_at_period_end?: boolean;
+          provider?: string | null;
+          provider_customer_id?: string | null;
+          provider_subscription_id?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          owner_user_id?: string;
+          plan_id?: string;
+          status?: string;
+          trial_started_at?: string | null;
+          trial_ends_at?: string | null;
+          current_period_started_at?: string | null;
+          current_period_ends_at?: string | null;
+          cancel_at_period_end?: boolean;
+          provider?: string | null;
+          provider_customer_id?: string | null;
+          provider_subscription_id?: string | null;
+          metadata?: Json;
+          updated_at?: string;
+        };
+        Relationships: never[];
+      };
+
       subscriptions: {
         Row: {
           id: string;
@@ -1242,6 +1342,8 @@ export type SessionPackage     = Database['public']['Tables']['session_packages'
 export type SessionPackageUsage = Database['public']['Tables']['session_package_usages']['Row'];
 export type Session            = Database['public']['Tables']['sessions']['Row'];
 export type ExternalCalendarEvent = Database['public']['Tables']['external_calendar_events']['Row'];
+export type SubscriptionPlan   = Database['public']['Tables']['subscription_plans']['Row'];
+export type AccountSubscription = Database['public']['Tables']['account_subscriptions']['Row'];
 export type Subscription       = Database['public']['Tables']['subscriptions']['Row'];
 export type CashFlow           = Database['public']['Tables']['cash_flow']['Row'];
 export type AuditLog           = Database['public']['Tables']['audit_logs']['Row'];
@@ -1314,6 +1416,10 @@ export type SessionInsert  = Database['public']['Tables']['sessions']['Insert'];
 export type SessionUpdate  = Database['public']['Tables']['sessions']['Update'];
 export type ExternalCalendarEventInsert = Database['public']['Tables']['external_calendar_events']['Insert'];
 export type ExternalCalendarEventUpdate = Database['public']['Tables']['external_calendar_events']['Update'];
+export type SubscriptionPlanInsert = Database['public']['Tables']['subscription_plans']['Insert'];
+export type SubscriptionPlanUpdate = Database['public']['Tables']['subscription_plans']['Update'];
+export type AccountSubscriptionInsert = Database['public']['Tables']['account_subscriptions']['Insert'];
+export type AccountSubscriptionUpdate = Database['public']['Tables']['account_subscriptions']['Update'];
 export type SubscriptionInsert = Database['public']['Tables']['subscriptions']['Insert'];
 export type SubscriptionUpdate = Database['public']['Tables']['subscriptions']['Update'];
 export type CashFlowInsert  = Database['public']['Tables']['cash_flow']['Insert'];

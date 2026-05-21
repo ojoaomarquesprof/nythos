@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { Profile } from "@/types/database";
 import { AnamnesisBuilder } from "@/components/dashboard/settings/anamnesis-builder";
+import { CurrentPlanCard } from "@/components/dashboard/settings/current-plan-card";
 
 export default function SettingsPage() {
   const supabase = createClient() as any;
@@ -527,6 +528,8 @@ export default function SettingsPage() {
 
         {/* Side Actions Column */}
         <div className="lg:col-span-4 space-y-8">
+          <CurrentPlanCard />
+
           {/* Team Management */}
           <Card className="border-0 shadow-sm overflow-hidden rounded-[32px] glass-panel border-l-4 border-l-teal-">
             <CardHeader className="pb-4">

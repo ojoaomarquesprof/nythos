@@ -51,9 +51,9 @@ export default function TeamPage() {
   const [loading, setLoading] = useState(true);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
-  const [currentPlan, setCurrentPlan] = useState<string>("Starter");
+  const [currentPlan, setCurrentPlan] = useState<string>("Professional");
   
-  const { isSecretary, isTrial } = useSubscription();
+  const { isSecretary, isTrial, canInviteTeamMember, planName } = useSubscription();
   const supabase = createClient() as any;
 
   useEffect(() => {
@@ -68,13 +68,13 @@ export default function TeamPage() {
 
       // 1. Buscar plano do usuário
       const { data: subData } = await supabase
-        .from('subscriptions')
-        .select('plan_name')
+        .from('account_subscriptions')
+        .select('plan_id')
         .eq('user_id', user.id)
         .maybeSingle();
       
-      if (subData?.plan_name) {
-        setCurrentPlan(subData.plan_name);
+      if (subData?.plan_id) {
+        setCurrentPlan(subData.plan_id);
       }
 
       // 2. Buscar membros da equipe (secretárias)
@@ -153,7 +153,7 @@ export default function TeamPage() {
   };
 
   // Só é considerado plano Starter (bloqueado) se NÃO estiver em período de teste
-  const isStarterPlan = currentPlan === "Starter" && !isTrial;
+  const isStarterPlan = !canInviteTeamMember && !isTrial;
 
   if (isSecretary) {
     return (

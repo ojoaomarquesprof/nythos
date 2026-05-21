@@ -30,10 +30,11 @@ export async function GET() {
       throw profilesError;
     }
 
-    // Fetch all subscriptions
+    // Fetch all SaaS account subscriptions. Provider identifiers stay out of
+    // the payload returned to the admin UI.
     const { data: subscriptions, error: subsError } = await adminClient
-      .from('subscriptions')
-      .select('*');
+      .from('account_subscriptions')
+      .select('id, owner_user_id, plan_id, status, trial_ends_at, current_period_ends_at, cancel_at_period_end, created_at, updated_at');
 
     if (subsError) {
       throw subsError;
@@ -42,12 +43,16 @@ export async function GET() {
     const profilesData = profiles;
     const subsData = subscriptions;
 
-    // Merge profiles with their subscriptions
+    // Merge profiles with their account subscriptions.
     const usersWithSubs = profilesData.map(p => {
-      const sub = subsData.find(s => s.user_id === p.id);
+      const sub = subsData.find(s => s.owner_user_id === p.id);
       return {
         ...p,
-        subscription: sub || null
+        subscription: sub ? {
+          ...sub,
+          user_id: sub.owner_user_id,
+          current_period_end: sub.current_period_ends_at ?? sub.trial_ends_at,
+        } : null
       };
     });
 

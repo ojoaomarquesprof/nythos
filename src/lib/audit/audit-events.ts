@@ -53,6 +53,7 @@ export const AUDIT_ACTIONS = {
   SESSION_PDF_EXPORTED: "session_pdf_exported",
   PATIENT_RECORD_EXPORTED: "patient_record_exported",
   ANAMNESIS_PDF_EXPORTED: "anamnesis_pdf_exported",
+  UPDATE_ACCOUNT_SUBSCRIPTION: "update_account_subscription",
 } as const;
 
 export const AUDIT_ENTITY_TYPES = {
@@ -70,6 +71,7 @@ export const AUDIT_ENTITY_TYPES = {
   PATIENT_CHECKIN: "patient_checkin",
   EMOTION_DIARY_ENTRY: "emotion_diary_entry",
   CLINICAL_EXPORT: "clinical_export",
+  ACCOUNT_SUBSCRIPTION: "account_subscription",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

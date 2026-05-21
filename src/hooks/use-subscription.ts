@@ -1,46 +1,62 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
+import {
+  canCreatePatient,
+  canInviteTeamMember,
+  canUploadDocument,
+  getEffectiveSubscriptionStatus,
+  getPlanLabel,
+  getPlanLimits,
+  getSubscriptionStateLabel,
+  getUsageAgainstLimits,
+  normalizePlanId,
+  type PlanLimits,
+  type SubscriptionPlanId,
+  type SubscriptionStatus,
+  type SubscriptionUsage,
+  type UsageLimitState,
+} from "@/lib/subscription/plan-rules";
 
-// Fallback local de segurança: usado APENAS se a query ao banco falhar.
-// O valor canônico vive em system_settings.trial_duration_hours no Supabase.
-const TRIAL_HOURS_FALLBACK = 336; // 14 dias
+type AccountSubscriptionState = {
+  id: string | null;
+  ownerUserId: string | null;
+  planId: SubscriptionPlanId;
+  status: SubscriptionStatus;
+  trialEndsAt: string | null;
+  currentPeriodEndsAt: string | null;
+  cancelAtPeriodEnd: boolean;
+};
 
-/**
- * Busca o valor de trial_duration_hours da tabela system_settings.
- * Retorna o fallback local em caso de erro de rede ou ausência do registro.
- */
-async function fetchTrialHours(supabase: ReturnType<typeof createClient>): Promise<number> {
-  try {
-    const { data, error } = await supabase
-      .from("system_settings")
-      .select("value")
-      .eq("key", "trial_duration_hours")
-      .maybeSingle();
+const LEGACY_SUBSCRIPTION: AccountSubscriptionState = {
+  id: null,
+  ownerUserId: null,
+  planId: "legacy",
+  status: "legacy",
+  trialEndsAt: null,
+  currentPeriodEndsAt: null,
+  cancelAtPeriodEnd: false,
+};
 
-    if (error || !data?.value) {
-      console.warn(
-        "[use-subscription] Não foi possível carregar trial_duration_hours do banco. " +
-        `Usando fallback local: ${TRIAL_HOURS_FALLBACK}h.`
-      );
-      return TRIAL_HOURS_FALLBACK;
-    }
+function daysUntil(date: string | null): number {
+  if (!date) return 0;
+  const diffMs = new Date(date).getTime() - Date.now();
+  return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+}
 
-    const parsed = parseInt(data.value, 10);
-    if (isNaN(parsed) || parsed <= 0) {
-      console.warn(
-        `[use-subscription] Valor inválido em system_settings.trial_duration_hours: "${data.value}". ` +
-        `Usando fallback local: ${TRIAL_HOURS_FALLBACK}h.`
-      );
-      return TRIAL_HOURS_FALLBACK;
-    }
+async function countRows(
+  supabase: ReturnType<typeof createClient>,
+  table: "patients" | "profiles" | "patient_documents",
+  applyFilters: (query: any) => any
+): Promise<number> {
+  const query = (supabase as any)
+    .from(table)
+    .select("id", { count: "exact", head: true });
 
-    return parsed;
-  } catch {
-    return TRIAL_HOURS_FALLBACK;
-  }
+  const { count, error } = await applyFilters(query);
+  if (error) return 0;
+  return count ?? 0;
 }
 
 export function useSubscription() {
@@ -49,106 +65,145 @@ export function useSubscription() {
   const [daysLeft, setDaysLeft] = useState(0);
   const [isSecretary, setIsSecretary] = useState(false);
   const [therapistId, setTherapistId] = useState<string | null>(null);
+  const [subscription, setSubscription] = useState<AccountSubscriptionState>(LEGACY_SUBSCRIPTION);
+  const [usage, setUsage] = useState<SubscriptionUsage>({});
   const [loading, setLoading] = useState(true);
 
-  const supabase = createClient();
-  const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
-    async function checkSubscription() {
+    let cancelled = false;
+
+    async function loadSubscription() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
-          setHasSubscription(false);
-          setLoading(false);
+          if (!cancelled) {
+            setHasSubscription(false);
+            setLoading(false);
+          }
           return;
         }
 
-        // 1. Buscar perfil para ver role e employer_id
         const { data: profile } = await supabase
           .from("profiles")
-          .select("role, employer_id, created_at")
+          .select("role, employer_id")
           .eq("id", user.id)
           .maybeSingle();
 
         const role = profile?.role || "therapist";
-        const employerId = profile?.employer_id;
-        const userCreatedAt = profile?.created_at || user.created_at;
+        const employerId = profile?.employer_id ?? null;
+        const ownerUserId = role === "secretary" && employerId ? employerId : user.id;
 
-        setIsSecretary(role === "secretary");
+        const [
+          subscriptionResult,
+          activePatients,
+          teamMembers,
+          documents,
+        ] = await Promise.all([
+          supabase
+            .from("account_subscriptions")
+            .select("id, owner_user_id, plan_id, status, trial_ends_at, current_period_ends_at, cancel_at_period_end")
+            .eq("owner_user_id", ownerUserId)
+            .maybeSingle(),
+          countRows(supabase, "patients", (query) =>
+            query.eq("user_id", ownerUserId).eq("status", "active")
+          ),
+          countRows(supabase, "profiles", (query) =>
+            query.eq("employer_id", ownerUserId).eq("role", "secretary")
+          ),
+          countRows(supabase, "patient_documents", (query) =>
+            query.eq("therapist_id", ownerUserId)
+          ),
+        ]);
 
-        // 2. Determinar qual ID usar para checar a assinatura e qual data para o trial
-        const targetUserId = (role === "secretary" && employerId) ? employerId : user.id;
-        setTherapistId(targetUserId);
+        const row = subscriptionResult.error ? null : subscriptionResult.data;
+        const effectiveStatus = getEffectiveSubscriptionStatus({
+          status: row?.status,
+          planId: row?.plan_id,
+          trialEndsAt: row?.trial_ends_at,
+          currentPeriodEndsAt: row?.current_period_ends_at,
+        });
+        const planId = normalizePlanId(row?.plan_id);
+        const nextSubscription: AccountSubscriptionState = row
+          ? {
+              id: row.id,
+              ownerUserId: row.owner_user_id,
+              planId,
+              status: effectiveStatus,
+              trialEndsAt: row.trial_ends_at,
+              currentPeriodEndsAt: row.current_period_ends_at,
+              cancelAtPeriodEnd: row.cancel_at_period_end,
+            }
+          : { ...LEGACY_SUBSCRIPTION, ownerUserId };
 
-        let referenceCreatedAt = userCreatedAt;
+        const nextUsage: SubscriptionUsage = {
+          activePatients,
+          teamMembers,
+          documents,
+          storageMb: 0,
+        };
 
-        // Se for secretária, usamos a data de criação do chefe para o trial
-        if (role === "secretary" && employerId) {
-          const { data: employerProfile } = await supabase
-            .from("profiles")
-            .select("created_at")
-            .eq("id", employerId)
-            .maybeSingle();
-          if (employerProfile?.created_at) {
-            referenceCreatedAt = employerProfile.created_at;
-          }
-        }
+        if (!cancelled) {
+          setIsSecretary(role === "secretary");
+          setTherapistId(ownerUserId);
+          setSubscription(nextSubscription);
+          setUsage(nextUsage);
+          setIsTrial(nextSubscription.status === "trialing");
+          setDaysLeft(daysUntil(nextSubscription.trialEndsAt ?? nextSubscription.currentPeriodEndsAt));
 
-        // 3. Verificar assinatura no banco para o targetUserId
-        const { data: subscriptions } = await supabase
-          .from("subscriptions")
-          .select("status")
-          .eq("user_id", targetUserId)
-          .limit(1);
-
-        const subscription = subscriptions && subscriptions.length > 0 ? subscriptions[0] : null;
-        const active = subscription && ["active", "trialing"].includes(subscription.status);
-
-        if (active) {
+          // Fase fundacional: nao travar dados clinicos existentes por ausencia
+          // de assinatura ou billing legado. Bloqueios ficam suaves na UI.
           setHasSubscription(true);
-          setIsTrial(subscription.status === "trialing");
-          return; // assinatura paga ativa — não precisa calcular trial
-        }
-
-        // 4. Lógica de Trial Grátis — duração carregada dinamicamente do banco
-        const trialHours = await fetchTrialHours(supabase);
-
-        const createdAt = new Date(referenceCreatedAt);
-        const now = new Date();
-        const diffInHours = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
-
-        if (diffInHours < trialHours) {
-          setHasSubscription(true);
-          setIsTrial(true);
-          setDaysLeft(Math.ceil((trialHours - diffInHours) / 24));
-        } else {
-          setHasSubscription(false);
-          setIsTrial(false);
         }
       } catch {
-        console.error("[use-subscription] Falha ao verificar assinatura");
-        setHasSubscription(false);
+        if (!cancelled) {
+          setSubscription(LEGACY_SUBSCRIPTION);
+          setUsage({});
+          setHasSubscription(true);
+          setIsTrial(false);
+          setDaysLeft(0);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
-    checkSubscription();
-  }, []);
+    loadSubscription();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
+
+  const planName = getPlanLabel(subscription.planId);
+  const statusLabel = getSubscriptionStateLabel(subscription.status);
+  const limits: PlanLimits = getPlanLimits(subscription.planId);
+  const usageAgainstLimits: UsageLimitState[] = getUsageAgainstLimits(usage, limits);
 
   const gateAction = (action: () => void) => {
     if (loading) return;
-    if (hasSubscription) {
-      action();
-    } else {
-      if (isSecretary) {
-        alert("O acesso da clínica está suspenso. Por favor, avise o administrador.");
-      } else {
-        router.push("/dashboard/settings/billing");
-      }
-    }
+    action();
   };
 
-  return { hasSubscription, isTrial, daysLeft, loading, gateAction, isSecretary, therapistId };
+  return {
+    hasSubscription,
+    isTrial,
+    daysLeft,
+    loading,
+    gateAction,
+    isSecretary,
+    therapistId,
+    subscription,
+    planId: subscription.planId,
+    planName,
+    subscriptionStatus: subscription.status,
+    statusLabel,
+    limits,
+    usage,
+    usageAgainstLimits,
+    canCreatePatient: canCreatePatient(subscription.planId, usage),
+    canInviteTeamMember: canInviteTeamMember(subscription.planId, usage),
+    canUploadDocument: canUploadDocument(subscription.planId, usage),
+  };
 }
