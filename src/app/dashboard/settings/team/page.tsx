@@ -51,9 +51,8 @@ export default function TeamPage() {
   const [loading, setLoading] = useState(true);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
-  const [currentPlan, setCurrentPlan] = useState<string>("Professional");
   
-  const { isSecretary, isTrial, canInviteTeamMember, planName } = useSubscription();
+  const { isSecretary, isTrial, canInviteTeamMember } = useSubscription();
   const supabase = createClient() as any;
 
   useEffect(() => {
@@ -66,18 +65,7 @@ export default function TeamPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 1. Buscar plano do usuário
-      const { data: subData } = await supabase
-        .from('account_subscriptions')
-        .select('plan_id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      
-      if (subData?.plan_id) {
-        setCurrentPlan(subData.plan_id);
-      }
-
-      // 2. Buscar membros da equipe (secretárias)
+      // Buscar membros da equipe (secretarias)
       const { data: teamMembers } = await supabase
         .from('profiles')
         .select('*')
@@ -152,8 +140,8 @@ export default function TeamPage() {
     }
   };
 
-  // Só é considerado plano Starter (bloqueado) se NÃO estiver em período de teste
-  const isStarterPlan = !canInviteTeamMember && !isTrial;
+  // Trial e PRO incluem ate 1 secretaria/assistente; acima disso, indicar Clinic.
+  const isTeamLimitReached = !canInviteTeamMember && !isTrial;
 
   if (isSecretary) {
     return (
@@ -176,7 +164,7 @@ export default function TeamPage() {
           <p className="text-muted-foreground mt-1 text-sm">Adicione e gerencie as secretárias da sua clínica.</p>
         </div>
 
-        {isStarterPlan ? (
+        {isTeamLimitReached ? (
           <Button 
             size="lg"
             className="bg-muted text-muted-foreground cursor-not-allowed shadow-none"
@@ -232,7 +220,7 @@ export default function TeamPage() {
         )}
       </div>
 
-      {isStarterPlan && (
+      {isTeamLimitReached && (
         <Card className="bg-primary/5 border-primary/20 shadow-none overflow-hidden relative">
           <div className="absolute top-0 left-0 w-1 h-full bg-primary/40" />
           <CardContent className="py-5 flex items-center gap-5">
@@ -240,16 +228,16 @@ export default function TeamPage() {
               <Sparkles className="w-6 h-6 text-primary" />
             </div>
             <div className="flex-1 space-y-1">
-              <h4 className="font-bold text-sm text-primary">Upgrade Necessário para Equipe</h4>
+              <h4 className="font-bold text-sm text-primary">Limite de equipe atingido</h4>
               <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
-                Você está no plano <strong>Starter</strong>. Para adicionar membros à sua equipe e delegar tarefas administrativas, faça o upgrade para o plano <strong>Growth</strong>.
+                O Nythos PRO inclui ate 1 secretaria/assistente. Para uma equipe maior, fale sobre o <strong>Nythos Clinic</strong>.
               </p>
               <Button 
                 variant="link" 
                 className="p-0 h-auto text-primary text-xs font-bold hover:underline" 
                 onClick={() => window.location.href = '/dashboard/settings/billing'}
               >
-                Ver planos e preços →
+                Ver planos e precos -&gt;
               </Button>
             </div>
           </CardContent>

@@ -6,13 +6,13 @@ import {
   canCreatePatient,
   canInviteTeamMember,
   canManageSubscription,
+  getEffectiveSubscriptionPlanId,
   canUploadDocument,
   getEffectiveSubscriptionStatus,
   getPlanLabel,
   getPlanLimits,
   getSubscriptionStateLabel,
   getUsageAgainstLimits,
-  normalizePlanId,
   type PlanLimits,
   type SubscriptionPlanId,
   type SubscriptionStatus,
@@ -127,7 +127,12 @@ export function useSubscription() {
           trialEndsAt: row?.trial_ends_at,
           currentPeriodEndsAt: row?.current_period_ends_at,
         });
-        const planId = normalizePlanId(row?.plan_id);
+        const planId = getEffectiveSubscriptionPlanId({
+          planId: row?.plan_id,
+          status: effectiveStatus,
+          trialEndsAt: row?.trial_ends_at,
+          currentPeriodEndsAt: row?.current_period_ends_at,
+        });
         const nextSubscription: AccountSubscriptionState = row
           ? {
               id: row.id,

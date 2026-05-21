@@ -24,7 +24,11 @@ import {
 } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
-import { PLAN_DEFINITIONS, type SubscriptionPlanId } from "@/lib/subscription/plan-rules";
+import {
+  getNythosProAnnualSavings,
+  PLAN_DEFINITIONS,
+  type SubscriptionPlanId,
+} from "@/lib/subscription/plan-rules";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -192,31 +196,39 @@ const landingPlanCards: Array<{
   id: Extract<SubscriptionPlanId, "free" | "professional" | "clinic">;
   eyebrow: string;
   description: string;
+  priceLabel: string;
+  priceCaption: string;
+  secondaryPrice?: string;
   cta: string;
   featured?: boolean;
   features: string[];
 }> = [
   {
     id: "free",
-    eyebrow: "Starter",
-    description: "Para comecar a organizar os primeiros atendimentos.",
-    cta: "Comecar gratis",
+    eyebrow: "Trial gratuito",
+    description: "14 dias de experiencia Nythos PRO para conhecer a rotina completa.",
+    priceLabel: "14 dias",
+    priceCaption: "Nythos PRO completo no teste",
+    cta: "Comecar teste gratis",
     features: [
-      "Ate 5 pacientes ativos",
-      "Agenda basica",
-      "Prontuario basico",
-      "Financeiro simples",
+      "Ate 100 pacientes ativos",
+      "Ate 1 secretaria/assistente",
+      "Recursos principais liberados",
+      "Sem cobranca ativa nesta etapa",
     ],
   },
   {
     id: "professional",
-    eyebrow: "Professional",
-    description: "Para usar o Nythos como central da rotina clinica.",
-    cta: "Comecar teste profissional",
+    eyebrow: "Nythos PRO",
+    description: "Mensal ou anual para manter agenda, prontuario, financeiro e pacientes organizados.",
+    priceLabel: `${formatLandingCurrency(PLAN_DEFINITIONS.professional.monthlyPrice ?? 0)}/mes`,
+    priceCaption: `${formatLandingCurrency(PLAN_DEFINITIONS.professional.yearlyPrice ?? 0)}/ano`,
+    secondaryPrice: `Economia de ${formatLandingCurrency(getNythosProAnnualSavings().savings)}/ano`,
+    cta: "Criar conta",
     featured: true,
     features: [
       "Ate 100 pacientes ativos",
-      "Agenda, prontuario e financeiro",
+      "Ate 1 secretaria/assistente",
       "Pacotes, recibos e portal do paciente",
       "Google Calendar",
       "Documentos e auditoria",
@@ -224,27 +236,26 @@ const landingPlanCards: Array<{
   },
   {
     id: "clinic",
-    eyebrow: "Clinic",
-    description: "Para clinicas e equipes que precisam de mais estrutura.",
-    cta: "Criar conta",
+    eyebrow: "Nythos Clinic",
+    description: "Para clinicas, equipes e operacoes com maior volume.",
+    priceLabel: "Sob consulta",
+    priceCaption: "Condicoes personalizadas",
+    cta: "Falar sobre Nythos Clinic",
     features: [
-      "Mais pacientes",
-      "Equipe e secretaria",
-      "Relatorios avancados",
-      "Armazenamento maior",
+      "Acima de 100 pacientes ativos",
+      "Equipe personalizada",
+      "Maior volume de documentos",
+      "Necessidades especificas de operacao",
     ],
   },
 ];
 
-function formatPlanPrice(value: number | null) {
-  if (value === null) return "Sob consulta";
-  if (value === 0) return "R$ 0";
-
-  return `${new Intl.NumberFormat("pt-BR", {
+function formatLandingCurrency(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
     maximumFractionDigits: 0,
-  }).format(value)}/mes`;
+  }).format(value);
 }
 
 function publicAssetExists(src: string) {
@@ -277,8 +288,6 @@ function LandingPlanPreviewCard({
 }: {
   plan: (typeof landingPlanCards)[number];
 }) {
-  const definition = PLAN_DEFINITIONS[plan.id];
-
   return (
     <article
       className={cn(
@@ -298,8 +307,16 @@ function LandingPlanPreviewCard({
             {plan.eyebrow}
           </p>
           <p className="mt-3 text-3xl font-semibold tracking-tight">
-            {formatPlanPrice(definition.monthlyPrice)}
+            {plan.priceLabel}
           </p>
+          <p className={cn("mt-1 text-xs font-medium", plan.featured ? "text-violet-100/68" : "text-slate-500")}>
+            {plan.priceCaption}
+          </p>
+          {plan.secondaryPrice && (
+            <p className={cn("mt-1 text-xs font-semibold", plan.featured ? "text-teal-200" : "text-teal-700")}>
+              {plan.secondaryPrice}
+            </p>
+          )}
         </div>
         {plan.featured && (
           <span className="rounded-full bg-teal-300 px-3 py-1 text-xs font-bold text-slate-950">
@@ -1059,10 +1076,10 @@ export default async function LandingPage() {
             </div>
             <div className="max-w-lg">
               <p className="text-sm leading-6 text-slate-600">
-                Comece gratis, teste o Professional e escolha o plano que acompanha a sua rotina clinica.
+                Comece com 14 dias gratis do Nythos PRO. Depois, continue no mensal, anual ou fale sobre Nythos Clinic.
               </p>
               <p className="mt-3 text-xs font-medium leading-5 text-slate-500">
-                Pagamento online em preparacao. Voce pode criar sua conta e comecar a configurar seu espaco.
+                Criar conta nao inicia cobranca ativa nesta etapa.
               </p>
             </div>
           </div>
@@ -1079,7 +1096,7 @@ export default async function LandingPage() {
                 Precisa comparar limites, recursos e detalhes?
               </p>
               <p className="mt-1 text-sm leading-6 text-slate-600">
-                A pagina de precos traz a visao completa dos planos Starter, Professional e Clinic.
+                A pagina de precos traz a visao completa de Trial gratuito, Nythos PRO mensal/anual e Nythos Clinic.
               </p>
             </div>
             <Link

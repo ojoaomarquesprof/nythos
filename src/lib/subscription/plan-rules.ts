@@ -64,11 +64,42 @@ export type PlanCtaState = {
   reason: "current_plan" | "managed_by_owner" | "can_request_change";
 };
 
+export const NYTHOS_PRO_MONTHLY_PRICE = 89;
+export const NYTHOS_PRO_YEARLY_PRICE = 899;
+export const NYTHOS_PRO_ANNUALIZED_MONTHLY_PRICE = NYTHOS_PRO_MONTHLY_PRICE * 12;
+export const NYTHOS_PRO_YEARLY_SAVINGS =
+  NYTHOS_PRO_ANNUALIZED_MONTHLY_PRICE - NYTHOS_PRO_YEARLY_PRICE;
+export const NYTHOS_PRO_YEARLY_EQUIVALENT_MONTHLY_PRICE =
+  NYTHOS_PRO_YEARLY_PRICE / 12;
+
+const NYTHOS_PRO_LIMITS: PlanLimits = {
+  max_active_patients: 100,
+  max_team_members: 1,
+  max_documents: 500,
+  max_storage_mb: 10_240,
+  google_calendar_enabled: true,
+  patient_portal_enabled: true,
+  packages_enabled: true,
+  receipts_enabled: true,
+  audit_log_enabled: true,
+  advanced_reports_enabled: false,
+};
+
+const NYTHOS_PRO_FEATURES = [
+  "Ate 100 pacientes ativos",
+  "1 profissional e ate 1 secretaria/assistente",
+  "Agenda, prontuario/evolucao e financeiro clinico",
+  "Pacotes de sessoes, recibos, documentos e consentimentos",
+  "Google Calendar, portal do paciente, tarefas/check-ins e audit log",
+  "Relatorios basicos",
+];
+
 export const PLAN_DEFINITIONS: Record<
   SubscriptionPlanId,
   {
     id: SubscriptionPlanId;
     name: string;
+    isPublic: boolean;
     description: string;
     monthlyPrice: number | null;
     yearlyPrice: number | null;
@@ -78,65 +109,39 @@ export const PLAN_DEFINITIONS: Record<
 > = {
   free: {
     id: "free",
-    name: "Starter",
-    description: "Para experimentar o essencial da rotina clinica.",
+    name: "Trial gratuito",
+    isPublic: true,
+    description: "Teste gratis por 14 dias com os recursos principais do Nythos PRO liberados.",
     monthlyPrice: 0,
-    yearlyPrice: 0,
-    limits: {
-      max_active_patients: 5,
-      max_team_members: 0,
-      max_documents: 20,
-      max_storage_mb: 250,
-      google_calendar_enabled: false,
-      patient_portal_enabled: false,
-      packages_enabled: false,
-      receipts_enabled: true,
-      audit_log_enabled: true,
-      advanced_reports_enabled: false,
-    },
+    yearlyPrice: null,
+    limits: { ...NYTHOS_PRO_LIMITS },
     features: [
-      "Ate 5 pacientes ativos",
-      "Agenda e prontuario basicos",
-      "Financeiro simples",
-      "Recibos e historico de acoes criticas",
+      "14 dias de Nythos PRO",
+      ...NYTHOS_PRO_FEATURES,
     ],
   },
   professional: {
     id: "professional",
-    name: "Professional",
-    description: "Para psicologos que querem operar a clinica com clareza.",
-    monthlyPrice: 89,
-    yearlyPrice: 890,
-    limits: {
-      max_active_patients: 100,
-      max_team_members: 0,
-      max_documents: 500,
-      max_storage_mb: 10_240,
-      google_calendar_enabled: true,
-      patient_portal_enabled: true,
-      packages_enabled: true,
-      receipts_enabled: true,
-      audit_log_enabled: true,
-      advanced_reports_enabled: false,
-    },
-    features: [
-      "Ate 100 pacientes ativos",
-      "Agenda, prontuario, financeiro e pacotes",
-      "Portal do paciente e documentos privados",
-      "Google Calendar, recibos e audit log",
-    ],
+    name: "Nythos PRO",
+    isPublic: true,
+    description: "Tudo que o psicologo precisa para organizar agenda, prontuario, financeiro e relacionamento com pacientes em uma rotina mais clara.",
+    monthlyPrice: NYTHOS_PRO_MONTHLY_PRICE,
+    yearlyPrice: NYTHOS_PRO_YEARLY_PRICE,
+    limits: { ...NYTHOS_PRO_LIMITS },
+    features: NYTHOS_PRO_FEATURES,
   },
   clinic: {
     id: "clinic",
-    name: "Clinic",
-    description: "Para clinicas pequenas que precisam de equipe e escala.",
+    name: "Nythos Clinic",
+    isPublic: true,
+    description: "Para clinicas, equipes e operacoes com maior volume.",
     monthlyPrice: null,
     yearlyPrice: null,
     limits: {
-      max_active_patients: 500,
-      max_team_members: 10,
-      max_documents: 5_000,
-      max_storage_mb: 102_400,
+      max_active_patients: null,
+      max_team_members: null,
+      max_documents: null,
+      max_storage_mb: null,
       google_calendar_enabled: true,
       patient_portal_enabled: true,
       packages_enabled: true,
@@ -145,15 +150,16 @@ export const PLAN_DEFINITIONS: Record<
       advanced_reports_enabled: true,
     },
     features: [
-      "Limites ampliados para pacientes e documentos",
-      "Equipe e secretaria",
-      "Rotina clinica com rastreabilidade",
-      "Preparado para relatorios avancados",
+      "Acima de 100 pacientes ativos",
+      "Equipe, armazenamento e volume sob condicoes personalizadas",
+      "Recursos principais do Nythos PRO incluidos",
+      "Para equipes e clinicas com maior volume",
     ],
   },
   legacy: {
     id: "legacy",
-    name: "Legacy",
+    name: "Acesso legado",
+    isPublic: false,
     description: "Acesso preservado para contas existentes durante a transicao.",
     monthlyPrice: null,
     yearlyPrice: null,
@@ -179,12 +185,12 @@ export const PLAN_DEFINITIONS: Record<
 
 const STATUS_LABELS: Record<SubscriptionStatus, string> = {
   active: "Ativo",
-  trialing: "Periodo de teste",
+  trialing: "Teste PRO",
   past_due: "Pagamento pendente",
   cancelled: "Cancelado",
   expired: "Expirado",
-  free: "Gratuito",
-  legacy: "Legado",
+  free: "Acesso inicial",
+  legacy: "Acesso legado",
 };
 
 export function normalizePlanId(planId?: string | null): SubscriptionPlanId {
@@ -217,6 +223,26 @@ export function getPlanLimits(planId?: string | null): PlanLimits {
 
 export function getPlanLabel(planId?: string | null): string {
   return PLAN_DEFINITIONS[normalizePlanId(planId)].name;
+}
+
+export function isPlanPublic(planId?: string | null): boolean {
+  return PLAN_DEFINITIONS[normalizePlanId(planId)].isPublic;
+}
+
+export function getEffectiveSubscriptionPlanId(subscription: SubscriptionSnapshot): SubscriptionPlanId {
+  const status = normalizeSubscriptionStatus(subscription.status);
+  if (status === "trialing") return "professional";
+  if (status === "legacy") return "legacy";
+  return normalizePlanId(subscription.planId);
+}
+
+export function getNythosProAnnualSavings() {
+  return {
+    monthlyAnnualized: NYTHOS_PRO_ANNUALIZED_MONTHLY_PRICE,
+    yearly: NYTHOS_PRO_YEARLY_PRICE,
+    savings: NYTHOS_PRO_YEARLY_SAVINGS,
+    equivalentMonthly: NYTHOS_PRO_YEARLY_EQUIVALENT_MONTHLY_PRICE,
+  };
 }
 
 export function getFeatureAccess(planId: string | null | undefined, feature: PlanFeatureKey): boolean {

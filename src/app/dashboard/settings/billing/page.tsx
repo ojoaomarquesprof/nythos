@@ -28,7 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { useSubscription } from "@/hooks/use-subscription";
 import {
-  getPlanCtaState,
+  getNythosProAnnualSavings,
   PLAN_DEFINITIONS,
   type PlanLimits,
   type PlanFeatureKey,
@@ -38,7 +38,80 @@ import {
 } from "@/lib/subscription/plan-rules";
 import { cn } from "@/lib/utils";
 
-const COMMERCIAL_PLAN_IDS: SubscriptionPlanId[] = ["free", "professional", "clinic"];
+const annualSavings = getNythosProAnnualSavings();
+
+const BILLING_PLAN_OPTIONS: Array<{
+  key: "trial" | "pro-monthly" | "pro-yearly" | "clinic";
+  targetPlanId: SubscriptionPlanId;
+  title: string;
+  description: string;
+  price: string;
+  caption: string;
+  ctaLabel?: string;
+  badge?: string;
+  featured?: boolean;
+  features: string[];
+}> = [
+  {
+    key: "trial",
+    targetPlanId: "free",
+    title: "Trial PRO",
+    description: "Teste gratuito de 14 dias com a experiencia do Nythos PRO liberada.",
+    price: "14 dias",
+    caption: "Para novas contas owner",
+    badge: "Teste inicial",
+    features: [
+      "Ate 100 pacientes ativos",
+      "Ate 1 secretaria/assistente",
+      "Recursos principais liberados",
+    ],
+  },
+  {
+    key: "pro-monthly",
+    targetPlanId: "professional",
+    title: "Nythos PRO mensal",
+    description: PLAN_DEFINITIONS.professional.description,
+    price: "R$ 89/mes",
+    caption: "Plano mensal",
+    ctaLabel: "Solicitar PRO mensal",
+    featured: true,
+    features: [
+      "Ate 100 pacientes ativos",
+      "1 profissional",
+      "Ate 1 secretaria/assistente",
+      "Agenda, prontuario, financeiro, pacotes e portal",
+    ],
+  },
+  {
+    key: "pro-yearly",
+    targetPlanId: "professional",
+    title: "Nythos PRO anual",
+    description: "Economize no plano anual e mantenha sua rotina clinica organizada durante o ano inteiro.",
+    price: "R$ 899/ano",
+    caption: `Equivale a R$ ${annualSavings.equivalentMonthly.toFixed(2).replace(".", ",")}/mes`,
+    ctaLabel: "Solicitar PRO anual",
+    features: [
+      "12 x R$ 89 = R$ 1.068",
+      "Economia de R$ 169/ano",
+      "Mesmos limites e recursos do PRO mensal",
+    ],
+  },
+  {
+    key: "clinic",
+    targetPlanId: "clinic",
+    title: "Nythos Clinic",
+    description: PLAN_DEFINITIONS.clinic.description,
+    price: "Sob consulta",
+    caption: "Condicoes personalizadas",
+    ctaLabel: "Falar sobre Clinic",
+    features: [
+      "Acima de 100 pacientes ativos",
+      "Equipe personalizada",
+      "Maior volume de documentos e armazenamento",
+      "Necessidades especificas de operacao",
+    ],
+  },
+];
 
 const FEATURE_ROWS: Array<{
   label: string;
@@ -99,10 +172,9 @@ const FEATURE_ROWS: Array<{
     feature: "audit_log_enabled",
   },
   {
-    label: "Relatorios avancados",
-    description: "Leituras consolidadas para clinicas.",
+    label: "Relatorios basicos",
+    description: "Leituras essenciais da rotina.",
     icon: Layers3,
-    feature: "advanced_reports_enabled",
   },
   {
     label: "Equipe/secretaria",
@@ -111,16 +183,6 @@ const FEATURE_ROWS: Array<{
     limit: "team",
   },
 ];
-
-function formatPrice(value: number | null): string {
-  if (value === null) return "Sob consulta";
-  if (value === 0) return "R$ 0";
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 function formatLimit(limit: number | null, suffix = ""): string {
   if (limit === null) return "Ilimitado";
@@ -245,10 +307,11 @@ export default function BillingPage() {
   } = useSubscription();
 
   const trialEndsAt = formatDate(subscription.trialEndsAt ?? subscription.currentPeriodEndsAt);
+  const currentPlanName = subscriptionStatus === "trialing" ? "Teste PRO" : planName;
 
   const handlePlanRequest = (targetPlanName: string) => {
     toast.info("Alteracao de plano em preparacao", {
-      description: `A alteracao para ${targetPlanName} e o checkout online serao ativados em breve. Seu plano atual nao foi alterado.`,
+      description: `Checkout online em preparacao. A solicitacao para ${targetPlanName} foi registrada apenas como informacao, e seu plano atual nao foi alterado.`,
     });
   };
 
@@ -316,7 +379,7 @@ export default function BillingPage() {
               <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <p className="text-3xl font-black text-foreground">
-                    {loading ? "..." : planName}
+                    {loading ? "..." : currentPlanName}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Status: <span className="font-semibold text-foreground">{statusLabel}</span>
@@ -423,59 +486,66 @@ export default function BillingPage() {
           </div>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-3">
-          {COMMERCIAL_PLAN_IDS.map((id) => {
-            const plan = PLAN_DEFINITIONS[id];
-            const isCurrent = planId === id;
-            const cta = getPlanCtaState({
-              currentPlanId: planId,
-              targetPlanId: id,
-              canManage: canManagePlan,
-            });
+        <div className="grid gap-4 lg:grid-cols-4">
+          {BILLING_PLAN_OPTIONS.map((option) => {
+            const isCurrent =
+              (option.key === "trial" && subscriptionStatus === "trialing")
+              || (option.key === "pro-monthly" && planId === "professional" && subscriptionStatus !== "trialing")
+              || (option.key === "clinic" && planId === "clinic");
+            const isTrialOption = option.key === "trial";
+            const disabled = isCurrent || isTrialOption || !canManagePlan;
+            const ctaLabel = isCurrent
+              ? "Plano atual"
+              : !canManagePlan
+                ? "Gerenciado pelo responsavel"
+                : isTrialOption
+                  ? "Teste inicial"
+                  : option.ctaLabel ?? "Solicitar alteracao";
 
             return (
               <Card
-                key={plan.id}
+                key={option.key}
                 className={cn(
                   "flex h-full flex-col overflow-hidden rounded-[28px] border-0 shadow-sm transition-all",
-                  id === "professional" ? "ring-2 ring-primary/30" : "",
+                  option.featured ? "ring-2 ring-primary/30" : "",
                   isCurrent ? "bg-primary/5" : "bg-white/75"
                 )}
               >
                 <CardHeader>
                   <div className="flex items-center justify-between gap-3">
-                    <CardTitle className="text-xl">{plan.name}</CardTitle>
-                    {id === "professional" && (
+                    <CardTitle className="text-xl">{option.title}</CardTitle>
+                    {option.featured && (
                       <Badge className="rounded-full bg-primary/10 text-primary hover:bg-primary/10">
                         Mais indicado
                       </Badge>
                     )}
-                    {isCurrent && id !== "professional" && (
+                    {option.badge && !isCurrent && (
+                      <Badge className="rounded-full bg-slate-100 text-slate-700 hover:bg-slate-100">
+                        {option.badge}
+                      </Badge>
+                    )}
+                    {isCurrent && !option.featured && (
                       <Badge className="rounded-full bg-slate-100 text-slate-700 hover:bg-slate-100">
                         Atual
                       </Badge>
                     )}
                   </div>
                   <p className="text-sm leading-6 text-muted-foreground">
-                    {plan.description}
+                    {option.description}
                   </p>
                 </CardHeader>
                 <CardContent className="flex flex-1 flex-col space-y-5">
                   <div>
                     <p className="text-3xl font-black text-foreground">
-                      {formatPrice(plan.monthlyPrice)}
+                      {option.price}
                     </p>
                     <p className="text-xs font-medium text-muted-foreground">
-                      {plan.monthlyPrice === null ? "para clinicas" : "por mes"}
+                      {option.caption}
                     </p>
-                  </div>
-
-                  <div className="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-700">
-                    {formatLimit(plan.limits.max_active_patients, " pacientes ativos")}
                   </div>
 
                   <ul className="space-y-2">
-                    {plan.features.map((feature) => (
+                    {option.features.map((feature) => (
                       <li key={feature} className="flex gap-2 text-sm text-muted-foreground">
                         <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-teal-600" />
                         <span>{feature}</span>
@@ -485,16 +555,16 @@ export default function BillingPage() {
 
                   <button
                     type="button"
-                    disabled={cta.disabled}
-                    onClick={() => handlePlanRequest(plan.name)}
+                    disabled={disabled}
+                    onClick={() => handlePlanRequest(option.title)}
                     className={cn(
                       buttonVariants({ variant: isCurrent ? "secondary" : "outline", size: "lg" }),
                       "mt-auto w-full rounded-2xl",
-                      !cta.disabled && "border-primary/30 bg-white text-primary hover:bg-primary/5",
-                      cta.disabled && "cursor-not-allowed opacity-70"
+                      !disabled && "border-primary/30 bg-white text-primary hover:bg-primary/5",
+                      disabled && "cursor-not-allowed opacity-70"
                     )}
                   >
-                    {cta.label}
+                    {ctaLabel}
                   </button>
                   {!canManagePlan && !isCurrent && (
                     <p className="text-center text-xs leading-5 text-muted-foreground">

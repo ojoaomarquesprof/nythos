@@ -28,6 +28,7 @@ export function CurrentPlanCard() {
   const requiresAttention = subscriptionStatus === "past_due"
     || subscriptionStatus === "expired"
     || subscriptionStatus === "cancelled";
+  const currentPlanName = subscriptionStatus === "trialing" ? "Teste PRO" : planName;
 
   return (
     <Card className="overflow-hidden rounded-[32px] border-0 shadow-sm glass-panel">
@@ -39,7 +40,7 @@ export function CurrentPlanCard() {
               Plano atual
             </CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
-              Fundacao de assinatura da plataforma Nythos.
+              Plano, limites e status da plataforma Nythos.
             </p>
           </div>
           <Badge
@@ -61,11 +62,11 @@ export function CurrentPlanCard() {
           <div className="mt-2 flex items-end justify-between gap-3">
             <div>
               <p className="text-2xl font-black text-foreground">
-                {loading ? "..." : planName}
+                {loading ? "..." : currentPlanName}
               </p>
               {subscriptionStatus === "trialing" && (
                 <p className="mt-1 text-xs font-medium text-muted-foreground">
-                  {daysLeft} {daysLeft === 1 ? "dia restante" : "dias restantes"} de teste.
+                  Termina em {daysLeft} {daysLeft === 1 ? "dia" : "dias"}.
                 </p>
               )}
             </div>
