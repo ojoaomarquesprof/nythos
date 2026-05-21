@@ -115,12 +115,7 @@ export function LegalPage({
                 <p className="mt-5 text-base leading-7 text-violet-100/74">
                   {description}
                 </p>
-                <div className="mt-6 rounded-2xl border border-amber-200/20 bg-amber-200/10 p-4 text-sm leading-6 text-amber-50/86">
-                  Este texto e uma base inicial para comunicacao publica e deve
-                  ser revisado por assessoria juridica antes do uso comercial
-                  final.
-                </div>
-                <p className="mt-5 text-sm font-medium text-violet-100/58">
+                <p className="mt-6 text-sm font-medium text-violet-100/58">
                   Ultima atualizacao: {updatedAt}
                 </p>
 

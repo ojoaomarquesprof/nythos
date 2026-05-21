@@ -21,7 +21,6 @@ const sections: LegalSection[] = [
     body: [
       "Estes Termos de Uso regulam o acesso e a utilizacao do Nythos, uma plataforma de gestao clinica voltada a psicologos e profissionais autorizados.",
       "Ao criar uma conta ou utilizar o Nythos, o usuario declara que leu, compreendeu e concorda com estes termos. Caso nao concorde, nao deve utilizar a plataforma.",
-      "Esta e uma versao inicial dos termos e pode precisar de revisao juridica antes do uso comercial final.",
     ],
   },
   {
@@ -122,8 +121,7 @@ const sections: LegalSection[] = [
     id: "contato",
     title: "13. Contato",
     body: [
-      "Como nao ha dados oficiais de empresa, CNPJ, endereco ou e-mail publico definidos no projeto, este texto nao inventa essas informacoes.",
-      "Duvidas sobre estes termos devem ser encaminhadas pelo canal oficial informado na plataforma ou por outro meio que venha a ser divulgado pelo Nythos.",
+      "Duvidas sobre estes termos devem ser encaminhadas pelo canal oficial informado na plataforma ou por outro meio divulgado pelo Nythos.",
     ],
   },
 ];
@@ -133,7 +131,7 @@ export default function TermsPage() {
     <LegalPage
       eyebrow="Termos de Uso"
       title="Termos de Uso do Nythos"
-      description="Uma base clara sobre o uso da plataforma, responsabilidades do profissional e limites do servico."
+      description="Informacoes claras sobre o uso da plataforma, responsabilidades do profissional e limites do servico."
       updatedAt="21 de maio de 2026"
       sections={sections}
       variant="terms"

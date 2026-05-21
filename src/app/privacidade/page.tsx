@@ -21,7 +21,6 @@ const sections: LegalSection[] = [
     body: [
       "Esta Politica de Privacidade explica, em linguagem direta, como o Nythos pode tratar dados pessoais e dados sensiveis no contexto da plataforma de gestao clinica para psicologos.",
       "O Nythos pode lidar com informacoes de profissionais, pacientes e usuarios do portal do paciente. Por isso, privacidade, seguranca e responsabilidade sao aspectos centrais do produto.",
-      ".",
     ],
   },
   {
@@ -103,7 +102,7 @@ const sections: LegalSection[] = [
     body: [
       "A plataforma pode usar cookies, tokens de sessao e tecnologias similares para autenticacao, seguranca, manutencao da sessao e funcionamento adequado do produto.",
       "Tambem pode usar armazenamento local, como localStorage, para preferencias de interface, onboarding e estados de experiencia do usuario.",
-      "Esta fase nao implementa banner de cookies ou painel granular de preferencias.",
+      "Controles adicionais de preferencias poderao ser disponibilizados conforme a evolucao da plataforma.",
     ],
   },
   {
@@ -131,7 +130,14 @@ const sections: LegalSection[] = [
       "A data de ultima atualizacao sera indicada nesta pagina. Recomenda-se revisar periodicamente a versao vigente.",
     ],
   },
-  
+  {
+    id: "contato",
+    title: "14. Contato",
+    body: [
+      "Duvidas sobre esta Politica de Privacidade devem ser encaminhadas pelo canal oficial informado na plataforma ou por outro meio divulgado pelo Nythos.",
+      "Quando a solicitacao envolver dados de pacientes, o titular tambem pode precisar procurar o profissional ou a clinica responsavel pelo atendimento.",
+    ],
+  },
 ];
 
 export default function PrivacyPage() {
