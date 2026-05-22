@@ -1,5 +1,7 @@
 "use client";
 
+import type { FormEvent } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -25,8 +27,28 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useSubscription } from "@/hooks/use-subscription";
+import {
+  getBillingDocumentValidationMessage,
+  normalizeCpfCnpj,
+} from "@/lib/asaas/billing-document";
+import {
+  buildCheckoutRequestBody,
+  getCheckoutFailureMessage,
+  getClinicCheckoutMessage,
+  type NythosCheckoutUiResponse,
+} from "@/lib/asaas/checkout-ui";
 import {
   getNythosProAnnualSavings,
   PLAN_DEFINITIONS,
@@ -73,7 +95,7 @@ const BILLING_PLAN_OPTIONS: Array<{
     description: PLAN_DEFINITIONS.professional.description,
     price: "R$ 89/mes",
     caption: "Plano mensal",
-    ctaLabel: "Solicitar PRO mensal",
+    ctaLabel: "Assinar PRO mensal",
     featured: true,
     features: [
       "Ate 100 pacientes ativos",
@@ -89,7 +111,7 @@ const BILLING_PLAN_OPTIONS: Array<{
     description: "Economize no plano anual e mantenha sua rotina clinica organizada durante o ano inteiro.",
     price: "R$ 899/ano",
     caption: `Equivale a R$ ${annualSavings.equivalentMonthly.toFixed(2).replace(".", ",")}/mes`,
-    ctaLabel: "Solicitar PRO anual",
+    ctaLabel: "Assinar PRO anual",
     features: [
       "12 x R$ 89 = R$ 1.068",
       "Economia de R$ 169/ano",
@@ -112,6 +134,8 @@ const BILLING_PLAN_OPTIONS: Array<{
     ],
   },
 ];
+
+type BillingPlanOption = (typeof BILLING_PLAN_OPTIONS)[number];
 
 const FEATURE_ROWS: Array<{
   label: string;
@@ -292,6 +316,11 @@ function UsageCard({ state }: { state: UsageLimitState }) {
 }
 
 export default function BillingPage() {
+  const [checkoutLoadingKey, setCheckoutLoadingKey] = useState<string | null>(null);
+  const [pendingCheckoutOption, setPendingCheckoutOption] = useState<BillingPlanOption | null>(null);
+  const [billingDocumentModalOpen, setBillingDocumentModalOpen] = useState(false);
+  const [billingDocumentInput, setBillingDocumentInput] = useState("");
+  const [billingDocumentError, setBillingDocumentError] = useState<string | null>(null);
   const {
     loading,
     planId,
@@ -307,12 +336,131 @@ export default function BillingPage() {
   } = useSubscription();
 
   const trialEndsAt = formatDate(subscription.trialEndsAt ?? subscription.currentPeriodEndsAt);
-  const currentPlanName = subscriptionStatus === "trialing" ? "Teste PRO" : planName;
+  const currentPlanName = subscriptionStatus === "trialing" ? "Teste gratis PRO" : planName;
 
-  const handlePlanRequest = (targetPlanName: string) => {
-    toast.info("Alteracao de plano em preparacao", {
-      description: `Checkout online em preparacao. A solicitacao para ${targetPlanName} foi registrada apenas como informacao, e seu plano atual nao foi alterado.`,
-    });
+  const resetBillingDocumentModal = () => {
+    setPendingCheckoutOption(null);
+    setBillingDocumentInput("");
+    setBillingDocumentError(null);
+  };
+
+  const runCheckout = async (option: BillingPlanOption, billingDocument?: string) => {
+    const requestBody = buildCheckoutRequestBody(option.key, billingDocument);
+    if (!requestBody) {
+      toast.info("Teste inicial", {
+        description: "O trial gratuito e liberado automaticamente para novas contas owner.",
+      });
+      return false;
+    }
+
+    if (checkoutLoadingKey) return false;
+
+    setCheckoutLoadingKey(option.key);
+
+    try {
+      const response = await fetch("/api/checkout", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      });
+      const data = await response.json().catch(() => ({})) as NythosCheckoutUiResponse;
+
+      if (!response.ok || data.success === false) {
+        const message = getCheckoutFailureMessage(data);
+
+        if (data.code === "missing_billing_document" && !billingDocument) {
+          setPendingCheckoutOption(option);
+          setBillingDocumentInput("");
+          setBillingDocumentError(null);
+          setBillingDocumentModalOpen(true);
+          return false;
+        }
+
+        if (billingDocument && (
+          data.code === "invalid_billing_document"
+          || data.code === "billing_document_save_failed"
+          || data.code === "missing_billing_document"
+        )) {
+          setBillingDocumentError(message);
+          return false;
+        }
+
+        const title = data.code === "checkout_disabled"
+          ? "Pagamento online em preparacao"
+          : "Nao foi possivel iniciar o pagamento";
+
+        toast.info(title, {
+          description: message,
+        });
+        return false;
+      }
+
+      const description = data.paymentUrl
+        ? "Abra o link de pagamento para concluir."
+        : "Assinatura criada. Aguarde a confirmacao do pagamento.";
+
+      toast.success(data.message || "Pagamento iniciado.", {
+        description,
+        action: data.paymentUrl
+          ? {
+              label: "Abrir pagamento",
+              onClick: () => window.open(data.paymentUrl as string, "_blank", "noopener,noreferrer"),
+            }
+          : undefined,
+      });
+
+      setBillingDocumentModalOpen(false);
+      resetBillingDocumentModal();
+      return true;
+    } catch {
+      const message = "Nao foi possivel iniciar o pagamento agora. Tente novamente em instantes.";
+      if (billingDocument) {
+        setBillingDocumentError(message);
+      } else {
+        toast.error("Nao foi possivel iniciar o pagamento", {
+          description: message,
+        });
+      }
+      return false;
+    } finally {
+      setCheckoutLoadingKey(null);
+    }
+  };
+
+  const handlePlanRequest = async (option: BillingPlanOption) => {
+    if (!canManagePlan) {
+      toast.info("Assinatura gerenciada pelo responsavel", {
+        description: "Somente o responsavel da conta pode gerenciar a assinatura.",
+      });
+      return;
+    }
+
+    if (option.key === "clinic") {
+      toast.info("Nythos Clinic", {
+        description: getClinicCheckoutMessage(),
+      });
+      return;
+    }
+
+    await runCheckout(option);
+  };
+
+  const handleBillingDocumentSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!pendingCheckoutOption || checkoutLoadingKey) return;
+
+    const normalized = normalizeCpfCnpj(billingDocumentInput);
+    const validationMessage = getBillingDocumentValidationMessage(normalized);
+
+    if (validationMessage) {
+      setBillingDocumentError(validationMessage);
+      return;
+    }
+
+    setBillingDocumentError(null);
+    await runCheckout(pendingCheckoutOption, normalized);
   };
 
   return (
@@ -401,6 +549,13 @@ export default function BillingPage() {
               </div>
             </div>
 
+            {subscriptionStatus === "trialing" && (
+              <div className="flex gap-3 rounded-[24px] border border-amber-100 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
+                <Clock className="mt-0.5 h-5 w-5 shrink-0" />
+                <span>Experiencia Nythos PRO liberada durante o teste.</span>
+              </div>
+            )}
+
             {subscriptionStatus === "legacy" && (
               <div className="flex gap-3 rounded-[24px] border border-violet-100 bg-violet-50 p-4 text-sm leading-6 text-violet-800">
                 <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
@@ -418,7 +573,7 @@ export default function BillingPage() {
             <div className="flex gap-3 rounded-[24px] border border-teal-100 bg-teal-50/80 p-4 text-sm leading-6 text-teal-800">
               <Info className="mt-0.5 h-5 w-5 shrink-0" />
               <span>
-                Checkout online em preparacao. Por enquanto, esta tela e informativa e nao altera sua assinatura.
+                Pagamento online em preparacao. Seu plano atual nao sera alterado automaticamente por enquanto.
               </span>
             </div>
           </CardContent>
@@ -481,7 +636,7 @@ export default function BillingPage() {
               Comparacao de planos
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Compare os planos comerciais. Solicitacoes nao alteram sua assinatura nesta fase.
+              Compare os planos comerciais e escolha como deseja continuar apos o teste.
             </p>
           </div>
         </div>
@@ -493,13 +648,16 @@ export default function BillingPage() {
               || (option.key === "pro-monthly" && planId === "professional" && subscriptionStatus !== "trialing")
               || (option.key === "clinic" && planId === "clinic");
             const isTrialOption = option.key === "trial";
-            const disabled = isCurrent || isTrialOption || !canManagePlan;
+            const isLoading = checkoutLoadingKey === option.key;
+            const disabled = isCurrent || isTrialOption || !canManagePlan || Boolean(checkoutLoadingKey);
             const ctaLabel = isCurrent
               ? "Plano atual"
               : !canManagePlan
                 ? "Gerenciado pelo responsavel"
                 : isTrialOption
                   ? "Teste inicial"
+                  : isLoading
+                    ? "Iniciando..."
                   : option.ctaLabel ?? "Solicitar alteracao";
 
             return (
@@ -556,7 +714,7 @@ export default function BillingPage() {
                   <button
                     type="button"
                     disabled={disabled}
-                    onClick={() => handlePlanRequest(option.title)}
+                    onClick={() => handlePlanRequest(option)}
                     className={cn(
                       buttonVariants({ variant: isCurrent ? "secondary" : "outline", size: "lg" }),
                       "mt-auto w-full rounded-2xl",
@@ -577,6 +735,72 @@ export default function BillingPage() {
           })}
         </div>
       </div>
+
+      <Dialog
+        open={billingDocumentModalOpen}
+        onOpenChange={(open) => {
+          if (checkoutLoadingKey) return;
+          setBillingDocumentModalOpen(open);
+          if (!open) resetBillingDocumentModal();
+        }}
+      >
+        <DialogContent className="rounded-[28px] border-0 bg-white p-0 shadow-2xl sm:max-w-md">
+          <DialogHeader className="border-b border-slate-100 bg-slate-50/80 px-5 py-5 sm:px-6">
+            <DialogTitle className="text-xl font-black text-foreground">
+              Dados para pagamento
+            </DialogTitle>
+            <DialogDescription className="leading-6">
+              Para gerar sua assinatura com seguranca, precisamos do CPF ou CNPJ do responsavel pela conta.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleBillingDocumentSubmit} className="space-y-5 px-5 pb-5 sm:px-6">
+            <div className="space-y-2 pt-1">
+              <Label htmlFor="billing-document" className="text-xs font-bold uppercase tracking-[0.14em] text-primary/70">
+                CPF ou CNPJ
+              </Label>
+              <Input
+                id="billing-document"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="000.000.000-00"
+                value={billingDocumentInput}
+                onChange={(event) => {
+                  setBillingDocumentInput(event.target.value);
+                  setBillingDocumentError(null);
+                }}
+                className="h-12 rounded-2xl border-slate-200 bg-white font-semibold"
+                autoFocus
+              />
+              {billingDocumentError && (
+                <p className="text-sm font-semibold text-rose-600">
+                  {billingDocumentError}
+                </p>
+              )}
+            </div>
+            <DialogFooter className="-mx-5 -mb-5 rounded-b-[28px] px-5 sm:-mx-6 sm:px-6">
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-2xl"
+                disabled={Boolean(checkoutLoadingKey)}
+                onClick={() => {
+                  setBillingDocumentModalOpen(false);
+                  resetBillingDocumentModal();
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                className="rounded-2xl"
+                disabled={Boolean(checkoutLoadingKey)}
+              >
+                {checkoutLoadingKey ? "Continuando..." : "Salvar e continuar"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

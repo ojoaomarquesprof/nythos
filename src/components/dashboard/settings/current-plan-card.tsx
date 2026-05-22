@@ -28,7 +28,7 @@ export function CurrentPlanCard() {
   const requiresAttention = subscriptionStatus === "past_due"
     || subscriptionStatus === "expired"
     || subscriptionStatus === "cancelled";
-  const currentPlanName = subscriptionStatus === "trialing" ? "Teste PRO" : planName;
+  const currentPlanName = subscriptionStatus === "trialing" ? "Teste gratis PRO" : planName;
 
   return (
     <Card className="overflow-hidden rounded-[32px] border-0 shadow-sm glass-panel">
@@ -65,9 +65,10 @@ export function CurrentPlanCard() {
                 {loading ? "..." : currentPlanName}
               </p>
               {subscriptionStatus === "trialing" && (
-                <p className="mt-1 text-xs font-medium text-muted-foreground">
-                  Termina em {daysLeft} {daysLeft === 1 ? "dia" : "dias"}.
-                </p>
+                <div className="mt-1 space-y-1 text-xs font-medium text-muted-foreground">
+                  <p>Termina em {daysLeft} {daysLeft === 1 ? "dia" : "dias"}.</p>
+                  <p>Experiencia Nythos PRO liberada durante o teste.</p>
+                </div>
               )}
             </div>
             <CheckCircle2 className="h-6 w-6 text-emerald-500" />

@@ -3,6 +3,7 @@ const DEFAULT_CLIENT_ERROR = "Nao foi possivel concluir a operacao.";
 const SENSITIVE_PATTERNS: RegExp[] = [
   /Bearer\s+[A-Za-z0-9._~+/-]+=*/gi,
   /\b(ENC::)[A-Za-z0-9+/=:_-]+/gi,
+  /["']?\b(cpf|cnpj|cpf_cnpj|cpfCnpj|billingDocument)\b["']?\s*[:=]\s*["']?[0-9.\-/\s]+/gi,
   /["']?\b(access_token|refresh_token|public_token|patient_token|hmac|cookie|set-cookie|secret|authorization|x-api-key|api_key|signed_url)\b["']?\s*[:=]\s*["']?[^"',\s}]+/gi,
   /([?&](access_token|refresh_token|token|public_token|patient_token|signed_url)=)[^&\s]+/gi,
 ];
@@ -16,6 +17,12 @@ const SENSITIVE_KEYS = new Set([
   "clinicalnote",
   "cookie",
   "cookies",
+  "cnpj",
+  "cpf",
+  "cpf_cnpj",
+  "cpfcnpj",
+  "billing_document",
+  "billingdocument",
   "diagnosis",
   "evolution",
   "feedback",

@@ -122,7 +122,7 @@ describe("subscription plan rules", () => {
 
   it("labels known and legacy subscription states", () => {
     expect(getSubscriptionStateLabel("active")).toBe("Ativo");
-    expect(getSubscriptionStateLabel("trialing")).toBe("Teste PRO");
+    expect(getSubscriptionStateLabel("trialing")).toBe("Teste gratis PRO");
     expect(getSubscriptionStateLabel("canceled")).toBe("Cancelado");
     expect(getSubscriptionStateLabel(undefined)).toBe("Acesso legado");
     expect(getPlanStatusLabel("past_due")).toBe("Pagamento pendente");

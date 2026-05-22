@@ -30,6 +30,16 @@ type AccountSubscriptionState = {
   cancelAtPeriodEnd: boolean;
 };
 
+type AccountSubscriptionRow = {
+  id: string;
+  owner_user_id: string;
+  plan_id: string | null;
+  status: string | null;
+  trial_ends_at: string | null;
+  current_period_ends_at: string | null;
+  cancel_at_period_end: boolean | null;
+};
+
 const LEGACY_SUBSCRIPTION: AccountSubscriptionState = {
   id: null,
   ownerUserId: null,
@@ -39,6 +49,35 @@ const LEGACY_SUBSCRIPTION: AccountSubscriptionState = {
   currentPeriodEndsAt: null,
   cancelAtPeriodEnd: false,
 };
+
+function buildTrialFallback(ownerUserId: string): AccountSubscriptionState {
+  const trialEndsAt = new Date();
+  trialEndsAt.setDate(trialEndsAt.getDate() + 14);
+
+  return {
+    id: null,
+    ownerUserId,
+    planId: "professional",
+    status: "trialing",
+    trialEndsAt: trialEndsAt.toISOString(),
+    currentPeriodEndsAt: null,
+    cancelAtPeriodEnd: false,
+  };
+}
+
+async function ensureOwnerTrialSubscription(): Promise<AccountSubscriptionRow | null> {
+  try {
+    const response = await fetch("/api/subscription/ensure-trial", {
+      method: "POST",
+    });
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok || !data?.subscription) return null;
+    return data.subscription as AccountSubscriptionRow;
+  } catch {
+    return null;
+  }
+}
 
 function daysUntil(date: string | null): number {
   if (!date) return 0;
@@ -120,7 +159,12 @@ export function useSubscription() {
           ),
         ]);
 
-        const row = subscriptionResult.error ? null : subscriptionResult.data;
+        let row = subscriptionResult.error ? null : subscriptionResult.data as AccountSubscriptionRow | null;
+
+        if (!row && !employerId && role !== "secretary") {
+          row = await ensureOwnerTrialSubscription();
+        }
+
         const effectiveStatus = getEffectiveSubscriptionStatus({
           status: row?.status,
           planId: row?.plan_id,
@@ -141,9 +185,11 @@ export function useSubscription() {
               status: effectiveStatus,
               trialEndsAt: row.trial_ends_at,
               currentPeriodEndsAt: row.current_period_ends_at,
-              cancelAtPeriodEnd: row.cancel_at_period_end,
+              cancelAtPeriodEnd: row.cancel_at_period_end ?? false,
             }
-          : { ...LEGACY_SUBSCRIPTION, ownerUserId };
+          : !employerId && role !== "secretary"
+            ? buildTrialFallback(ownerUserId)
+            : { ...LEGACY_SUBSCRIPTION, ownerUserId };
 
         const nextUsage: SubscriptionUsage = {
           activePatients,

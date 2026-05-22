@@ -20,6 +20,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  getBillingDocumentValidationMessage,
+  normalizeCpfCnpj,
+} from "@/lib/asaas/billing-document";
 import { createClient } from "@/lib/supabase/client";
 
 const benefits = [
@@ -154,6 +158,12 @@ export default function RegisterPage() {
       return;
     }
 
+    const billingDocumentError = getBillingDocumentValidationMessage(cpf);
+    if (billingDocumentError) {
+      setError(billingDocumentError);
+      return;
+    }
+
     setIsLoading(true);
 
     const { error: signUpError } = await supabase.auth.signUp({
@@ -163,7 +173,7 @@ export default function RegisterPage() {
         data: {
           full_name: fullName,
           crp: crp,
-          cpf: cpf.replace(/\D/g, ""),
+          cpf: normalizeCpfCnpj(cpf),
         },
         emailRedirectTo: `${window.location.origin}/dashboard`,
       },

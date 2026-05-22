@@ -37,6 +37,20 @@ describe("safe-error helpers", () => {
     });
   });
 
+  it("redacts CPF/CNPJ fields and text fragments", () => {
+    const sanitized = sanitizeErrorForLog({
+      cpf: "123.456.789-01",
+      cpfCnpj: "12.345.678/0001-90",
+      message: "Asaas rejected cpfCnpj=12345678901",
+    });
+
+    const serialized = JSON.stringify(sanitized);
+    expect(serialized).toContain("[REDACTED]");
+    expect(serialized).not.toContain("123.456.789-01");
+    expect(serialized).not.toContain("12.345.678/0001-90");
+    expect(serialized).not.toContain("12345678901");
+  });
+
   it("returns a generic client message by default", () => {
     expect(safeClientError()).toBe("Nao foi possivel concluir a operacao.");
   });

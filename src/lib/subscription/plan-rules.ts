@@ -185,7 +185,7 @@ export const PLAN_DEFINITIONS: Record<
 
 const STATUS_LABELS: Record<SubscriptionStatus, string> = {
   active: "Ativo",
-  trialing: "Teste PRO",
+  trialing: "Teste gratis PRO",
   past_due: "Pagamento pendente",
   cancelled: "Cancelado",
   expired: "Expirado",
