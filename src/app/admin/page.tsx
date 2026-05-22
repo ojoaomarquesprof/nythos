@@ -309,7 +309,7 @@ export default function AdminPage() {
                             setModalOpen(true);
                           }}
                         >
-                          Gerenciar
+                          Gerenciar.
                         </Button>
                       </td>
                     </tr>
