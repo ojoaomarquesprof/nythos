@@ -3,20 +3,24 @@ import { logSafeError, safeClientError } from "@/lib/errors/safe-error";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import {
-  AsaasApiError,
   buildSafeCheckoutApiResponse,
+  buildSafeCheckoutFailureResponse,
   canActorStartPlatformCheckout,
-  createAsaasHttpClient,
-  createNythosProAsaasCheckout,
-  getAsaasConfig,
+  createNythosProStripeCheckout,
+  createStripeHttpClient,
+  getStripeConfig,
+  getSafeCheckoutFailureCode,
   NythosBillingError,
   parseNythosCheckoutRequest,
   resolveNythosProCheckout,
-  sanitizeAsaasError,
-  type AccountSubscriptionForAsaas,
+  sanitizeStripeError,
+  StripeApiError,
+  type AccountSubscriptionForStripe,
   type AccountSubscriptionPatch,
   type CheckoutSubscriptionStore,
-} from "@/lib/asaas/nythos-billing";
+  type NythosBillingCycle,
+  type StripeCheckoutMode,
+} from "@/lib/stripe/nythos-billing";
 
 const ACCOUNT_SUBSCRIPTION_COLUMNS = [
   "owner_user_id",
@@ -33,12 +37,12 @@ const ACCOUNT_SUBSCRIPTION_COLUMNS = [
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
-function asAccountSubscriptionForAsaas(data: unknown): AccountSubscriptionForAsaas {
-  return data as AccountSubscriptionForAsaas;
+function asAccountSubscriptionForStripe(data: unknown): AccountSubscriptionForStripe {
+  return data as AccountSubscriptionForStripe;
 }
 
 function createCheckoutSubscriptionStore(adminClient: AdminClient): CheckoutSubscriptionStore {
-  async function getOrCreateSubscription(ownerUserId: string): Promise<AccountSubscriptionForAsaas> {
+  async function getOrCreateSubscription(ownerUserId: string): Promise<AccountSubscriptionForStripe> {
     const { data, error } = await adminClient
       .from("account_subscriptions")
       .select(ACCOUNT_SUBSCRIPTION_COLUMNS)
@@ -46,7 +50,7 @@ function createCheckoutSubscriptionStore(adminClient: AdminClient): CheckoutSubs
       .maybeSingle();
 
     if (error) throw error;
-    if (data) return asAccountSubscriptionForAsaas(data);
+    if (data) return asAccountSubscriptionForStripe(data);
 
     const now = new Date();
     const trialEndsAt = new Date(now);
@@ -61,7 +65,7 @@ function createCheckoutSubscriptionStore(adminClient: AdminClient): CheckoutSubs
         trial_started_at: now.toISOString(),
         trial_ends_at: trialEndsAt.toISOString(),
         metadata: {
-          source: "asaas_checkout_backfill",
+          source: "stripe_checkout_backfill",
           billing_effects_enabled: false,
         },
       })
@@ -69,13 +73,13 @@ function createCheckoutSubscriptionStore(adminClient: AdminClient): CheckoutSubs
       .single();
 
     if (insertError) throw insertError;
-    return asAccountSubscriptionForAsaas(inserted);
+    return asAccountSubscriptionForStripe(inserted);
   }
 
   async function updateSubscription(
     ownerUserId: string,
     patch: AccountSubscriptionPatch
-  ): Promise<AccountSubscriptionForAsaas> {
+  ): Promise<AccountSubscriptionForStripe> {
     const { data, error } = await adminClient
       .from("account_subscriptions")
       .update(patch)
@@ -84,7 +88,7 @@ function createCheckoutSubscriptionStore(adminClient: AdminClient): CheckoutSubs
       .single();
 
     if (error) throw error;
-    return asAccountSubscriptionForAsaas(data);
+    return asAccountSubscriptionForStripe(data);
   }
 
   return {
@@ -101,7 +105,21 @@ async function readJsonBody(request: Request): Promise<unknown> {
   }
 }
 
+function buildBillingUrl(request: Request, status: "success" | "cancelled"): string {
+  const url = new URL("/dashboard/settings/billing", request.url);
+  url.searchParams.set("checkout", status);
+  return url.toString();
+}
+
+function buildEmbeddedReturnUrl(request: Request): string {
+  const origin = new URL(request.url).origin;
+  return `${origin}/dashboard/settings/billing?checkout=return&session_id={CHECKOUT_SESSION_ID}`;
+}
+
 export async function POST(request: Request) {
+  let billingCycle: NythosBillingCycle | undefined;
+  let checkoutMode: StripeCheckoutMode | undefined;
+
   try {
     const supabase = await createClient();
     const {
@@ -109,119 +127,102 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        buildSafeCheckoutFailureResponse("Unauthorized"),
+        { status: 401 }
+      );
     }
 
     const payload = parseNythosCheckoutRequest(await readJsonBody(request));
-    const checkout = resolveNythosProCheckout(payload.billingCycle);
+    billingCycle = payload.billingCycle;
+    checkoutMode = payload.checkoutMode;
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("id, role, employer_id, full_name, clinic_name, email, cpf, phone")
+      .select("id, role, employer_id, full_name, clinic_name, email, phone")
       .eq("id", user.id)
       .maybeSingle();
 
     if (profileError) throw profileError;
     if (!profile || !canActorStartPlatformCheckout(profile)) {
       return NextResponse.json(
-        {
-          error: safeClientError("Somente o owner da conta pode iniciar checkout da plataforma."),
-          code: "checkout_forbidden",
-        },
+        buildSafeCheckoutFailureResponse(
+          safeClientError("Somente o owner da conta pode iniciar checkout da plataforma."),
+          billingCycle
+        ),
         { status: 403 }
       );
     }
 
-    const config = getAsaasConfig();
-
+    const config = getStripeConfig();
     if (!config.checkoutEnabled) {
-      logSafeError("[checkout] Asaas checkout disabled", {
-        code: "checkout_disabled",
-        plan: payload.plan,
-        billingCycle: payload.billingCycle,
-      });
-
       return NextResponse.json(
         buildSafeCheckoutApiResponse({
           ok: false,
           checkoutEnabled: false,
-          code: "checkout_disabled",
+          code: "stripe_checkout_disabled",
+          billingCycle,
           message: "O pagamento online ainda nao esta disponivel para esta conta. Seu plano nao foi alterado.",
         }),
         { status: 503 }
       );
     }
 
+    const checkout = resolveNythosProCheckout(payload.billingCycle, config);
     const adminClient = createAdminClient();
-    let checkoutProfile = {
+    const checkoutProfile = {
       ...profile,
       email: profile.email ?? user.email ?? null,
     };
 
-    if (payload.billingDocument) {
-      const { data: updatedProfile, error: updateProfileError } = await adminClient
-        .from("profiles")
-        .update({ cpf: payload.billingDocument })
-        .eq("id", user.id)
-        .select("id, role, employer_id, full_name, clinic_name, email, cpf, phone")
-        .single();
-
-      if (updateProfileError) {
-        throw new NythosBillingError(
-          "billing_document_save_failed",
-          "Nao foi possivel salvar os dados de pagamento agora. Tente novamente.",
-          500
-        );
-      }
-
-      checkoutProfile = {
-        ...updatedProfile,
-        email: updatedProfile.email ?? user.email ?? null,
-      };
-    }
-
-    const result = await createNythosProAsaasCheckout({
+    const result = await createNythosProStripeCheckout({
       ownerUserId: user.id,
       profile: checkoutProfile,
       checkout,
       config,
-      asaasClient: createAsaasHttpClient(config),
+      stripeClient: createStripeHttpClient(config),
       store: createCheckoutSubscriptionStore(adminClient),
+      checkoutMode: payload.checkoutMode,
+      returnUrl: buildEmbeddedReturnUrl(request),
+      successUrl: buildBillingUrl(request, "success"),
+      cancelUrl: buildBillingUrl(request, "cancelled"),
     });
-
-    if (!result.ok) {
-      return NextResponse.json(buildSafeCheckoutApiResponse(result), { status: 503 });
-    }
 
     return NextResponse.json(buildSafeCheckoutApiResponse(result));
   } catch (error) {
     if (error instanceof NythosBillingError) {
+      const code = getSafeCheckoutFailureCode(error.code, checkoutMode);
+      logSafeError("[checkout] Safe billing error", error, { code, billingCycle, checkoutMode });
       return NextResponse.json(
-        {
-          error: safeClientError(error.message),
-          code: error.code,
-        },
+        buildSafeCheckoutFailureResponse(safeClientError(error.message), billingCycle, code),
         { status: error.status }
       );
     }
 
-    if (error instanceof AsaasApiError) {
-      logSafeError("[checkout] Asaas sandbox error", sanitizeAsaasError(error));
+    if (error instanceof StripeApiError) {
+      const code = checkoutMode === "hosted" ? "stripe_hosted_session_failed" : "stripe_embedded_session_failed";
+      logSafeError("[checkout] Stripe test-mode error", sanitizeStripeError(error), {
+        code,
+        billingCycle,
+        checkoutMode,
+      });
       return NextResponse.json(
-        {
-          error: safeClientError("Nao foi possivel iniciar o checkout agora. Tente novamente em instantes."),
-          code: "asaas_checkout_failed",
-        },
+        buildSafeCheckoutFailureResponse(
+          safeClientError("Nao foi possivel iniciar o checkout agora. Tente novamente em instantes."),
+          billingCycle,
+          code
+        ),
         { status: 502 }
       );
     }
 
     logSafeError("[checkout] Unexpected checkout error", error);
     return NextResponse.json(
-      {
-        error: safeClientError("Nao foi possivel iniciar o checkout agora. Tente novamente em instantes."),
-        code: "checkout_failed",
-      },
+      buildSafeCheckoutFailureResponse(
+        safeClientError("Nao foi possivel iniciar o checkout agora. Tente novamente em instantes."),
+        billingCycle,
+        "stripe_checkout_failed"
+      ),
       { status: 500 }
     );
   }

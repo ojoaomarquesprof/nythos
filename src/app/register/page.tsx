@@ -23,7 +23,7 @@ import { Label } from "@/components/ui/label";
 import {
   getBillingDocumentValidationMessage,
   normalizeCpfCnpj,
-} from "@/lib/asaas/billing-document";
+} from "@/lib/billing/billing-document";
 import { createClient } from "@/lib/supabase/client";
 
 const benefits = [

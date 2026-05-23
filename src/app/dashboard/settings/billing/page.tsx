@@ -1,9 +1,10 @@
 "use client";
 
-import type { FormEvent } from "react";
 import { useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { EmbeddedCheckout, EmbeddedCheckoutProvider } from "@stripe/react-stripe-js";
+import { loadStripe } from "@stripe/stripe-js";
 import {
   AlertCircle,
   ArrowLeft,
@@ -13,10 +14,12 @@ import {
   CheckCircle2,
   Clock,
   CreditCard,
+  ExternalLink,
   FileCheck2,
   FileText,
   Info,
   Layers3,
+  Loader2,
   LockKeyhole,
   PackageCheck,
   ReceiptText,
@@ -32,23 +35,16 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useSubscription } from "@/hooks/use-subscription";
-import {
-  getBillingDocumentValidationMessage,
-  normalizeCpfCnpj,
-} from "@/lib/asaas/billing-document";
 import {
   buildCheckoutRequestBody,
   getCheckoutFailureMessage,
   getClinicCheckoutMessage,
   type NythosCheckoutUiResponse,
-} from "@/lib/asaas/checkout-ui";
+} from "@/lib/stripe/checkout-ui";
 import {
   getNythosProAnnualSavings,
   PLAN_DEFINITIONS,
@@ -61,6 +57,8 @@ import {
 import { cn } from "@/lib/utils";
 
 const annualSavings = getNythosProAnnualSavings();
+const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
+const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : Promise.resolve(null);
 
 const BILLING_PLAN_OPTIONS: Array<{
   key: "trial" | "pro-monthly" | "pro-yearly" | "clinic";
@@ -136,6 +134,15 @@ const BILLING_PLAN_OPTIONS: Array<{
 ];
 
 type BillingPlanOption = (typeof BILLING_PLAN_OPTIONS)[number];
+
+type EmbeddedCheckoutState = {
+  option: BillingPlanOption;
+  clientSecret: string | null;
+  checkoutUrl: string | null;
+  message: string | null;
+  error: string | null;
+  awaitingWebhook: boolean;
+};
 
 const FEATURE_ROWS: Array<{
   label: string;
@@ -315,12 +322,29 @@ function UsageCard({ state }: { state: UsageLimitState }) {
   );
 }
 
+function EmbeddedCheckoutPanel({
+  clientSecret,
+  onComplete,
+}: {
+  clientSecret: string;
+  onComplete: () => void;
+}) {
+  return (
+    <div className="min-h-[520px] overflow-hidden rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm">
+      <EmbeddedCheckoutProvider
+        key={clientSecret}
+        stripe={stripePromise}
+        options={{ clientSecret, onComplete }}
+      >
+        <EmbeddedCheckout />
+      </EmbeddedCheckoutProvider>
+    </div>
+  );
+}
+
 export default function BillingPage() {
   const [checkoutLoadingKey, setCheckoutLoadingKey] = useState<string | null>(null);
-  const [pendingCheckoutOption, setPendingCheckoutOption] = useState<BillingPlanOption | null>(null);
-  const [billingDocumentModalOpen, setBillingDocumentModalOpen] = useState(false);
-  const [billingDocumentInput, setBillingDocumentInput] = useState("");
-  const [billingDocumentError, setBillingDocumentError] = useState<string | null>(null);
+  const [embeddedCheckout, setEmbeddedCheckout] = useState<EmbeddedCheckoutState | null>(null);
   const {
     loading,
     planId,
@@ -338,14 +362,9 @@ export default function BillingPage() {
   const trialEndsAt = formatDate(subscription.trialEndsAt ?? subscription.currentPeriodEndsAt);
   const currentPlanName = subscriptionStatus === "trialing" ? "Teste gratis PRO" : planName;
 
-  const resetBillingDocumentModal = () => {
-    setPendingCheckoutOption(null);
-    setBillingDocumentInput("");
-    setBillingDocumentError(null);
-  };
-
-  const runCheckout = async (option: BillingPlanOption, billingDocument?: string) => {
-    const requestBody = buildCheckoutRequestBody(option.key, billingDocument);
+  const runCheckout = async (option: BillingPlanOption, mode: "embedded" | "hosted" = "embedded") => {
+    const checkoutMode = mode === "embedded" && stripePublishableKey ? "embedded" : "hosted";
+    const requestBody = buildCheckoutRequestBody(option.key, checkoutMode);
     if (!requestBody) {
       toast.info("Teste inicial", {
         description: "O trial gratuito e liberado automaticamente para novas contas owner.",
@@ -356,6 +375,16 @@ export default function BillingPage() {
     if (checkoutLoadingKey) return false;
 
     setCheckoutLoadingKey(option.key);
+    if (checkoutMode === "embedded") {
+      setEmbeddedCheckout({
+        option,
+        clientSecret: null,
+        checkoutUrl: null,
+        message: "Preparando checkout seguro...",
+        error: null,
+        awaitingWebhook: false,
+      });
+    }
 
     try {
       const response = await fetch("/api/checkout", {
@@ -369,55 +398,64 @@ export default function BillingPage() {
 
       if (!response.ok || data.success === false) {
         const message = getCheckoutFailureMessage(data);
-
-        if (data.code === "missing_billing_document" && !billingDocument) {
-          setPendingCheckoutOption(option);
-          setBillingDocumentInput("");
-          setBillingDocumentError(null);
-          setBillingDocumentModalOpen(true);
-          return false;
-        }
-
-        if (billingDocument && (
-          data.code === "invalid_billing_document"
-          || data.code === "billing_document_save_failed"
-          || data.code === "missing_billing_document"
-        )) {
-          setBillingDocumentError(message);
-          return false;
-        }
-
-        const title = data.code === "checkout_disabled"
+        const title = message.includes("pagamento online ainda nao esta disponivel")
           ? "Pagamento online em preparacao"
           : "Nao foi possivel iniciar o pagamento";
 
-        toast.info(title, {
-          description: message,
-        });
+        if (checkoutMode === "embedded") {
+          setEmbeddedCheckout({
+            option,
+            clientSecret: null,
+            checkoutUrl: null,
+            message: null,
+            error: message,
+            awaitingWebhook: false,
+          });
+        } else {
+          toast.info(title, {
+            description: message,
+          });
+        }
         return false;
       }
 
-      const description = data.paymentUrl
-        ? "Abra o link de pagamento para concluir."
-        : "Assinatura criada. Aguarde a confirmacao do pagamento.";
+      if (checkoutMode === "embedded" && data.clientSecret) {
+        setEmbeddedCheckout({
+          option,
+          clientSecret: data.clientSecret,
+          checkoutUrl: data.checkoutUrl ?? null,
+          message: data.message || "Checkout iniciado.",
+          error: null,
+          awaitingWebhook: false,
+        });
+        return true;
+      }
 
-      toast.success(data.message || "Pagamento iniciado.", {
-        description,
-        action: data.paymentUrl
-          ? {
-              label: "Abrir pagamento",
-              onClick: () => window.open(data.paymentUrl as string, "_blank", "noopener,noreferrer"),
-            }
-          : undefined,
+      if (data.checkoutUrl) {
+        toast.success(data.message || "Checkout iniciado.", {
+          description: checkoutMode === "hosted"
+            ? "Voce sera redirecionado para concluir o pagamento."
+            : "Abrindo fallback hospedado para concluir o pagamento.",
+        });
+        window.location.assign(data.checkoutUrl);
+        return true;
+      }
+
+      toast.info("Assinatura ja em andamento", {
+        description: data.message || "Ja existe uma assinatura ativa ou em processamento para este plano.",
       });
-
-      setBillingDocumentModalOpen(false);
-      resetBillingDocumentModal();
       return true;
     } catch {
       const message = "Nao foi possivel iniciar o pagamento agora. Tente novamente em instantes.";
-      if (billingDocument) {
-        setBillingDocumentError(message);
+      if (checkoutMode === "embedded") {
+        setEmbeddedCheckout({
+          option,
+          clientSecret: null,
+          checkoutUrl: null,
+          message: null,
+          error: message,
+          awaitingWebhook: false,
+        });
       } else {
         toast.error("Nao foi possivel iniciar o pagamento", {
           description: message,
@@ -445,22 +483,6 @@ export default function BillingPage() {
     }
 
     await runCheckout(option);
-  };
-
-  const handleBillingDocumentSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!pendingCheckoutOption || checkoutLoadingKey) return;
-
-    const normalized = normalizeCpfCnpj(billingDocumentInput);
-    const validationMessage = getBillingDocumentValidationMessage(normalized);
-
-    if (validationMessage) {
-      setBillingDocumentError(validationMessage);
-      return;
-    }
-
-    setBillingDocumentError(null);
-    await runCheckout(pendingCheckoutOption, normalized);
   };
 
   return (
@@ -737,68 +759,120 @@ export default function BillingPage() {
       </div>
 
       <Dialog
-        open={billingDocumentModalOpen}
+        open={Boolean(embeddedCheckout)}
         onOpenChange={(open) => {
-          if (checkoutLoadingKey) return;
-          setBillingDocumentModalOpen(open);
-          if (!open) resetBillingDocumentModal();
+          if (!open) setEmbeddedCheckout(null);
         }}
       >
-        <DialogContent className="rounded-[28px] border-0 bg-white p-0 shadow-2xl sm:max-w-md">
-          <DialogHeader className="border-b border-slate-100 bg-slate-50/80 px-5 py-5 sm:px-6">
-            <DialogTitle className="text-xl font-black text-foreground">
-              Dados para pagamento
-            </DialogTitle>
-            <DialogDescription className="leading-6">
-              Para gerar sua assinatura com seguranca, precisamos do CPF ou CNPJ do responsavel pela conta.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleBillingDocumentSubmit} className="space-y-5 px-5 pb-5 sm:px-6">
-            <div className="space-y-2 pt-1">
-              <Label htmlFor="billing-document" className="text-xs font-bold uppercase tracking-[0.14em] text-primary/70">
-                CPF ou CNPJ
-              </Label>
-              <Input
-                id="billing-document"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="000.000.000-00"
-                value={billingDocumentInput}
-                onChange={(event) => {
-                  setBillingDocumentInput(event.target.value);
-                  setBillingDocumentError(null);
-                }}
-                className="h-12 rounded-2xl border-slate-200 bg-white font-semibold"
-                autoFocus
-              />
-              {billingDocumentError && (
-                <p className="text-sm font-semibold text-rose-600">
-                  {billingDocumentError}
-                </p>
-              )}
-            </div>
-            <DialogFooter className="-mx-5 -mb-5 rounded-b-[28px] px-5 sm:-mx-6 sm:px-6">
+        <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] border-0 bg-[#f8fafc] p-0 shadow-2xl sm:max-w-5xl">
+          <DialogHeader className="border-b border-white/70 bg-white/90 px-5 py-5 sm:px-7">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <DialogTitle className="text-2xl font-black text-foreground">
+                  Assinar Nythos PRO
+                </DialogTitle>
+                <DialogDescription className="mt-2 max-w-2xl leading-6">
+                  {embeddedCheckout?.option.title ?? "Nythos PRO"} dentro da sua conta Nythos.
+                </DialogDescription>
+              </div>
               <Button
                 type="button"
                 variant="outline"
-                className="rounded-2xl"
-                disabled={Boolean(checkoutLoadingKey)}
-                onClick={() => {
-                  setBillingDocumentModalOpen(false);
-                  resetBillingDocumentModal();
-                }}
+                className="w-fit rounded-2xl bg-white"
+                onClick={() => setEmbeddedCheckout(null)}
               >
-                Cancelar
+                Voltar
               </Button>
-              <Button
-                type="submit"
-                className="rounded-2xl"
-                disabled={Boolean(checkoutLoadingKey)}
-              >
-                {checkoutLoadingKey ? "Continuando..." : "Salvar e continuar"}
-              </Button>
-            </DialogFooter>
-          </form>
+            </div>
+          </DialogHeader>
+
+          {embeddedCheckout && (
+            <div className="grid gap-5 p-5 lg:grid-cols-[0.72fr_1.28fr] sm:p-7">
+              <div className="space-y-4">
+                <div className="rounded-[24px] border border-white/70 bg-white/80 p-5 shadow-sm">
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary/70">
+                    Plano selecionado
+                  </p>
+                  <p className="mt-3 text-2xl font-black text-foreground">
+                    {embeddedCheckout.option.title}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {embeddedCheckout.option.caption}
+                  </p>
+                  <p className="mt-5 text-3xl font-black text-foreground">
+                    {embeddedCheckout.option.price}
+                  </p>
+                </div>
+
+                <div className="rounded-[24px] border border-teal-100 bg-teal-50/85 p-4 text-sm leading-6 text-teal-800">
+                  <div className="flex gap-3">
+                    <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
+                    <span>O pagamento e processado pelo Stripe. O Nythos nao coleta nem salva dados de cartao.</span>
+                  </div>
+                </div>
+
+                {(embeddedCheckout.error || !embeddedCheckout.clientSecret) && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full rounded-2xl bg-white"
+                    disabled={Boolean(checkoutLoadingKey)}
+                    onClick={() => runCheckout(embeddedCheckout.option, "hosted")}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Usar checkout seguro externo
+                  </Button>
+                )}
+              </div>
+
+              <div className="rounded-[28px] border border-white/70 bg-white/70 p-4 shadow-sm">
+                {embeddedCheckout.awaitingWebhook ? (
+                  <div className="flex min-h-[520px] flex-col items-center justify-center rounded-[24px] bg-emerald-50 p-6 text-center">
+                    <CheckCircle2 className="h-12 w-12 text-emerald-600" />
+                    <h3 className="mt-5 text-xl font-black text-emerald-950">
+                      Pagamento concluido
+                    </h3>
+                    <p className="mt-2 max-w-sm text-sm leading-6 text-emerald-800">
+                      Estamos aguardando a confirmacao do webhook para atualizar sua assinatura.
+                    </p>
+                  </div>
+                ) : embeddedCheckout.error ? (
+                  <div className="flex min-h-[520px] flex-col items-center justify-center rounded-[24px] bg-rose-50 p-6 text-center">
+                    <AlertCircle className="h-12 w-12 text-rose-600" />
+                    <h3 className="mt-5 text-xl font-black text-rose-950">
+                      Nao foi possivel abrir o checkout
+                    </h3>
+                    <p className="mt-2 max-w-sm text-sm leading-6 text-rose-800">
+                      {embeddedCheckout.error}
+                    </p>
+                  </div>
+                ) : embeddedCheckout.clientSecret ? (
+                  <EmbeddedCheckoutPanel
+                    clientSecret={embeddedCheckout.clientSecret}
+                    onComplete={() => {
+                      setEmbeddedCheckout((current) => current
+                        ? {
+                            ...current,
+                            awaitingWebhook: true,
+                            message: "Pagamento concluido. Aguardando confirmacao.",
+                          }
+                        : current);
+                      toast.success("Pagamento concluido", {
+                        description: "A assinatura sera atualizada assim que o webhook confirmar.",
+                      });
+                    }}
+                  />
+                ) : (
+                  <div className="flex min-h-[520px] flex-col items-center justify-center rounded-[24px] bg-slate-50 p-6 text-center">
+                    <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                    <p className="mt-4 text-sm font-semibold text-slate-700">
+                      {embeddedCheckout.message ?? "Preparando checkout seguro..."}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
