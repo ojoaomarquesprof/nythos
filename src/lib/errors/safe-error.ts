@@ -6,6 +6,7 @@ const SENSITIVE_PATTERNS: RegExp[] = [
   /["']?\b(cpf|cnpj|cpf_cnpj|cpfCnpj|billingDocument)\b["']?\s*[:=]\s*["']?[0-9.\-/\s]+/gi,
   /["']?\b(access_token|refresh_token|public_token|patient_token|hmac|cookie|set-cookie|secret|authorization|x-api-key|api_key|signed_url)\b["']?\s*[:=]\s*["']?[^"',\s}]+/gi,
   /([?&](access_token|refresh_token|token|public_token|patient_token|signed_url)=)[^&\s]+/gi,
+  /\b(cus|sub|cs|price|bps)_[A-Za-z0-9_]+/g,
 ];
 
 const SENSITIVE_KEYS = new Set([
@@ -81,6 +82,9 @@ export function redactSensitiveText(text: string): string {
       ) {
         const [prefix] = match.split("=", 1);
         return `${prefix}=[REDACTED]`;
+      }
+      if (/^(cus|sub|cs|price|bps)_[A-Za-z0-9_]+$/.test(match)) {
+        return "[REDACTED]";
       }
       const [key] = match.split(/[:=]/, 1);
       return `${key}=[REDACTED]`;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { EmbeddedCheckout, EmbeddedCheckoutProvider } from "@stripe/react-stripe-js";
@@ -43,7 +43,9 @@ import {
   buildCheckoutRequestBody,
   getCheckoutFailureMessage,
   getClinicCheckoutMessage,
+  getPortalFailureMessage,
   type NythosCheckoutUiResponse,
+  type NythosPortalUiResponse,
 } from "@/lib/stripe/checkout-ui";
 import {
   getNythosProAnnualSavings,
@@ -344,6 +346,7 @@ function EmbeddedCheckoutPanel({
 
 export default function BillingPage() {
   const [checkoutLoadingKey, setCheckoutLoadingKey] = useState<string | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
   const [embeddedCheckout, setEmbeddedCheckout] = useState<EmbeddedCheckoutState | null>(null);
   const {
     loading,
@@ -361,6 +364,26 @@ export default function BillingPage() {
 
   const trialEndsAt = formatDate(subscription.trialEndsAt ?? subscription.currentPeriodEndsAt);
   const currentPlanName = subscriptionStatus === "trialing" ? "Teste gratis PRO" : planName;
+  const isSubscriptionLoaded = !loading;
+  const canRequestPlanChanges = isSubscriptionLoaded && canManagePlan;
+  const portalUnavailableMessage = subscription.provider && subscription.provider !== "stripe"
+    ? "Esta conta usa um provedor legado e precisa de migracao manual."
+    : planId === "clinic"
+      ? "Para planos Clinic, fale com a equipe Nythos."
+      : subscriptionStatus === "trialing"
+        ? "Assine o Nythos PRO para gerenciar sua assinatura."
+        : "Voce ainda nao possui uma assinatura ativa para gerenciar.";
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("portal") !== "returned") return;
+
+    toast.info("Voce voltou do gerenciamento de assinatura", {
+      description: "As alteracoes podem levar alguns instantes para aparecer.",
+    });
+    url.searchParams.delete("portal");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
 
   const runCheckout = async (option: BillingPlanOption, mode: "embedded" | "hosted" = "embedded") => {
     const checkoutMode = mode === "embedded" && stripePublishableKey ? "embedded" : "hosted";
@@ -468,6 +491,8 @@ export default function BillingPage() {
   };
 
   const handlePlanRequest = async (option: BillingPlanOption) => {
+    if (loading) return;
+
     if (!canManagePlan) {
       toast.info("Assinatura gerenciada pelo responsavel", {
         description: "Somente o responsavel da conta pode gerenciar a assinatura.",
@@ -483,6 +508,56 @@ export default function BillingPage() {
     }
 
     await runCheckout(option);
+  };
+
+  const handlePortalRequest = async () => {
+    if (loading) return;
+
+    if (!canManagePlan) {
+      toast.info("Assinatura gerenciada pelo responsavel", {
+        description: "Somente o responsavel da conta pode gerenciar a assinatura.",
+      });
+      return;
+    }
+
+    if (!subscription.hasStripeCustomer) {
+      toast.info("Gerenciamento indisponivel", {
+        description: portalUnavailableMessage,
+      });
+      return;
+    }
+
+    if (portalLoading) return;
+    setPortalLoading(true);
+
+    try {
+      const response = await fetch("/api/stripe/portal", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          returnPath: "/dashboard/settings/billing?portal=returned",
+        }),
+      });
+      const data = await response.json().catch(() => ({})) as NythosPortalUiResponse;
+
+      if (!response.ok || data.success === false || !data.url) {
+        toast.info("Gerenciamento indisponivel", {
+          description: getPortalFailureMessage(data),
+        });
+        return;
+      }
+
+      toast.success(data.message || "Redirecionando para o gerenciamento seguro.");
+      window.location.assign(data.url);
+    } catch {
+      toast.error("Nao foi possivel abrir o gerenciamento", {
+        description: "Tente novamente em instantes.",
+      });
+    } finally {
+      setPortalLoading(false);
+    }
   };
 
   return (
@@ -555,7 +630,7 @@ export default function BillingPage() {
                     Status: <span className="font-semibold text-foreground">{statusLabel}</span>
                   </p>
                 </div>
-                {subscriptionStatus === "trialing" && (
+                {isSubscriptionLoaded && subscriptionStatus === "trialing" && (
                   <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">
                     <span className="flex items-center gap-2">
                       <Clock className="h-4 w-4" />
@@ -571,21 +646,54 @@ export default function BillingPage() {
               </div>
             </div>
 
-            {subscriptionStatus === "trialing" && (
+            {canRequestPlanChanges && (
+              <div className="flex flex-col gap-4 rounded-[24px] border border-white/70 bg-white/70 p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex gap-3">
+                  <WalletCards className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                  <div>
+                    <p className="text-sm font-black text-foreground">
+                      Gerenciamento da assinatura
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                      {subscription.hasStripeCustomer
+                        ? "Atualize seus dados de cobranca e consulte faturas em um ambiente seguro de pagamento."
+                        : portalUnavailableMessage}
+                    </p>
+                  </div>
+                </div>
+                {subscription.hasStripeCustomer && (
+                  <Button
+                    type="button"
+                    className="h-11 shrink-0 rounded-2xl px-5"
+                    disabled={portalLoading}
+                    onClick={handlePortalRequest}
+                  >
+                    {portalLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ExternalLink className="h-4 w-4" />
+                    )}
+                    {portalLoading ? "Abrindo..." : "Gerenciar assinatura"}
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {isSubscriptionLoaded && subscriptionStatus === "trialing" && (
               <div className="flex gap-3 rounded-[24px] border border-amber-100 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
                 <Clock className="mt-0.5 h-5 w-5 shrink-0" />
                 <span>Experiencia Nythos PRO liberada durante o teste.</span>
               </div>
             )}
 
-            {subscriptionStatus === "legacy" && (
+            {isSubscriptionLoaded && subscriptionStatus === "legacy" && (
               <div className="flex gap-3 rounded-[24px] border border-violet-100 bg-violet-50 p-4 text-sm leading-6 text-violet-800">
                 <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
                 <span>Acesso preservado para contas existentes.</span>
               </div>
             )}
 
-            {isTeamMember && (
+            {isSubscriptionLoaded && isTeamMember && (
               <div className="flex gap-3 rounded-[24px] border border-slate-200 bg-white/65 p-4 text-sm leading-6 text-slate-700">
                 <LockKeyhole className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
                 <span>Este plano e gerenciado pelo responsavel da conta.</span>
@@ -671,10 +779,12 @@ export default function BillingPage() {
               || (option.key === "clinic" && planId === "clinic");
             const isTrialOption = option.key === "trial";
             const isLoading = checkoutLoadingKey === option.key;
-            const disabled = isCurrent || isTrialOption || !canManagePlan || Boolean(checkoutLoadingKey);
-            const ctaLabel = isCurrent
+            const disabled = loading || isCurrent || isTrialOption || !canRequestPlanChanges || Boolean(checkoutLoadingKey);
+            const ctaLabel = loading
+              ? "Carregando..."
+              : isCurrent
               ? "Plano atual"
-              : !canManagePlan
+              : !canRequestPlanChanges
                 ? "Gerenciado pelo responsavel"
                 : isTrialOption
                   ? "Teste inicial"
@@ -746,7 +856,7 @@ export default function BillingPage() {
                   >
                     {ctaLabel}
                   </button>
-                  {!canManagePlan && !isCurrent && (
+                  {!loading && !canManagePlan && !isCurrent && (
                     <p className="text-center text-xs leading-5 text-muted-foreground">
                       Somente o responsavel da conta pode gerenciar o plano.
                     </p>

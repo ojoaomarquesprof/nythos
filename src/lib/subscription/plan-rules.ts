@@ -291,8 +291,8 @@ export function getUsageTone(used: number, limit: number | null): UsageTone {
 
 export function canManageSubscription(actor: SubscriptionActor): boolean {
   if (actor.isSecretary || actor.role === "secretary") return false;
-  if (actor.userId && actor.ownerUserId) return actor.userId === actor.ownerUserId;
-  return true;
+  if (!actor.userId || !actor.ownerUserId) return false;
+  return actor.userId === actor.ownerUserId;
 }
 
 export function getPlanCtaState(input: {

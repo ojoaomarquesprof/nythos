@@ -28,6 +28,8 @@ type AccountSubscriptionState = {
   trialEndsAt: string | null;
   currentPeriodEndsAt: string | null;
   cancelAtPeriodEnd: boolean;
+  provider: string | null;
+  hasStripeCustomer: boolean;
 };
 
 type AccountSubscriptionRow = {
@@ -38,6 +40,7 @@ type AccountSubscriptionRow = {
   trial_ends_at: string | null;
   current_period_ends_at: string | null;
   cancel_at_period_end: boolean | null;
+  provider: string | null;
 };
 
 const LEGACY_SUBSCRIPTION: AccountSubscriptionState = {
@@ -48,6 +51,8 @@ const LEGACY_SUBSCRIPTION: AccountSubscriptionState = {
   trialEndsAt: null,
   currentPeriodEndsAt: null,
   cancelAtPeriodEnd: false,
+  provider: null,
+  hasStripeCustomer: false,
 };
 
 function buildTrialFallback(ownerUserId: string): AccountSubscriptionState {
@@ -62,6 +67,8 @@ function buildTrialFallback(ownerUserId: string): AccountSubscriptionState {
     trialEndsAt: trialEndsAt.toISOString(),
     currentPeriodEndsAt: null,
     cancelAtPeriodEnd: false,
+    provider: null,
+    hasStripeCustomer: false,
   };
 }
 
@@ -145,7 +152,7 @@ export function useSubscription() {
         ] = await Promise.all([
           supabase
             .from("account_subscriptions")
-            .select("id, owner_user_id, plan_id, status, trial_ends_at, current_period_ends_at, cancel_at_period_end")
+            .select("id, owner_user_id, plan_id, status, trial_ends_at, current_period_ends_at, cancel_at_period_end, provider")
             .eq("owner_user_id", ownerUserId)
             .maybeSingle(),
           countRows(supabase, "patients", (query) =>
@@ -186,6 +193,8 @@ export function useSubscription() {
               trialEndsAt: row.trial_ends_at,
               currentPeriodEndsAt: row.current_period_ends_at,
               cancelAtPeriodEnd: row.cancel_at_period_end ?? false,
+              provider: row.provider,
+              hasStripeCustomer: row.provider === "stripe",
             }
           : !employerId && role !== "secretary"
             ? buildTrialFallback(ownerUserId)

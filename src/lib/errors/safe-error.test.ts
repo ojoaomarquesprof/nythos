@@ -8,11 +8,12 @@ import {
 describe("safe-error helpers", () => {
   it("redacts tokens from plain text errors", () => {
     const message =
-      "Request failed with Bearer abc.def.ghi and ?token=secret-token";
+      "Request failed with Bearer abc.def.ghi and ?token=secret-token for cus_123";
 
     expect(redactSensitiveText(message)).toContain("Bearer [REDACTED]");
     expect(redactSensitiveText(message)).toContain("?token=[REDACTED]");
     expect(redactSensitiveText(message)).not.toContain("secret-token");
+    expect(redactSensitiveText(message)).not.toContain("cus_123");
   });
 
   it("does not expose stack traces or sensitive object fields", () => {

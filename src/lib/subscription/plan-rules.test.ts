@@ -135,6 +135,7 @@ describe("subscription plan rules", () => {
     expect(canManageSubscription({ role: "secretary", userId: "team", ownerUserId: "owner" })).toBe(false);
     expect(canManageSubscription({ isSecretary: true, userId: "team", ownerUserId: "owner" })).toBe(false);
     expect(canManageSubscription({ role: "therapist", userId: "team", ownerUserId: "owner" })).toBe(false);
+    expect(canManageSubscription({ role: null, userId: null, ownerUserId: null })).toBe(false);
   });
 
   it("builds plan CTA state without real checkout side effects", () => {

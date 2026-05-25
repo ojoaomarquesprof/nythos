@@ -7,9 +7,13 @@ import {
   assertTestCheckoutConfig,
   buildSafeCheckoutApiResponse,
   buildSafeCheckoutFailureResponse,
+  buildSafePortalApiResponse,
   buildStripeCheckoutSessionParams,
+  buildStripePortalReturnUrl,
+  buildStripePortalSessionParams,
   buildStripeWebhookDecision,
   canActorStartPlatformCheckout,
+  createNythosStripePortalSession,
   createNythosProStripeCheckout,
   enrichStripeWebhookDecisionWithSubscription,
   getPublicStripeSecretEnvNames,
@@ -19,6 +23,8 @@ import {
   mergeStripeWebhookMetadata,
   parseNythosCheckoutRequest,
   resolveNythosProCheckout,
+  sanitizeStripeError,
+  StripeApiError,
   verifyStripeWebhookSignature,
   type AccountSubscriptionForStripe,
   type NythosProCheckout,
@@ -82,6 +88,9 @@ function noOpStripeClient(): StripeClient {
     },
     async createCheckoutSession() {
       throw new Error("should not create checkout");
+    },
+    async createPortalSession() {
+      throw new Error("should not create portal");
     },
     async retrieveSubscription() {
       throw new Error("should not retrieve subscription");
@@ -216,6 +225,149 @@ describe("Nythos Stripe billing helpers", () => {
     expect(JSON.stringify(response)).not.toContain("provider_subscription_id");
   });
 
+  it("builds safe Stripe portal params and return URLs", () => {
+    const params = buildStripePortalSessionParams({
+      customerId: "cus_123",
+      returnUrl: "http://localhost:3000/dashboard/settings/billing?portal=returned",
+    });
+
+    expect(params.get("customer")).toBe("cus_123");
+    expect(params.get("return_url")).toContain("/dashboard/settings/billing?portal=returned");
+    expect(buildStripePortalReturnUrl("http://localhost:3000/api/stripe/portal"))
+      .toBe("http://localhost:3000/dashboard/settings/billing?portal=returned");
+    expect(buildStripePortalReturnUrl(
+      "http://localhost:3000/api/stripe/portal",
+      "/dashboard/settings/billing?tab=planos"
+    )).toBe("http://localhost:3000/dashboard/settings/billing?tab=planos&portal=returned");
+    expect(() => buildStripePortalReturnUrl(
+      "http://localhost:3000/api/stripe/portal",
+      "https://evil.example/phish"
+    )).toThrow("Nao foi possivel abrir o gerenciamento de assinatura agora.");
+    expect(() => buildStripePortalReturnUrl(
+      "http://localhost:3000/api/stripe/portal",
+      "/admin"
+    )).toThrow("Nao foi possivel abrir o gerenciamento de assinatura agora.");
+  });
+
+  it("creates a portal session for an owner with a Stripe customer and returns only a safe URL", async () => {
+    let portalCalls = 0;
+    const result = await createNythosStripePortalSession({
+      profile: { role: "therapist", employer_id: null },
+      subscription: baseSubscription({
+        provider: "stripe",
+        provider_customer_id: "cus_123",
+        provider_subscription_id: "sub_123",
+      }),
+      config: enabledConfig,
+      returnUrl: "http://localhost:3000/dashboard/settings/billing?portal=returned",
+      stripeClient: {
+        async createCustomer() {
+          throw new Error("not used");
+        },
+        async createCheckoutSession() {
+          throw new Error("not used");
+        },
+        async createPortalSession({ customerId, returnUrl }) {
+          portalCalls += 1;
+          expect(customerId).toBe("cus_123");
+          expect(returnUrl).toContain("portal=returned");
+          return {
+            id: "bps_123",
+            url: "https://billing.stripe.com/p/session/test_123",
+            customer: customerId,
+            return_url: returnUrl,
+          };
+        },
+        async retrieveSubscription() {
+          throw new Error("not used");
+        },
+      },
+    });
+
+    expect(portalCalls).toBe(1);
+    const response = buildSafePortalApiResponse(result);
+    expect(response).toEqual({
+      success: true,
+      url: "https://billing.stripe.com/p/session/test_123",
+      message: "Redirecionando para o gerenciamento seguro de assinatura.",
+    });
+    const serialized = JSON.stringify(response);
+    expect(serialized).not.toContain("cus_123");
+    expect(serialized).not.toContain("sub_123");
+    expect(serialized).not.toContain("sk_test_123");
+  });
+
+  it("blocks portal for team members, missing customers, legacy providers, and live mode", async () => {
+    const stripeCustomerSubscription = baseSubscription({
+      provider: "stripe",
+      provider_customer_id: "cus_123",
+    });
+    const common = {
+      config: enabledConfig,
+      stripeClient: noOpStripeClient(),
+      returnUrl: "http://localhost:3000/dashboard/settings/billing?portal=returned",
+    };
+
+    await expect(createNythosStripePortalSession({
+      ...common,
+      profile: { role: "secretary", employer_id: null },
+      subscription: stripeCustomerSubscription,
+    })).resolves.toMatchObject({
+      ok: false,
+      code: "not_owner",
+    });
+
+    await expect(createNythosStripePortalSession({
+      ...common,
+      profile: { role: "therapist", employer_id: "owner-1" },
+      subscription: stripeCustomerSubscription,
+    })).resolves.toMatchObject({
+      ok: false,
+      code: "not_owner",
+    });
+
+    await expect(createNythosStripePortalSession({
+      ...common,
+      profile: { role: "therapist", employer_id: null },
+      subscription: baseSubscription({ provider: "stripe", provider_customer_id: null }),
+    })).resolves.toMatchObject({
+      ok: false,
+      code: "stripe_customer_missing",
+    });
+
+    await expect(createNythosStripePortalSession({
+      ...common,
+      profile: { role: "therapist", employer_id: null },
+      subscription: baseSubscription({ provider: "asaas", provider_customer_id: "cus_legacy" }),
+    })).resolves.toMatchObject({
+      ok: false,
+      code: "legacy_provider",
+    });
+
+    await expect(createNythosStripePortalSession({
+      ...common,
+      profile: { role: "therapist", employer_id: null },
+      subscription: stripeCustomerSubscription,
+      config: { ...enabledConfig, environment: "live" },
+    })).rejects.toThrow("Pagamento online indisponivel para esta conta no momento.");
+  });
+
+  it("sanitizes Stripe portal errors before logging", () => {
+    const sanitized = sanitizeStripeError(
+      new StripeApiError(400, {
+        error: {
+          type: "invalid_request_error",
+          code: "resource_missing",
+          message: "No such customer: cus_123",
+        },
+      })
+    );
+
+    const serialized = JSON.stringify(sanitized);
+    expect(serialized).toContain("[REDACTED]");
+    expect(serialized).not.toContain("cus_123");
+  });
+
   it("allows only account owners to start platform checkout", () => {
     expect(canActorStartPlatformCheckout({ role: "therapist", employer_id: null })).toBe(true);
     expect(canActorStartPlatformCheckout({ role: "admin", employer_id: null })).toBe(true);
@@ -239,6 +391,10 @@ describe("Nythos Stripe billing helpers", () => {
           throw new Error("should not call Stripe");
         },
         async createCheckoutSession() {
+          stripeCalls += 1;
+          throw new Error("should not call Stripe");
+        },
+        async createPortalSession() {
           stripeCalls += 1;
           throw new Error("should not call Stripe");
         },
@@ -289,6 +445,9 @@ describe("Nythos Stripe billing helpers", () => {
           url: null,
           expires_at: 1_800_000_000,
         };
+      },
+      async createPortalSession() {
+        throw new Error("not used");
       },
       async retrieveSubscription() {
         throw new Error("not used");
@@ -375,6 +534,9 @@ describe("Nythos Stripe billing helpers", () => {
             expires_at: 1_800_000_000,
           };
         },
+        async createPortalSession() {
+          throw new Error("not used");
+        },
         async retrieveSubscription() {
           throw new Error("not used");
         },
@@ -431,6 +593,9 @@ describe("Nythos Stripe billing helpers", () => {
             expires_at: 1_800_000_000,
           };
         },
+        async createPortalSession() {
+          throw new Error("not used");
+        },
         async retrieveSubscription() {
           throw new Error("not used");
         },
@@ -475,6 +640,10 @@ describe("Nythos Stripe billing helpers", () => {
         async createCheckoutSession() {
           stripeCalls += 1;
           throw new Error("should not create checkout");
+        },
+        async createPortalSession() {
+          stripeCalls += 1;
+          throw new Error("should not create portal");
         },
         async retrieveSubscription() {
           stripeCalls += 1;
@@ -670,10 +839,12 @@ describe("Nythos Stripe billing helpers", () => {
   it("keeps patient finance tables and Asaas out of the active Stripe flow", () => {
     const checkoutRoute = readFileSync(join(process.cwd(), "src/app/api/checkout/route.ts"), "utf8");
     const stripeWebhookRoute = readFileSync(join(process.cwd(), "src/app/api/stripe/webhook/route.ts"), "utf8");
-    const activeFlow = `${checkoutRoute}\n${stripeWebhookRoute}`;
+    const stripePortalRoute = readFileSync(join(process.cwd(), "src/app/api/stripe/portal/route.ts"), "utf8");
+    const activeFlow = `${checkoutRoute}\n${stripeWebhookRoute}\n${stripePortalRoute}`;
 
     expect(activeFlow).not.toMatch(/cash_flow|session_packages|receipt|recibo/i);
     expect(checkoutRoute).not.toMatch(/asaas/i);
     expect(stripeWebhookRoute).not.toMatch(/asaas/i);
+    expect(stripePortalRoute).not.toMatch(/asaas/i);
   });
 });

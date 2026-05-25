@@ -105,6 +105,21 @@ export type StripeCheckoutFailureCode =
   | "legacy_provider_requires_manual_migration"
   | "stripe_checkout_failed";
 
+export type StripePortalFailureCode =
+  | "not_authenticated"
+  | "not_owner"
+  | "stripe_customer_missing"
+  | "legacy_provider"
+  | "stripe_portal_disabled"
+  | "stripe_portal_session_failed";
+
+export type StripePortalSession = {
+  id: string;
+  url: string;
+  customer?: string | null;
+  return_url?: string | null;
+};
+
 export type StripeSubscription = {
   id: string;
   customer?: string | null;
@@ -129,6 +144,10 @@ export type StripeClient = {
     successUrl: string;
     cancelUrl: string;
   }): Promise<StripeCheckoutSession>;
+  createPortalSession(input: {
+    customerId: string;
+    returnUrl: string;
+  }): Promise<StripePortalSession>;
   retrieveSubscription(subscriptionId: string): Promise<StripeSubscription | null>;
 };
 
@@ -162,6 +181,26 @@ export type SafeCheckoutApiResponse = {
   message: string;
   billingCycle?: NythosBillingCycle;
   planLabel?: string;
+};
+
+export type StripePortalResult =
+  | {
+      ok: true;
+      url: string;
+      message: string;
+    }
+  | {
+      ok: false;
+      code: StripePortalFailureCode;
+      message: string;
+      status: number;
+    };
+
+export type SafePortalApiResponse = {
+  success: boolean;
+  code?: StripePortalFailureCode;
+  url?: string;
+  message: string;
 };
 
 export type StripeEvent = {
@@ -272,6 +311,17 @@ function isSafeStripeCheckoutUrl(value: string | null | undefined): value is str
   try {
     const url = new URL(value);
     return url.protocol === "https:" && url.hostname === "checkout.stripe.com";
+  } catch {
+    return false;
+  }
+}
+
+function isSafeStripePortalUrl(value: string | null | undefined): value is string {
+  if (!value) return false;
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname === "billing.stripe.com";
   } catch {
     return false;
   }
@@ -556,6 +606,10 @@ export function canActorStartPlatformCheckout(profile: Pick<OwnerCheckoutProfile
   return true;
 }
 
+export function canActorManagePlatformBilling(profile: Pick<OwnerCheckoutProfile, "role" | "employer_id">): boolean {
+  return canActorStartPlatformCheckout(profile);
+}
+
 export function mergeAccountSubscriptionMetadata(
   current: Json,
   next: Record<string, Json>
@@ -644,6 +698,141 @@ export function buildStripeCheckoutSessionParams(input: {
   appendMetadata(params, "subscription_data[metadata]", metadata);
 
   return params;
+}
+
+export function buildStripePortalSessionParams(input: {
+  customerId: string;
+  returnUrl: string;
+}): URLSearchParams {
+  const params = new URLSearchParams();
+  params.set("customer", input.customerId);
+  params.set("return_url", input.returnUrl);
+  return params;
+}
+
+export function resolveStripePortalReturnPath(returnPath: unknown): string {
+  if (returnPath === undefined || returnPath === null || returnPath === "") {
+    return "/dashboard/settings/billing?portal=returned";
+  }
+
+  if (typeof returnPath !== "string" || !returnPath.startsWith("/") || returnPath.startsWith("//")) {
+    throw new NythosBillingError(
+      "invalid_portal_return_path",
+      "Nao foi possivel abrir o gerenciamento de assinatura agora.",
+      400
+    );
+  }
+
+  const url = new URL(returnPath, "https://nythos.local");
+  if (url.pathname !== "/dashboard/settings/billing") {
+    throw new NythosBillingError(
+      "invalid_portal_return_path",
+      "Nao foi possivel abrir o gerenciamento de assinatura agora.",
+      400
+    );
+  }
+
+  if (!url.searchParams.has("portal")) {
+    url.searchParams.set("portal", "returned");
+  }
+
+  return `${url.pathname}${url.search}`;
+}
+
+export function buildStripePortalReturnUrl(requestUrl: string, returnPath?: unknown): string {
+  const origin = new URL(requestUrl).origin;
+  return `${origin}${resolveStripePortalReturnPath(returnPath)}`;
+}
+
+export function buildSafePortalApiResponse(result: StripePortalResult): SafePortalApiResponse {
+  if (!result.ok) {
+    return {
+      success: false,
+      code: result.code,
+      message: result.message,
+    };
+  }
+
+  return {
+    success: true,
+    url: result.url,
+    message: result.message,
+  };
+}
+
+export async function createNythosStripePortalSession(input: {
+  profile: Pick<OwnerCheckoutProfile, "role" | "employer_id">;
+  subscription: AccountSubscriptionForStripe | null;
+  config: StripeConfig;
+  stripeClient: StripeClient;
+  returnUrl: string;
+}): Promise<StripePortalResult> {
+  if (!canActorManagePlatformBilling(input.profile)) {
+    return {
+      ok: false,
+      code: "not_owner",
+      status: 403,
+      message: "Somente o responsavel da conta pode gerenciar a assinatura.",
+    };
+  }
+
+  if (!input.config.checkoutEnabled) {
+    return {
+      ok: false,
+      code: "stripe_portal_disabled",
+      status: 503,
+      message: "O gerenciamento online ainda nao esta disponivel para esta conta.",
+    };
+  }
+
+  assertTestCheckoutConfig(input.config);
+
+  const subscription = input.subscription;
+  if (!subscription) {
+    return {
+      ok: false,
+      code: "stripe_customer_missing",
+      status: 409,
+      message: "Voce ainda nao possui uma assinatura ativa para gerenciar.",
+    };
+  }
+
+  if (hasLegacyProvider(subscription)) {
+    return {
+      ok: false,
+      code: "legacy_provider",
+      status: 409,
+      message: "Esta conta usa um provedor legado e precisa de migracao manual.",
+    };
+  }
+
+  if (subscription.provider !== "stripe" || !subscription.provider_customer_id) {
+    return {
+      ok: false,
+      code: "stripe_customer_missing",
+      status: 409,
+      message: "Assine o Nythos PRO para gerenciar sua assinatura.",
+    };
+  }
+
+  const session = await input.stripeClient.createPortalSession({
+    customerId: subscription.provider_customer_id,
+    returnUrl: input.returnUrl,
+  });
+
+  if (!isSafeStripePortalUrl(session.url)) {
+    throw new NythosBillingError(
+      "stripe_portal_session_without_url",
+      "Nao foi possivel abrir o gerenciamento de assinatura agora.",
+      502
+    );
+  }
+
+  return {
+    ok: true,
+    url: session.url,
+    message: "Redirecionando para o gerenciamento seguro de assinatura.",
+  };
 }
 
 export async function createNythosProStripeCheckout(input: {
@@ -880,6 +1069,28 @@ export function createStripeHttpClient(config: StripeConfig): StripeClient {
         customer: readStringField(body, "customer"),
         subscription: readStringField(body, "subscription"),
         expires_at: readNumberField(body, "expires_at"),
+      };
+    },
+
+    async createPortalSession(input) {
+      const params = buildStripePortalSessionParams(input);
+      const body = await request<Record<string, unknown>>("/billing_portal/sessions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: params.toString(),
+      });
+
+      const id = readStringField(body, "id");
+      const url = readStringField(body, "url");
+      if (!id || !url) throw new StripeApiError(200, { message: "Stripe portal response without url" });
+
+      return {
+        id,
+        url,
+        customer: readStringField(body, "customer"),
+        return_url: readStringField(body, "return_url"),
       };
     },
 

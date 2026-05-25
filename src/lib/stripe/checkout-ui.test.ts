@@ -3,6 +3,7 @@ import {
   buildCheckoutRequestBody,
   getCheckoutFailureMessage,
   getClinicCheckoutMessage,
+  getPortalFailureMessage,
 } from "./checkout-ui";
 
 describe("Stripe checkout UI helpers", () => {
@@ -33,6 +34,14 @@ describe("Stripe checkout UI helpers", () => {
 
     expect(getCheckoutFailureMessage({})).toBe(
       "Nao foi possivel iniciar o checkout agora. Tente novamente em instantes."
+    );
+    expect(getPortalFailureMessage({
+      success: false,
+      code: "stripe_customer_missing",
+      message: "Assine o Nythos PRO para gerenciar sua assinatura.",
+    })).toBe("Assine o Nythos PRO para gerenciar sua assinatura.");
+    expect(getPortalFailureMessage({})).toBe(
+      "Nao foi possivel abrir o gerenciamento de assinatura agora."
     );
   });
 });

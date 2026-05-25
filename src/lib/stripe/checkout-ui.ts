@@ -1,4 +1,9 @@
-import type { NythosBillingCycle, StripeCheckoutFailureCode, StripeCheckoutMode } from "./nythos-billing";
+import type {
+  NythosBillingCycle,
+  StripeCheckoutFailureCode,
+  StripeCheckoutMode,
+  StripePortalFailureCode,
+} from "./nythos-billing";
 
 export type BillingPlanOptionKey = "trial" | "pro-monthly" | "pro-yearly" | "clinic";
 
@@ -16,6 +21,14 @@ export type NythosCheckoutUiResponse = {
   checkoutUrl?: string | null;
   billingCycle?: NythosBillingCycle;
   planLabel?: string;
+  message?: string;
+  error?: string;
+};
+
+export type NythosPortalUiResponse = {
+  success?: boolean;
+  code?: StripePortalFailureCode;
+  url?: string;
   message?: string;
   error?: string;
 };
@@ -51,4 +64,10 @@ export function getCheckoutFailureMessage(response: NythosCheckoutUiResponse): s
   return response.message
     || response.error
     || "Nao foi possivel iniciar o checkout agora. Tente novamente em instantes.";
+}
+
+export function getPortalFailureMessage(response: NythosPortalUiResponse): string {
+  return response.message
+    || response.error
+    || "Nao foi possivel abrir o gerenciamento de assinatura agora.";
 }
