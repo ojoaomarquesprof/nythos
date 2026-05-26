@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  ArrowUpRight,
   Ban,
   Calendar,
   CheckCircle2,
@@ -39,6 +40,7 @@ import {
   canCancelCashFlow,
   canConfirmCashFlowPayment,
   canGenerateCashFlowReceipt,
+  getCashFlowOrigin,
   getCashFlowCategoryLabel,
   getCashFlowOriginLabel,
   getCashFlowStatusLabel,
@@ -107,8 +109,11 @@ export function TransactionDetailsSheet({
 
   useEffect(() => {
     if (!transaction) return;
-    setPaymentMethod(isManualPaymentMethod(transaction.payment_method) ? transaction.payment_method : "pix");
-    setPaidAt(transaction.paid_at ? transaction.paid_at.slice(0, 10) : todayIsoDate());
+    const timer = window.setTimeout(() => {
+      setPaymentMethod(isManualPaymentMethod(transaction.payment_method) ? transaction.payment_method : "pix");
+      setPaidAt(transaction.paid_at ? transaction.paid_at.slice(0, 10) : todayIsoDate());
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [transaction]);
 
   if (!transaction) return null;
@@ -117,6 +122,7 @@ export function TransactionDetailsSheet({
   const canConfirm = canConfirmCashFlowPayment(transaction);
   const canCancel = canCancelCashFlow(transaction);
   const canGenerateReceipt = canGenerateCashFlowReceipt(transaction);
+  const origin = getCashFlowOrigin(transaction);
   const originLabel = getCashFlowOriginLabel(transaction);
   const categoryLabel = getCashFlowCategoryLabel(transaction.category);
   const statusLabel = getCashFlowStatusLabel(transaction.status);
@@ -124,6 +130,18 @@ export function TransactionDetailsSheet({
   const patientName = transaction.patient?.full_name || (transaction.patient_id ? "Paciente vinculado" : "Não vinculado");
   const packageName = transaction.session_package?.name || (transaction.package_id ? "Pacote de sessões" : null);
   const sessionDate = transaction.session?.scheduled_at || transaction.due_date || null;
+  const patientId = transaction.patient?.id || transaction.patient_id;
+  const patientHref = patientId ? `/dashboard/patients/${patientId}` : null;
+  const sessionHref = patientId && transaction.session_id
+    ? `/dashboard/patients/${patientId}?tab=sessions&sessionId=${transaction.session_id}`
+    : null;
+  const contextMessage = origin === "package"
+    ? "Pacote aparece como cobrança única. As sessões vinculadas consomem crédito quando são concluídas."
+    : origin === "session"
+      ? "Sessão avulsa concluída pode gerar pendência; confirme o recebimento quando o pagamento acontecer."
+      : transaction.type === "expense"
+        ? "Despesa manual registrada para manter o saldo operacional atualizado."
+        : "Lançamento manual ou complementar do histórico financeiro.";
   const statusClassName = transaction.status === "confirmed"
     ? "bg-emerald-100 text-emerald-700"
     : transaction.status === "pending"
@@ -217,6 +235,16 @@ export function TransactionDetailsSheet({
             />
           </div>
 
+          <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-5">
+            <div className="flex items-start gap-3">
+              <Info className="mt-0.5 size-4 shrink-0 text-slate-500" />
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Leitura clínica do financeiro</p>
+                <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">{contextMessage}</p>
+              </div>
+            </div>
+          </div>
+
           {transaction.notes && (
             <div className="space-y-1.5 rounded-2xl border border-slate-100 bg-slate-50 p-5">
               <div className="flex items-center gap-2 text-slate-400">
@@ -283,6 +311,28 @@ export function TransactionDetailsSheet({
             <X className="h-4 w-4" />
             Fechar
           </Button>
+          {sessionHref && (
+            <Button
+              variant="outline"
+              className="h-11 flex-1 rounded-xl bg-white font-black text-primary hover:bg-primary/5"
+              onClick={() => window.location.assign(sessionHref)}
+              disabled={actionPending || receiptPending}
+            >
+              <ArrowUpRight className="h-4 w-4" />
+              Revisar sessão
+            </Button>
+          )}
+          {!sessionHref && patientHref && (
+            <Button
+              variant="outline"
+              className="h-11 flex-1 rounded-xl bg-white font-black text-primary hover:bg-primary/5"
+              onClick={() => window.location.assign(patientHref)}
+              disabled={actionPending || receiptPending}
+            >
+              <ArrowUpRight className="h-4 w-4" />
+              Ver paciente
+            </Button>
+          )}
           {canCancel && (
             <Button
               variant="outline"
@@ -311,7 +361,7 @@ export function TransactionDetailsSheet({
               onClick={handleConfirm}
               disabled={actionPending || receiptPending}
             >
-              {actionPending ? "Registrando..." : "Dar baixa"}
+              {actionPending ? "Registrando..." : "Confirmar recebimento"}
             </Button>
           )}
         </SheetFooter>

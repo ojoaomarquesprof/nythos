@@ -5,9 +5,12 @@ import {
   ArrowUpRight,
   Ban,
   CalendarDays,
+  Clock,
   ChevronDown,
   ChevronUp,
+  CheckCircle2,
   Edit3,
+  Info,
   Pause,
   Play,
   Plus,
@@ -94,6 +97,23 @@ function statusBadgeClass(status?: string | null) {
 function billingStatusLabel(status?: string | null) {
   if (status) return getCashFlowStatusLabel(status);
   return "Sem cobrança";
+}
+
+function getPatientTransactionNote(transaction: FinancialTransaction) {
+  const origin = getCashFlowOrigin(transaction);
+  const amount = Number(transaction.amount ?? 0);
+
+  if (transaction.type === "expense") return "Despesa vinculada ao histórico financeiro do paciente.";
+  if (origin === "package") return "Cobrança única do pacote; sessões vinculadas consomem crédito ao serem concluídas.";
+  if (origin === "session") {
+    if (amount <= 0) return "Sessão de cortesia ou valor zero, sem recebimento a confirmar.";
+    if (transaction.status === "pending") return "Sessão avulsa concluída aguardando recebimento.";
+    if (transaction.status === "confirmed") return "Recebimento confirmado para esta sessão.";
+    return "Lançamento mantido como histórico da sessão.";
+  }
+  if (transaction.status === "pending") return "Valor em aberto aguardando confirmação.";
+  if (transaction.status === "confirmed") return "Recebimento confirmado no financeiro.";
+  return "Lançamento cancelado preservado como histórico.";
 }
 
 function PatientMetricCard({
@@ -508,12 +528,44 @@ export function PatientFinances({
       <div className="flex flex-col justify-between gap-4 rounded-[32px] border border-white/40 bg-white/20 p-6 backdrop-blur-md md:flex-row md:items-center">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-primary">Financeiro do Paciente</h2>
-          <p className="text-sm text-muted-foreground">Histórico de pagamentos, sessões faturadas, pacotes e pendências.</p>
+          <p className="text-sm text-muted-foreground">
+            Histórico de pagamentos, sessões faturadas, pacotes, cortesias e pendências deste caso.
+          </p>
         </div>
         <Button className="rounded-2xl bg-slate-950 font-black text-white hover:bg-slate-800" onClick={openCreateModal}>
           <Plus className="size-4" />
           Criar pacote
         </Button>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-4">
+          <div className="mb-2 flex items-center gap-2 text-amber-700">
+            <Clock className="size-4" />
+            <p className="text-[10px] font-black uppercase tracking-widest">Pendente</p>
+          </div>
+          <p className="text-sm leading-relaxed text-amber-900/80">
+            Valor em aberto. Confirme o recebimento quando o pagamento for feito fora do Nythos.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+          <div className="mb-2 flex items-center gap-2 text-emerald-700">
+            <CheckCircle2 className="size-4" />
+            <p className="text-[10px] font-black uppercase tracking-widest">Confirmado</p>
+          </div>
+          <p className="text-sm leading-relaxed text-emerald-900/80">
+            Pagamento baixado manualmente, já considerado como receita recebida.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-violet-100 bg-violet-50/70 p-4">
+          <div className="mb-2 flex items-center gap-2 text-violet-700">
+            <Info className="size-4" />
+            <p className="text-[10px] font-black uppercase tracking-widest">Pacote e cortesia</p>
+          </div>
+          <p className="text-sm leading-relaxed text-violet-900/80">
+            Pacote consome crédito ao concluir sessão; cortesia ou valor zero não gera cobrança avulsa.
+          </p>
+        </div>
       </div>
 
       {activePackage && (
@@ -528,6 +580,9 @@ export function PatientFinances({
                 <p className="text-xs font-semibold text-emerald-700">
                   {activePackage.remaining_sessions} sessões restantes · Pagamento {getSessionPackagePaymentStatusLabel(activePackage.payment_status).toLowerCase()}
                 </p>
+                <p className="mt-1 text-xs leading-relaxed text-emerald-800/75">
+                  Ao concluir sessões deste pacote, o Nythos consome crédito em vez de gerar cobrança avulsa.
+                </p>
               </div>
             </div>
             {activePackage.payment_status === "pending" && (
@@ -541,7 +596,7 @@ export function PatientFinances({
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
         <PatientMetricCard
-          label="Pago"
+          label="Recebido"
           value={formatCurrency(displayedTotalPatientIncome)}
           detail="confirmado"
           tone="emerald"
@@ -573,7 +628,7 @@ export function PatientFinances({
         <PatientMetricCard
           label="Pacotes pend."
           value={String(pendingPackageCount)}
-          detail="pagamento"
+          detail="aguardam baixa"
           tone="amber"
         />
         <PatientMetricCard
@@ -614,6 +669,9 @@ export function PatientFinances({
             <CardContent className="py-14 text-center">
               <Wallet className="mx-auto mb-3 size-10 text-slate-300" />
               <p className="text-sm font-bold text-slate-700">Nenhum pacote cadastrado para este paciente.</p>
+              <p className="mx-auto mt-1 max-w-md text-sm leading-relaxed text-slate-500">
+                Quando houver um combinado recorrente, cadastre um pacote para acompanhar pagamento, saldo e consumo de créditos por sessão.
+              </p>
               <Button className="mt-4 rounded-2xl bg-slate-950 font-black text-white hover:bg-slate-800" onClick={openCreateModal}>
                 <Plus className="size-4" />
                 Criar pacote
@@ -724,10 +782,13 @@ export function PatientFinances({
                             Vencimento: {sessionPackage.cash_flow_due_date ? formatDate(sessionPackage.cash_flow_due_date) : "Não informado"}
                             {sessionPackage.cash_flow_paid_at ? ` · Pago em ${formatDate(sessionPackage.cash_flow_paid_at)}` : ""}
                           </p>
+                          <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                            A baixa do pacote confirma o recebimento; as sessões vinculadas apenas consomem créditos.
+                          </p>
                         </div>
                         <Button variant="outline" size="sm" className="rounded-2xl bg-white font-bold" onClick={() => window.location.assign("/dashboard/finances")}>
                           <ArrowUpRight className="size-4" />
-                          {sessionPackage.cash_flow_status === "pending" ? "Dar baixa no financeiro" : "Abrir financeiro"}
+                          {sessionPackage.cash_flow_status === "pending" ? "Confirmar recebimento" : "Abrir financeiro"}
                         </Button>
                       </div>
                     </div>
@@ -782,6 +843,9 @@ export function PatientFinances({
             <CardContent className="py-10 text-center">
               <Wallet className="mx-auto mb-3 size-9 text-slate-300" />
               <p className="text-sm font-bold text-slate-700">Nenhuma sessão avulsa faturada para este paciente.</p>
+              <p className="mx-auto mt-1 max-w-md text-sm leading-relaxed text-slate-500">
+                Sessões concluídas como avulsas podem gerar pendência. Sessões de pacote consomem crédito; cortesias não entram como cobrança.
+              </p>
             </CardContent>
           </Card>
         ) : (
@@ -815,13 +879,16 @@ export function PatientFinances({
                       Vencimento: {tx.due_date ? formatDate(tx.due_date) : "Não informado"}
                       {tx.paid_at ? ` · Pago em ${formatDate(tx.paid_at)}` : ""}
                     </p>
+                    <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                      {getPatientTransactionNote(tx)}
+                    </p>
                   </div>
                   <div className="flex shrink-0 items-center justify-between gap-3 sm:flex-col sm:items-end">
                     <p className="text-lg font-black text-emerald-700">{formatCurrency(Number(tx.amount))}</p>
                     {tx.status === "pending" && (
                       <Button variant="outline" size="sm" className="rounded-2xl bg-white font-bold" onClick={() => window.location.assign("/dashboard/finances")}>
                         <ArrowUpRight className="size-4" />
-                        Financeiro
+                        Confirmar no financeiro
                       </Button>
                     )}
                   </div>
@@ -842,7 +909,10 @@ export function PatientFinances({
           <Card className="glass-panel rounded-[32px] border-0 bg-white/10 shadow-md">
             <CardContent className="py-16 text-center">
               <Wallet className="mx-auto mb-3 size-10 text-muted-foreground/30" />
-              <p className="text-sm font-medium text-muted-foreground">Nenhum lançamento financeiro para este paciente.</p>
+              <p className="text-sm font-semibold text-foreground">Nenhum lançamento financeiro para este paciente.</p>
+              <p className="mx-auto mt-1 max-w-md text-sm leading-relaxed text-muted-foreground">
+                Conclua sessões avulsas, crie pacotes ou registre despesas apenas quando o combinado financeiro estiver definido.
+              </p>
             </CardContent>
           </Card>
         ) : (
@@ -874,6 +944,9 @@ export function PatientFinances({
                         {formatDate(tx.due_date ?? tx.paid_at ?? tx.created_at ?? new Date().toISOString())}
                         {` · ${originLabel}`}
                         {isPackage && packageName ? ` · ${packageName}` : ""}
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {getPatientTransactionNote(tx)}
                       </p>
                     </div>
                   </div>

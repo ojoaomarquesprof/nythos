@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Wallet,
   Plus,
@@ -13,6 +13,7 @@ import {
   ArrowDownRight,
   Download,
   AlertCircle,
+  FileText,
   ChevronLeft,
   ChevronRight,
   Package,
@@ -24,7 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { SubscriptionGate } from "@/components/auth/subscription-gate";
@@ -63,6 +64,12 @@ type TypeFilter = "all" | "income" | "expense";
 type StatusFilter = "all" | "pending" | "confirmed" | "cancelled";
 type OriginFilter = "all" | "session" | "package" | "expense" | "other";
 type PaymentMethodFilter = "all" | ManualPaymentMethod | "none";
+type EvolutionChartPoint = {
+  month: string;
+  income: number;
+  expense: number;
+};
+type PdfTableCell = string | number;
 
 function paymentMethodLabel(method: string | null | undefined): string {
   if (!method) return "NÃ£o informado";
@@ -82,6 +89,81 @@ function receiptFileSlug(value: string): string {
 function compactInternalCode(id: string | null): string {
   if (!id) return "NÃ£o informado";
   return id.replace(/-/g, "").slice(0, 10).toUpperCase();
+}
+
+function getTransactionClinicalNote(transaction: FinancialTransaction) {
+  const origin = getCashFlowOrigin(transaction);
+  const amount = Number(transaction.amount ?? 0);
+
+  if (transaction.type === "expense") {
+    return "Despesa operacional registrada para manter o saldo do consultório fiel.";
+  }
+  if (origin === "package") {
+    return "Pacote gera uma cobrança única; sessões vinculadas consomem crédito ao serem concluídas.";
+  }
+  if (origin === "session") {
+    if (amount <= 0) return "Sessão de cortesia ou valor zero, sem cobrança clínica a confirmar.";
+    if (transaction.status === "pending") return "Sessão concluída com cobrança avulsa aguardando recebimento.";
+    if (transaction.status === "confirmed") return "Recebimento confirmado para esta sessão avulsa.";
+    return "Histórico preservado para esta sessão.";
+  }
+  if (transaction.status === "pending") return "Lançamento em aberto aguardando revisão ou confirmação.";
+  if (transaction.status === "confirmed") return "Recebimento confirmado e incluído no saldo.";
+  return "Lançamento cancelado permanece apenas como histórico.";
+}
+
+function getEmptyTransactionsState({
+  hasMonthTransactions,
+  statusFilter,
+  originFilter,
+  filter,
+}: {
+  hasMonthTransactions: boolean;
+  statusFilter: StatusFilter;
+  originFilter: OriginFilter;
+  filter: TypeFilter;
+}) {
+  if (!hasMonthTransactions) {
+    return {
+      title: "Nenhum lançamento neste mês.",
+      description:
+        "Ao concluir sessões avulsas, criar pacotes ou registrar despesas, o financeiro clínico aparece aqui organizado por status.",
+    };
+  }
+  if (statusFilter === "pending") {
+    return {
+      title: "Sem pendências com estes filtros.",
+      description: "Tudo que precisava de baixa já foi confirmado, cancelado ou não pertence ao recorte atual.",
+    };
+  }
+  if (statusFilter === "confirmed") {
+    return {
+      title: "Sem recebimentos confirmados neste recorte.",
+      description: "Quando você confirmar um recebimento, ele passa a compor o saldo recebido do mês.",
+    };
+  }
+  if (originFilter === "package") {
+    return {
+      title: "Sem lançamentos de pacote neste recorte.",
+      description: "Pacotes aparecem como cobrança única; as sessões do pacote consomem crédito, sem cobrança avulsa.",
+    };
+  }
+  if (originFilter === "session") {
+    return {
+      title: "Sem sessões avulsas faturadas neste recorte.",
+      description: "Sessões de cortesia ou vinculadas a pacote não aparecem como cobrança avulsa.",
+    };
+  }
+  if (filter === "expense") {
+    return {
+      title: "Sem despesas neste recorte.",
+      description: "Use o lançamento manual de despesa para manter o saldo do consultório atualizado.",
+    };
+  }
+  return {
+    title: "Nenhum lançamento encontrado.",
+    description: "Ajuste os filtros ou navegue para outro mês para revisar o histórico financeiro.",
+  };
 }
 
 function SummaryCard({
@@ -126,11 +208,11 @@ function SummaryCard({
 
 export default function FinancesPage() {
   const { therapistId } = useSubscription();
-  const supabase = createClient() as any;
+  const supabase = createClient();
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
-  const [chartData, setChartData] = useState<any[]>([]);
+  const [chartData, setChartData] = useState<EvolutionChartPoint[]>([]);
   const [chartLoading, setChartLoading] = useState(true);
   const [selectedTransaction, setSelectedTransaction] = useState<FinancialTransaction | null>(null);
   const [transactionActionId, setTransactionActionId] = useState<string | null>(null);
@@ -156,13 +238,7 @@ export default function FinancesPage() {
     notes: "",
   });
 
-  useEffect(() => {
-    if (therapistId) {
-      loadTransactions();
-    }
-  }, [therapistId]);
-
-  async function loadTransactions() {
+  const loadTransactions = useCallback(async () => {
     if (!therapistId) return;
     setLoading(true);
     setChartLoading(true);
@@ -181,7 +257,15 @@ export default function FinancesPage() {
 
     setLoading(false);
     setChartLoading(false);
-  }
+  }, [supabase, therapistId]);
+
+  useEffect(() => {
+    if (!therapistId) return;
+    const timer = window.setTimeout(() => {
+      loadTransactions();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadTransactions, therapistId]);
 
   const handleConfirmPayment = async (
     id: string,
@@ -441,6 +525,12 @@ export default function FinancesPage() {
 
     return true;
   });
+  const emptyTransactionsState = getEmptyTransactionsState({
+    hasMonthTransactions: monthTransactions.length > 0,
+    statusFilter,
+    originFilter,
+    filter,
+  });
 
   const handleExportPdf = async () => {
     if (!profile) {
@@ -450,7 +540,7 @@ export default function FinancesPage() {
     
     const title = filter === "all" ? "Fluxo de Caixa Geral" : filter === "income" ? "Relatório de Receitas" : "Relatório de Despesas";
 
-    const tableBody = filtered.map(tx => [
+    const tableBody: PdfTableCell[][] = filtered.map(tx => [
       new Date(tx.due_date ?? tx.paid_at ?? tx.created_at ?? new Date().toISOString()).toLocaleDateString("pt-BR"),
       tx.description,
       getCashFlowCategoryLabel(tx.category),
@@ -476,7 +566,7 @@ export default function FinancesPage() {
                 { text: 'Valor', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
                 { text: 'Status', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] }
               ],
-              ...tableBody.map((row: any[]) => row.map((cell: any) => ({ text: cell, margin: [5, 5] })))
+              ...tableBody.map((row) => row.map((cell) => ({ text: cell, margin: [5, 5] })))
             ]
           },
           layout: {
@@ -497,6 +587,9 @@ export default function FinancesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-800">Financeiro</h1>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            Acompanhe recebimentos clínicos, pendências de sessões, pacotes e despesas sem misturar com pagamentos da plataforma.
+          </p>
           <div className="flex items-center gap-2 mt-1">
             <Button
               variant="outline"
@@ -532,7 +625,7 @@ export default function FinancesPage() {
             onClick={() => setShowExpense(true)}
           >
             <Plus className="w-4 h-4 mr-2" />
-            <span className="hidden sm:inline">Nova Despesa</span>
+            <span className="hidden sm:inline">Criar despesa</span>
             <span className="sm:hidden">Despesa</span>
           </Button>
         </SubscriptionGate>
@@ -591,6 +684,29 @@ export default function FinancesPage() {
         />
       </div>
 
+      <Card className="rounded-3xl border border-slate-100 bg-white/80 shadow-sm">
+        <CardContent className="grid gap-3 p-4 md:grid-cols-3">
+          <div className="rounded-2xl bg-amber-50/70 p-4">
+            <p className="text-xs font-black uppercase tracking-widest text-amber-700">Pendente</p>
+            <p className="mt-1 text-sm leading-relaxed text-amber-900/80">
+              Valor em aberto. Use confirmar recebimento quando o paciente ou responsável pagar.
+            </p>
+          </div>
+          <div className="rounded-2xl bg-emerald-50/70 p-4">
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-700">Confirmado</p>
+            <p className="mt-1 text-sm leading-relaxed text-emerald-900/80">
+              Recebimento baixado manualmente, já refletido no saldo do mês.
+            </p>
+          </div>
+          <div className="rounded-2xl bg-violet-50/70 p-4">
+            <p className="text-xs font-black uppercase tracking-widest text-violet-700">Pacote e cortesia</p>
+            <p className="mt-1 text-sm leading-relaxed text-violet-900/80">
+              Pacote consome crédito ao concluir sessão; cortesia ou valor zero não gera cobrança avulsa.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card className="rounded-3xl border-0 bg-white/80 shadow-sm">
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-black text-slate-800">Pendências principais</CardTitle>
@@ -605,7 +721,9 @@ export default function FinancesPage() {
               <p className="text-[10px] font-black uppercase tracking-widest">Pacientes</p>
             </div>
             {pendingPatientGroups.length === 0 ? (
-              <p className="text-xs font-semibold text-amber-900/60">Sem pacientes com pendência.</p>
+              <p className="text-xs font-semibold leading-relaxed text-amber-900/70">
+                Sem pacientes com valores em aberto. Quando houver sessão avulsa pendente, ela aparece aqui.
+              </p>
             ) : pendingPatientGroups.map((group) => (
               <div key={group.patientId || "unlinked"} className="flex items-center justify-between gap-3 py-1.5 text-xs font-bold text-amber-950">
                 <span className="truncate">{group.patientName}</span>
@@ -619,7 +737,9 @@ export default function FinancesPage() {
               <p className="text-[10px] font-black uppercase tracking-widest">Pacotes</p>
             </div>
             {pendingPackages.length === 0 ? (
-              <p className="text-xs font-semibold text-violet-900/60">Nenhum pacote pendente.</p>
+              <p className="text-xs font-semibold leading-relaxed text-violet-900/70">
+                Nenhum pacote aguardando pagamento. Sessões de pacote consomem crédito, não viram cobrança avulsa.
+              </p>
             ) : pendingPackages.map((transaction) => (
               <div key={transaction.id} className="flex items-center justify-between gap-3 py-1.5 text-xs font-bold text-violet-950">
                 <span className="truncate">{transaction.session_package?.name || transaction.description}</span>
@@ -633,7 +753,9 @@ export default function FinancesPage() {
               <p className="text-[10px] font-black uppercase tracking-widest">Vencidos</p>
             </div>
             {overdueTransactions.length === 0 ? (
-              <p className="text-xs font-semibold text-rose-900/60">Sem lançamentos vencidos.</p>
+              <p className="text-xs font-semibold leading-relaxed text-rose-900/70">
+                Sem vencimentos atrasados. As pendências aparecem antes aqui para facilitar a cobrança gentil.
+              </p>
             ) : overdueTransactions.slice(0, 3).map((transaction) => (
               <div key={transaction.id} className="flex items-center justify-between gap-3 py-1.5 text-xs font-bold text-rose-950">
                 <span className="truncate">{transaction.patient?.full_name || transaction.description}</span>
@@ -652,8 +774,10 @@ export default function FinancesPage() {
         <CardHeader className="pb-4 px-6 pt-6 border-b border-teal-500">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <CardTitle className="text-xl font-black text-slate-800">Histórico de Fluxo</CardTitle>
-              <CardDescription className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">Controle total de entradas e saídas</CardDescription>
+              <CardTitle className="text-xl font-black text-slate-800">Movimentações clínicas</CardTitle>
+              <CardDescription className="max-w-2xl text-xs font-bold uppercase tracking-widest text-muted-foreground/60">
+                Pendente aguarda baixa, confirmado já entrou no saldo e cancelado fica apenas no histórico.
+              </CardDescription>
             </div>
             <div className="flex gap-2 items-center">
               <SubscriptionGate>
@@ -763,25 +887,53 @@ export default function FinancesPage() {
               ))}
             </div>
           ) : filtered.length === 0 ? (
-            <div className="py-20 text-center">
-              <div className="w-20 h-20 bg-teal-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Wallet className="w-10 h-10 text-teal-600" />
+            <div className="py-16 text-center">
+              <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-3xl bg-slate-50 text-slate-500">
+                <Wallet className="size-8" />
               </div>
-              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">
-                Sem transações registradas
+              <p className="text-sm font-black text-foreground">{emptyTransactionsState.title}</p>
+              <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground">
+                {emptyTransactionsState.description}
               </p>
+              <div className="mt-5 flex flex-col items-center justify-center gap-2 sm:flex-row">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 rounded-2xl bg-white font-bold"
+                  onClick={() => {
+                    setFilter("all");
+                    setStatusFilter("all");
+                    setOriginFilter("all");
+                    setPatientFilter("all");
+                    setPaymentMethodFilter("all");
+                  }}
+                >
+                  Limpar filtros
+                </Button>
+                <SubscriptionGate>
+                  <Button size="sm" className="h-9 rounded-2xl font-bold" onClick={() => setShowExpense(true)}>
+                    <Plus className="size-4" />
+                    Criar despesa
+                  </Button>
+                </SubscriptionGate>
+              </div>
             </div>
           ) : (
             <div className="divide-y divide-teal-500">
               {filtered.map((tx) => {
                 const category = CASH_FLOW_CATEGORIES[tx.category as keyof typeof CASH_FLOW_CATEGORIES];
                 const isIncome = tx.type === "income";
-                const isPackage = tx.category === "package";
+                const origin = getCashFlowOrigin(tx);
+                const isPackage = origin === "package";
+                const isSessionCharge = origin === "session";
+                const isCourtesyLike = isIncome && Number(tx.amount) <= 0;
                 const originLabel = getCashFlowOriginLabel(tx);
                 const categoryLabel = getCashFlowCategoryLabel(tx.category);
                 const patientName = tx.patient?.full_name;
+                const patientId = tx.patient?.id || tx.patient_id;
                 const packageName = tx.session_package?.name;
                 const canRegisterPayment = canConfirmCashFlowPayment(tx);
+                const transactionNote = getTransactionClinicalNote(tx);
                 const statusClassName = tx.status === "confirmed"
                   ? "bg-emerald-100 text-emerald-700"
                   : tx.status === "pending"
@@ -813,9 +965,19 @@ export default function FinancesPage() {
                         <Badge className={cn("text-[9px] h-5 px-2 font-black uppercase tracking-widest border-0 rounded-full", statusClassName)}>
                           {getCashFlowStatusLabel(tx.status)}
                         </Badge>
+                        {isSessionCharge && (
+                          <Badge className="h-5 rounded-full border-0 bg-teal-100 px-2 text-[9px] font-black uppercase tracking-widest text-teal-700">
+                            Sessão avulsa
+                          </Badge>
+                        )}
                         {isPackage && (
                           <Badge className="text-[9px] h-5 px-2 font-black uppercase tracking-widest bg-sky-100 text-sky-700 border-0 rounded-full">
                             Pacote
+                          </Badge>
+                        )}
+                        {isCourtesyLike && (
+                          <Badge className="h-5 rounded-full border-0 bg-slate-100 px-2 text-[9px] font-black uppercase tracking-widest text-slate-600">
+                            Cortesia
                           </Badge>
                         )}
                       </div>
@@ -846,6 +1008,10 @@ export default function FinancesPage() {
                           )}
                         </p>
                       </div>
+                      <p className="mt-2 flex items-start gap-1.5 text-xs font-semibold leading-relaxed text-slate-500">
+                        <FileText className="mt-0.5 size-3.5 shrink-0 text-slate-400" />
+                        {transactionNote}
+                      </p>
                     </div>
 
                     {/* Amount + Actions */}
@@ -870,9 +1036,27 @@ export default function FinancesPage() {
                               setSelectedTransaction(tx);
                             }}
                           >
-                            Dar baixa
+                            Confirmar recebimento
                           </Button>
                         </SubscriptionGate>
+                      )}
+
+                      {patientId && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 rounded-xl px-3 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-primary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.location.assign(
+                              tx.session_id
+                                ? `/dashboard/patients/${patientId}?tab=sessions&sessionId=${tx.session_id}`
+                                : `/dashboard/patients/${patientId}`
+                            );
+                          }}
+                        >
+                          {tx.session_id ? "Revisar sessão" : "Ver paciente"}
+                        </Button>
                       )}
 
                       {tx.status === "confirmed" && (
