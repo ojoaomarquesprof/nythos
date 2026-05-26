@@ -77,6 +77,176 @@ const GUARDIAN_ALLOWED_KEYS = [
   "is_financial_responsible",
 ] as const;
 
+const PROFESSIONAL_ROLES = new Set(["therapist", "admin", "secretary"]);
+const PROFESSIONAL_EMAIL_MESSAGE =
+  "Este e-mail já está vinculado a uma conta profissional. Use outro e-mail para o paciente ou responsável.";
+const AUTH_EMAIL_REUSE_UNAVAILABLE_MESSAGE =
+  "Não foi possível validar o e-mail informado agora. Tente novamente.";
+
+type AuthUserForReuse = {
+  id: string;
+  email?: string | null;
+  user_metadata?: Record<string, unknown> | null;
+  app_metadata?: Record<string, unknown> | null;
+};
+
+type ProfileRoleRow = {
+  id: string;
+  role: string | null;
+  email?: string | null;
+};
+
+type AuthReuseDecision =
+  | { canReuse: true }
+  | { canReuse: false; reason: "professional_account" };
+
+type AuthUserLookupResult =
+  | { status: "found"; user: AuthUserForReuse }
+  | { status: "not_found" }
+  | { status: "error" };
+
+type AuthReuseValidationResult =
+  | { status: "allowed" }
+  | { status: "professional_conflict" }
+  | { status: "lookup_error" };
+
+function getStringMetadataValue(
+  metadata: Record<string, unknown> | null | undefined,
+  key: string
+): string | null {
+  const value = metadata?.[key];
+  return typeof value === "string" ? value.toLowerCase() : null;
+}
+
+export function isEmailAlreadyRegisteredAuthError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+
+  const errorLike = error as { message?: unknown; code?: unknown; status?: unknown };
+  const message = typeof errorLike.message === "string" ? errorLike.message.toLowerCase() : "";
+  const code = typeof errorLike.code === "string" ? errorLike.code.toLowerCase() : "";
+  const status = typeof errorLike.status === "number" ? errorLike.status : null;
+
+  return (
+    code === "email_exists" ||
+    code === "user_already_exists" ||
+    message.includes("already been registered") ||
+    message.includes("already registered") ||
+    (status === 422 && message.includes("email") && message.includes("registered"))
+  );
+}
+
+export function decideAuthUserReuseForPatient(
+  authUser: AuthUserForReuse,
+  relatedProfiles: ProfileRoleRow[]
+): AuthReuseDecision {
+  const profileHasProfessionalRole = relatedProfiles.some((profile) =>
+    PROFESSIONAL_ROLES.has(String(profile.role || "").toLowerCase())
+  );
+  if (profileHasProfessionalRole) {
+    return { canReuse: false, reason: "professional_account" };
+  }
+
+  const metadataUserType =
+    getStringMetadataValue(authUser.user_metadata, "user_type") ||
+    getStringMetadataValue(authUser.app_metadata, "user_type");
+  const metadataRole =
+    getStringMetadataValue(authUser.user_metadata, "role") ||
+    getStringMetadataValue(authUser.app_metadata, "role");
+
+  if (
+    (metadataUserType && PROFESSIONAL_ROLES.has(metadataUserType)) ||
+    (metadataRole && PROFESSIONAL_ROLES.has(metadataRole))
+  ) {
+    return { canReuse: false, reason: "professional_account" };
+  }
+
+  return { canReuse: true };
+}
+
+async function findAuthUserByEmail(normalizedEmail: string): Promise<AuthUserLookupResult> {
+  const perPage = 1000;
+  let page = 1;
+  let lastPage = 1;
+
+  do {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
+
+    if (error) {
+      logSafeError("[api/patients/create] Erro ao buscar auth user por email", error);
+      return { status: "error" };
+    }
+
+    const matchingUser = data.users.find(
+      (user) => user.email?.trim().toLowerCase() === normalizedEmail
+    );
+    if (matchingUser) {
+      return { status: "found", user: matchingUser };
+    }
+
+    lastPage = Number.isInteger(data.lastPage) && data.lastPage > 0 ? data.lastPage : page;
+    page += 1;
+  } while (page <= lastPage);
+
+  return { status: "not_found" };
+}
+
+async function getRelatedProfilesForAuthUser(
+  authUserId: string,
+  normalizedEmail: string
+): Promise<{ status: "ok"; profiles: ProfileRoleRow[] } | { status: "error" }> {
+  const relatedProfiles: ProfileRoleRow[] = [];
+
+  const { data: profileById, error: profileByIdError } = await supabaseAdmin
+    .from("profiles")
+    .select("id, role, email")
+    .eq("id", authUserId)
+    .maybeSingle();
+
+  if (profileByIdError) {
+    logSafeError("[api/patients/create] Erro ao validar perfil do auth user", profileByIdError);
+    return { status: "error" };
+  }
+
+  if (profileById) relatedProfiles.push(profileById);
+
+  const { data: profilesByEmail, error: profilesByEmailError } = await supabaseAdmin
+    .from("profiles")
+    .select("id, role, email")
+    .eq("email", normalizedEmail)
+    .limit(5);
+
+  if (profilesByEmailError) {
+    logSafeError("[api/patients/create] Erro ao validar perfil por email", profilesByEmailError);
+    return { status: "error" };
+  }
+
+  for (const profile of profilesByEmail ?? []) {
+    if (!relatedProfiles.some((item) => item.id === profile.id)) {
+      relatedProfiles.push(profile);
+    }
+  }
+
+  return { status: "ok", profiles: relatedProfiles };
+}
+
+async function validateAuthUserReuseForPatient(
+  authUser: AuthUserForReuse,
+  normalizedEmail: string
+): Promise<AuthReuseValidationResult> {
+  const relatedProfiles = await getRelatedProfilesForAuthUser(authUser.id, normalizedEmail);
+
+  if (relatedProfiles.status === "error") {
+    return { status: "lookup_error" };
+  }
+
+  const decision = decideAuthUserReuseForPatient(authUser, relatedProfiles.profiles);
+  if (!decision.canReuse && decision.reason === "professional_account") {
+    return { status: "professional_conflict" };
+  }
+
+  return { status: "allowed" };
+}
+
 // ============================================================
 // POST /api/patients/create
 // ============================================================
@@ -89,6 +259,8 @@ const GUARDIAN_ALLOWED_KEYS = [
  *     (caso: mãe com múltiplos filhos em terapia).
  *     → Sim: reutiliza o auth_user_id existente (sem criar novo usuário).
  *     → Não: chama auth.admin.createUser para criar a conta no auth.users.
+ *     → Se o Auth informar email já existente, localiza o usuário Auth existente
+ *       e só reutiliza se não houver perfil profissional conflitante.
  *  3. Faz INSERT em public.patients já com auth_user_id preenchido.
  *  4. O acesso do paciente usa /p/[token] + data de nascimento.
  *
@@ -245,18 +417,37 @@ export async function POST(request: Request) {
   // ── 3. Resolver auth_user_id (reutilizar ou criar) ──
   let authUserId: string;
   let authUserAlreadyExisted = false;
+  let authUserCreatedInRequest = false;
 
   // service_role is needed here to reuse an existing patient auth account by email across records.
-  const { data: existingPatientWithAuth } = await supabaseAdmin
+  const { data: existingPatientWithAuth, error: existingPatientLookupError } = await supabaseAdmin
     .from("patients")
     .select("auth_user_id")
-    .ilike("email", normalizedEmail)
+    .eq("email", normalizedEmail)
     .not("auth_user_id", "is", null)
     .limit(1)
     .maybeSingle();
 
+  if (existingPatientLookupError) {
+    logSafeError("[api/patients/create] Erro ao buscar paciente existente por email", existingPatientLookupError);
+    return NextResponse.json({ error: AUTH_EMAIL_REUSE_UNAVAILABLE_MESSAGE }, { status: 500 });
+  }
+
   if (existingPatientWithAuth?.auth_user_id) {
-    // Email já é de um responsável cadastrado → reutilizar auth_user_id
+    // Email já é de um paciente/responsável cadastrado → reutilizar auth_user_id,
+    // desde que não exista perfil profissional conflitante com esse mesmo email.
+    const reuseValidation = await validateAuthUserReuseForPatient(
+      { id: existingPatientWithAuth.auth_user_id, email: normalizedEmail },
+      normalizedEmail
+    );
+
+    if (reuseValidation.status === "professional_conflict") {
+      return NextResponse.json({ error: PROFESSIONAL_EMAIL_MESSAGE }, { status: 409 });
+    }
+    if (reuseValidation.status === "lookup_error") {
+      return NextResponse.json({ error: AUTH_EMAIL_REUSE_UNAVAILABLE_MESSAGE }, { status: 500 });
+    }
+
     authUserId = existingPatientWithAuth.auth_user_id;
     authUserAlreadyExisted = true;
   } else {
@@ -271,7 +462,48 @@ export async function POST(request: Request) {
     });
 
     if (createError) {
-      logSafeError("[api/patients/create] Erro ao criar auth user", createError);
+      if (isEmailAlreadyRegisteredAuthError(createError)) {
+        const existingAuthUser = await findAuthUserByEmail(normalizedEmail);
+
+        if (existingAuthUser.status === "error") {
+          return NextResponse.json({ error: AUTH_EMAIL_REUSE_UNAVAILABLE_MESSAGE }, { status: 500 });
+        }
+
+        if (existingAuthUser.status === "not_found") {
+          logSafeError("[api/patients/create] Auth indicou email existente, mas usuario nao foi localizado", createError);
+          return NextResponse.json(
+            {
+              error: "Este e-mail já está cadastrado, mas não foi possível vinculá-lo com segurança. Use outro e-mail para o paciente ou responsável.",
+            },
+            { status: 409 }
+          );
+        }
+
+        const reuseValidation = await validateAuthUserReuseForPatient(existingAuthUser.user, normalizedEmail);
+
+        if (reuseValidation.status === "professional_conflict") {
+          return NextResponse.json({ error: PROFESSIONAL_EMAIL_MESSAGE }, { status: 409 });
+        }
+        if (reuseValidation.status === "lookup_error") {
+          return NextResponse.json({ error: AUTH_EMAIL_REUSE_UNAVAILABLE_MESSAGE }, { status: 500 });
+        }
+
+        authUserId = existingAuthUser.user.id;
+        authUserAlreadyExisted = true;
+      } else {
+        logSafeError("[api/patients/create] Erro ao criar auth user", createError);
+        return NextResponse.json(
+          {
+            error: "Não foi possível criar a conta de acesso do paciente.",
+          },
+          { status: 409 }
+        );
+      }
+    } else if (newAuthUser.user?.id) {
+      authUserId = newAuthUser.user.id;
+      authUserCreatedInRequest = true;
+    } else {
+      logSafeError("[api/patients/create] Auth user criado sem id retornado", null);
       return NextResponse.json(
         {
           error: "Não foi possível criar a conta de acesso do paciente.",
@@ -279,8 +511,6 @@ export async function POST(request: Request) {
         { status: 409 }
       );
     }
-
-    authUserId = newAuthUser.user.id;
   }
 
   // ── 4. Inserir paciente em public.patients com auth_user_id já definido ──
@@ -311,7 +541,7 @@ export async function POST(request: Request) {
   if (insertError || !newPatient) {
     logSafeError("[api/patients/create] Erro ao inserir paciente", insertError);
     // Rollback manual: se criamos um auth user novo mas o INSERT falhou, remover o auth user
-    if (!authUserAlreadyExisted) {
+    if (authUserCreatedInRequest) {
       await supabaseAdmin.auth.admin
         .deleteUser(authUserId)
         .catch((rollbackError) =>
@@ -349,7 +579,7 @@ export async function POST(request: Request) {
         .delete()
         .eq("id", newPatient.id);
       if (rollbackError) logSafeError("[api/patients/create] Erro no rollback do paciente", rollbackError);
-      if (!authUserAlreadyExisted) {
+      if (authUserCreatedInRequest) {
         await supabaseAdmin.auth.admin
           .deleteUser(authUserId)
           .catch((rollbackError) =>

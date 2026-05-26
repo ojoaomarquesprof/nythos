@@ -13,6 +13,10 @@ interface BiometricState {
 const CREDENTIAL_ID_KEY = "nythos_biometric_credential_id";
 const BIOMETRIC_ENABLED_KEY = "nythos_biometric_enabled";
 
+function getBiometricErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
 export function useBiometric() {
   const [state, setState] = useState<BiometricState>({
     isSupported: false,
@@ -92,11 +96,11 @@ export function useBiometric() {
 
       setState((prev) => ({ ...prev, isLoading: false }));
       return false;
-    } catch (error: any) {
+    } catch (error: unknown) {
       setState((prev) => ({
         ...prev,
         isLoading: false,
-        error: error.message || "Erro ao registrar biometria",
+        error: getBiometricErrorMessage(error, "Erro ao registrar biometria"),
       }));
       return false;
     }
@@ -139,11 +143,11 @@ export function useBiometric() {
 
       setState((prev) => ({ ...prev, isLoading: false }));
       return false;
-    } catch (error: any) {
+    } catch (error: unknown) {
       setState((prev) => ({
         ...prev,
         isLoading: false,
-        error: error.message || "Erro na autenticação biométrica",
+        error: getBiometricErrorMessage(error, "Erro na autenticação biométrica"),
       }));
       return false;
     }

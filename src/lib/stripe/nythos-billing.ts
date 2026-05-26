@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "crypto";
+import { ONLINE_PAYMENT_STANDBY_MESSAGE } from "../billing/payment-standby";
 import { redactSensitiveText } from "../errors/safe-error";
 import {
   PLAN_DEFINITIONS,
@@ -781,7 +782,7 @@ export async function createNythosStripePortalSession(input: {
       ok: false,
       code: "stripe_portal_disabled",
       status: 503,
-      message: "O gerenciamento online ainda nao esta disponivel para esta conta.",
+      message: ONLINE_PAYMENT_STANDBY_MESSAGE,
     };
   }
 
@@ -854,7 +855,7 @@ export async function createNythosProStripeCheckout(input: {
       checkoutEnabled: false,
       code: "stripe_checkout_disabled",
       billingCycle: input.checkout.billingCycle,
-      message: "O pagamento online ainda nao esta disponivel para esta conta. Seu plano nao foi alterado.",
+      message: ONLINE_PAYMENT_STANDBY_MESSAGE,
     };
   }
 

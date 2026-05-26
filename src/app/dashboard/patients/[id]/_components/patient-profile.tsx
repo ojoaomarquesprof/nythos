@@ -8,14 +8,40 @@ import { cn } from "@/lib/utils";
 import { formatDate, formatCurrency } from "@/lib/constants";
 import type { Patient } from "@/types/database";
 
+interface PatientEditForm {
+  [key: string]: string | number | boolean | null | undefined;
+  full_name?: string | null;
+  date_of_birth?: string | null;
+  cpf?: string | null;
+  gender?: string | null;
+  address?: string | null;
+  session_price?: string | number | null;
+  has_guardian?: boolean;
+  guardian_name?: string | null;
+  guardian_cpf?: string | null;
+  guardian_phone?: string | null;
+  guardian_email?: string | null;
+  guardian_relationship?: string | null;
+  guardian_is_financial?: boolean;
+}
+
+interface GuardianInfo {
+  full_name?: string | null;
+  cpf?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  relationship?: string | null;
+  is_financial_responsible?: boolean | null;
+}
+
 interface PatientProfileProps {
   patient: Patient;
   isEditing: boolean;
   setIsEditing: (editing: boolean) => void;
-  editForm: any;
-  setEditForm: React.Dispatch<React.SetStateAction<any>>;
+  editForm: PatientEditForm | null;
+  setEditForm: React.Dispatch<React.SetStateAction<PatientEditForm | null>>;
   handleEditChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
-  guardian: any;
+  guardian: GuardianInfo | null;
   isSaving: boolean;
   handleUpdatePatient: () => Promise<void>;
   loadData: () => Promise<void>;
@@ -97,7 +123,7 @@ export function PatientProfile({
               <Checkbox 
                 id="has_guardian" 
                 checked={editForm.has_guardian} 
-                onCheckedChange={(checked) => setEditForm((prev: any) => ({ ...prev, has_guardian: checked }))}
+                onCheckedChange={(checked) => setEditForm((prev) => ({ ...(prev ?? {}), has_guardian: checked === true }))}
               />
               <Label htmlFor="has_guardian" className="text-xs font-bold text-primary cursor-pointer">Possui responsável legal?</Label>
             </div>
@@ -152,7 +178,7 @@ export function PatientProfile({
                 <select
                   name="guardian_relationship"
                   className="flex h-14 w-full rounded-full border border-white/40 bg-white/50 px-6 py-2 text-base font-bold focus:ring-primary/20"
-                  value={editForm?.guardian_relationship}
+                  value={editForm?.guardian_relationship ?? ""}
                   onChange={handleEditChange}
                 >
                   <option value="mother">Mãe</option>
@@ -182,7 +208,7 @@ export function PatientProfile({
                   id="guardian_is_financial" 
                   disabled={!isEditing}
                   checked={editForm?.guardian_is_financial} 
-                  onCheckedChange={(checked) => setEditForm((prev: any) => ({ ...prev, guardian_is_financial: checked }))}
+                  onCheckedChange={(checked) => setEditForm((prev) => ({ ...(prev ?? {}), guardian_is_financial: checked === true }))}
                 />
                 <Label htmlFor="guardian_is_financial" className="text-sm font-bold text-primary cursor-pointer">Responsável Financeiro?</Label>
               </div>
@@ -212,7 +238,7 @@ export function PatientProfile({
               <select
                 name="gender"
                 className="flex h-12 w-full rounded-full border border-white/40 bg-white/50 px-5 py-2 text-sm font-bold focus:ring-primary/20"
-                value={editForm?.gender}
+                value={editForm?.gender ?? "prefer_not_to_say"}
                 onChange={handleEditChange}
               >
                 <option value="prefer_not_to_say">Não informado</option>

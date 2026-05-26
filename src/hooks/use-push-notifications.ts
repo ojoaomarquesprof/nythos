@@ -9,32 +9,25 @@ interface PushNotificationState {
   isLoading: boolean;
 }
 
-export function usePushNotifications() {
-  const [state, setState] = useState<PushNotificationState>({
-    isSupported: false,
-    permission: "default",
+function getInitialPushState(): PushNotificationState {
+  const isSupported =
+    typeof window !== "undefined" &&
+    "serviceWorker" in navigator &&
+    "PushManager" in window &&
+    "Notification" in window;
+
+  return {
+    isSupported,
+    permission: isSupported ? Notification.permission : "default",
     subscription: null,
     isLoading: false,
-  });
+  };
+}
 
-  useEffect(() => {
-    const isSupported =
-      "serviceWorker" in navigator &&
-      "PushManager" in window &&
-      "Notification" in window;
+export function usePushNotifications() {
+  const [state, setState] = useState<PushNotificationState>(getInitialPushState);
 
-    setState((prev) => ({
-      ...prev,
-      isSupported,
-      permission: isSupported ? Notification.permission : "default",
-    }));
-
-    if (isSupported && Notification.permission === "granted") {
-      getExistingSubscription();
-    }
-  }, []);
-
-  const getExistingSubscription = async () => {
+  const getExistingSubscription = useCallback(async () => {
     try {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
@@ -42,7 +35,23 @@ export function usePushNotifications() {
     } catch {
       console.error("[use-push-notifications] Failed to get push subscription");
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (state.isSupported && state.permission === "granted") {
+      queueMicrotask(() => {
+        if (!cancelled) {
+          void getExistingSubscription();
+        }
+      });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [getExistingSubscription, state.isSupported, state.permission]);
 
   const subscribe = useCallback(async () => {
     if (!state.isSupported) return null;

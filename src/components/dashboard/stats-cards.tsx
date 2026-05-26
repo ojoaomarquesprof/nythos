@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CalendarDays, Clock, type LucideIcon, Users, Wallet } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -68,7 +68,7 @@ function StatCard({ title, value, subtitle, icon: Icon, tone, loading }: StatCar
 
 export function StatsCards() {
   const { therapistId } = useSubscription();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
   const [loading, setLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [stats, setStats] = useState({
@@ -80,16 +80,7 @@ export function StatsCards() {
     pendingAmount: 0,
   });
 
-  useEffect(() => {
-    if (therapistId) {
-      loadStats();
-    }
-  }, [therapistId]);
-
-  async function loadStats() {
-    setLoading(true);
-    setHasError(false);
-
+  const loadStats = useCallback(async () => {
     try {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -149,13 +140,30 @@ export function StatsCards() {
           0
         ),
       });
+      setHasError(false);
     } catch {
       console.error("[stats-cards] Failed to load stats");
       setHasError(true);
     } finally {
       setLoading(false);
     }
-  }
+  }, [supabase]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (therapistId) {
+      queueMicrotask(() => {
+        if (!cancelled) {
+          void loadStats();
+        }
+      });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [therapistId, loadStats]);
 
   const fallbackSubtitle = hasError
     ? "Não foi possível atualizar agora"

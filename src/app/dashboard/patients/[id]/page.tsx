@@ -62,7 +62,7 @@ import { PatientEngagementCard } from "@/components/dashboard/patients/patient-e
 import { PatientTasksManager } from "@/components/dashboard/patients/patient-tasks-manager";
 import { auditClinicalPdfExported } from "@/app/actions/clinical-audit";
 
-import type { Session, Patient } from "@/types/database";
+import type { Session } from "@/types/database";
 
 import { usePatientData } from "./_hooks/use-patient-data";
 import { PatientProfile } from "./_components/patient-profile";
@@ -133,6 +133,59 @@ function getSessionDateLabel(session?: Session | null) {
 
 function getSessionTypeLabel(type?: string | null) {
   return SESSION_TYPES[type as keyof typeof SESSION_TYPES]?.label || "Tipo nao informado";
+}
+
+type SessionWithEvolutionFlag = Session & {
+  has_session_evolution?: boolean | null;
+};
+
+type TaskWithResponse = {
+  responded_at?: string | null;
+};
+
+type EvolutionPayload = {
+  notes?: string | null;
+  mood_happy_sad?: number | string | null;
+  mood_anxious_calm?: number | string | null;
+};
+
+type PdfContentItem = Record<string, unknown>;
+
+function hasSessionEvolution(session?: SessionWithEvolutionFlag | null) {
+  return Boolean(session?.has_session_evolution || session?.session_notes_encrypted);
+}
+
+function parseEvolutionPayload(raw?: string | null): EvolutionPayload {
+  if (!raw) return {};
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      return parsed as EvolutionPayload;
+    }
+    if (typeof parsed === "string") {
+      return { notes: parsed };
+    }
+  } catch {
+    return { notes: raw };
+  }
+
+  return { notes: raw };
+}
+
+function normalizeMoodValue(value: EvolutionPayload["mood_happy_sad"]) {
+  const parsed = Number(value ?? 5);
+  return Number.isFinite(parsed) ? parsed : 5;
+}
+
+function getSessionEvolutionFormState(session: Session) {
+  const parsed = parseEvolutionPayload(session.session_notes_encrypted);
+
+  return {
+    notes: parsed.notes || session.session_notes_encrypted || "",
+    mood_happy_sad: normalizeMoodValue(parsed.mood_happy_sad),
+    mood_anxious_calm: normalizeMoodValue(parsed.mood_anxious_calm),
+  };
 }
 
 function SummaryCard({
@@ -587,19 +640,12 @@ export default function PatientDetailPage() {
   ];
 
   const handledSessionDeepLinkRef = useRef<string | null>(null);
-  const [activeTab, setActiveTab] = useState("overview");
-  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
-
-  useEffect(() => {
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window === "undefined") return "overview";
     const tab = new URLSearchParams(window.location.search).get("tab");
-    if (tab && PATIENT_TAB_VALUES.has(tab)) {
-      setActiveTab(tab);
-    }
-  }, []);
-
-  function hasSessionEvolution(session?: Session | null) {
-    return Boolean((session as any)?.has_session_evolution || session?.session_notes_encrypted);
-  }
+    return tab && PATIENT_TAB_VALUES.has(tab) ? tab : "overview";
+  });
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
 
   function isCourtesySession(session?: Session | null) {
     if (!session || session.session_price === null || session.session_price === undefined) return false;
@@ -612,25 +658,6 @@ export default function PatientDetailPage() {
     if (status === "confirmed") return "Confirmada";
     if (status === "cancelled") return "Cancelada";
     return null;
-  }
-
-  function getSessionEvolutionFormState(session: Session) {
-    let evolution = { notes: "", mood_happy_sad: 5, mood_anxious_calm: 5 };
-
-    try {
-      if (session.session_notes_encrypted) {
-        const parsed = JSON.parse(session.session_notes_encrypted);
-        evolution = {
-          notes: parsed.notes || session.session_notes_encrypted || "",
-          mood_happy_sad: parsed.mood_happy_sad || 5,
-          mood_anxious_calm: parsed.mood_anxious_calm || 5,
-        };
-      }
-    } catch (e) {
-      evolution.notes = session.session_notes_encrypted || "";
-    }
-
-    return evolution;
   }
 
   function openSessionEvolution(session: Session, edit = false) {
@@ -656,8 +683,17 @@ export default function PatientDetailPage() {
     if (!linkedSession) return;
 
     handledSessionDeepLinkRef.current = deepLinkKey;
-    openSessionEvolution(linkedSession, shouldOpenEvolutionFromLink);
-  }, [loading, sessions]);
+    const sessionFormState = getSessionEvolutionFormState(linkedSession);
+    const timer = window.setTimeout(() => {
+      setActiveTab("sessions");
+      setViewingSession(linkedSession);
+      setSessionEditForm(sessionFormState);
+      setIsEditingSession(shouldOpenEvolutionFromLink && linkedSession.status === "completed");
+      setShowSessionModal(true);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loading, sessions, setIsEditingSession, setSessionEditForm, setShowSessionModal, setViewingSession]);
 
   if (loading) {
     return (
@@ -689,6 +725,7 @@ export default function PatientDetailPage() {
     );
   }
 
+  const schedulePatientHref = `/dashboard/schedule?patientId=${encodeURIComponent(patient.id)}`;
   const scheduledOnlySessions = sessions.filter((s) => s.status === "scheduled");
   const archivedSessions = sessions.filter((s) => s.status !== "scheduled");
   const totalPatientIncome = patientCashFlow
@@ -730,7 +767,7 @@ export default function PatientDetailPage() {
     try {
       const parsed = JSON.parse(latestEvolutionSession.session_notes_encrypted);
       latestEvolutionText = parsed.notes || latestEvolutionSession.session_notes_encrypted;
-    } catch (e) {
+    } catch {
       latestEvolutionText = latestEvolutionSession.session_notes_encrypted;
     }
   }
@@ -785,6 +822,11 @@ export default function PatientDetailPage() {
     (!!patient.access_token_expires_at && new Date(patient.access_token_expires_at) < now);
   const lastSessionNeedsEvolution =
     lastSession?.status === "completed" && !hasSessionEvolution(lastSession) ? lastSession : null;
+  const hasAnyEvolution = sessions.some((session) => session.status === "completed" && hasSessionEvolution(session));
+  const hasAnyFinancialSetup =
+    patient.session_price !== null ||
+    sessions.some((session) => session.session_price !== null && session.session_price !== undefined) ||
+    patientCashFlow.length > 0;
   const clinicalSummaryItems = [
     patient.diagnosis_encrypted
       ? {
@@ -890,7 +932,7 @@ export default function PatientDetailPage() {
     }),
     ...patientTasks.flatMap((task): ClinicalTimelineEvent[] => {
       const created = toDate(task.created_at);
-      const responded = toDate((task as any).responded_at);
+      const responded = toDate((task as TaskWithResponse).responded_at);
       const completed = toDate(task.completed_at);
       const events: ClinicalTimelineEvent[] = [];
 
@@ -1146,13 +1188,13 @@ export default function PatientDetailPage() {
   const latestRespondedTask =
     [...patientTasks]
       .filter((task) => {
-        const respondedAt = toDate((task as any).responded_at);
+        const respondedAt = toDate((task as TaskWithResponse).responded_at);
         if (!respondedAt) return false;
         return !lastSessionDate || respondedAt >= lastSessionDate;
       })
       .sort((a, b) => {
-        const aDate = toDate((a as any).responded_at)?.getTime() ?? 0;
-        const bDate = toDate((b as any).responded_at)?.getTime() ?? 0;
+        const aDate = toDate((a as TaskWithResponse).responded_at)?.getTime() ?? 0;
+        const bDate = toDate((b as TaskWithResponse).responded_at)?.getTime() ?? 0;
         return bDate - aDate;
       })[0] ?? null;
   const activeTreatmentGoals = treatmentPlan?.goals?.filter((goal) => goal.status === "active" || goal.status === "in_progress") || [];
@@ -1183,7 +1225,7 @@ export default function PatientDetailPage() {
           detail: "Nao ha proxima sessao agendada para este paciente.",
           state: "pending",
           actionLabel: "Agendar",
-          onAction: () => router.push("/dashboard/schedule"),
+          onAction: () => router.push(schedulePatientHref),
         },
     latestEvolutionSession
       ? {
@@ -1330,7 +1372,7 @@ export default function PatientDetailPage() {
           detail: "Nao ha sessao futura registrada apos o atendimento.",
           state: "pending",
           actionLabel: "Agendar",
-          onAction: () => router.push("/dashboard/schedule"),
+          onAction: () => router.push(schedulePatientHref),
         },
     latestRespondedTask
       ? {
@@ -1422,27 +1464,83 @@ export default function PatientDetailPage() {
     onAction: () => void;
   }> = [];
 
-  if (!nextSession) {
+  const isEarlyPatient =
+    sessions.length === 0 &&
+    patientTasks.length === 0 &&
+    patientCashFlow.length === 0 &&
+    !hasAnsweredAnamnesis &&
+    !hasAnyEvolution;
+
+  if (nextSession) {
     nextActions.push({
       icon: Calendar,
-      title: "Agendar próxima sessão",
-      reason: "Não há sessão futura registrada para este paciente.",
+      title: "Próxima sessão agendada",
+      reason: `${getSessionDateLabel(nextSession)} · ${nextSession.duration_minutes ?? 50} min · ${getSessionTypeLabel(nextSession.session_type)}.`,
+      priority: hasNextSessionIn24h ? "high" : "success",
+      actionLabel: "Ver sessão",
+      onAction: () => setActiveTab("sessions"),
+    });
+  } else {
+    nextActions.push({
+      icon: Calendar,
+      title: sessions.length === 0 ? "Agendar primeira sessão" : "Agendar próxima sessão",
+      reason:
+        sessions.length === 0
+          ? "Este cadastro já está pronto para receber o primeiro atendimento."
+          : "Não há sessão futura registrada para este paciente.",
       priority: "high",
       actionLabel: "Agendar",
-      onAction: () => router.push("/dashboard/schedule"),
+      onAction: () => router.push(schedulePatientHref),
+    });
+  }
+
+  if (missingEssentialFields.length > 0 || isEarlyPatient) {
+    nextActions.push({
+      icon: User,
+      title: missingEssentialFields.length > 0 ? "Completar dados do paciente" : "Revisar dados do paciente",
+      reason:
+        missingEssentialFields.length > 0
+          ? `Faltam dados úteis para a jornada: ${missingEssentialFields.join(", ")}.`
+          : "Confirme e-mail, data de nascimento, responsáveis e contatos antes de avançar.",
+      priority: missingEssentialFields.length > 0 ? "medium" : "low",
+      actionLabel: "Abrir cadastro",
+      onAction: () => setProfileDialogOpen(true),
     });
   }
 
   if (!hasAnsweredAnamnesis) {
     nextActions.push({
       icon: Shield,
-      title: pendingAnamnesis ? "Acompanhar anamnese pendente" : "Solicitar anamnese",
+      title: pendingAnamnesis ? "Acompanhar anamnese pendente" : "Preparar anamnese e portal",
       reason: pendingAnamnesis
         ? "Há uma solicitação aberta, mas ainda sem resposta concluída."
-        : "Ainda não há anamnese respondida para este paciente.",
+        : "Use a aba Anamnese para preparar o primeiro contexto do caso, sem prometer envio automático.",
       priority: "medium",
       actionLabel: "Ver anamnese",
       onAction: () => setActiveTab("anamnesis"),
+    });
+  }
+
+  if (lastSessionNeedsEvolution) {
+    nextActions.push({
+      icon: ClipboardList,
+      title: "Registrar evolução da última sessão",
+      reason: `A sessão de ${getSessionDateLabel(lastSessionNeedsEvolution)} ainda não tem evolução registrada.`,
+      priority: "high",
+      actionLabel: "Registrar",
+      onAction: () => openSessionEvolution(lastSessionNeedsEvolution, true),
+    });
+  } else if (!hasAnyEvolution) {
+    nextActions.push({
+      icon: ClipboardList,
+      title: completedSessions.length > 0 ? "Registrar primeira evolução" : "Planejar primeira evolução",
+      reason:
+        completedSessions.length > 0
+          ? "Já existe atendimento concluído sem um registro de evolução para consulta rápida."
+          : "Após a primeira sessão, registre dados clínicos sensíveis no prontuário/evolução.",
+      priority: completedSessions.length > 0 ? "medium" : "low",
+      actionLabel: completedSessions.length > 0 ? "Abrir prontuário" : "Prontuário",
+      onAction: () => setActiveTab("notes"),
     });
   }
 
@@ -1458,16 +1556,14 @@ export default function PatientDetailPage() {
       actionLabel: "Abrir tarefas",
       onAction: () => setActiveTab("tasks"),
     });
-  }
-
-  if (lastSessionNeedsEvolution) {
+  } else if (patientTasks.length === 0) {
     nextActions.push({
-      icon: ClipboardList,
-      title: "Registrar evolução da última sessão",
-      reason: `A sessão de ${getSessionDateLabel(lastSessionNeedsEvolution)} ainda não tem evolução registrada.`,
-      priority: "high",
-      actionLabel: "Registrar",
-      onAction: () => openSessionEvolution(lastSessionNeedsEvolution, true),
+      icon: ListChecks,
+      title: "Criar primeira tarefa terapêutica",
+      reason: "Quando fizer sentido clínico, uma tarefa simples ajuda a manter o acompanhamento entre sessões.",
+      priority: "low",
+      actionLabel: "Abrir tarefas",
+      onAction: () => setActiveTab("tasks"),
     });
   }
 
@@ -1491,6 +1587,15 @@ export default function PatientDetailPage() {
       actionLabel: "Ver financeiro",
       onAction: () => setActiveTab("finance"),
     });
+  } else if (!hasAnyFinancialSetup) {
+    nextActions.push({
+      icon: Wallet,
+      title: "Configurar valor financeiro",
+      reason: "Ainda não há valor de sessão, pacote ou lançamento vinculado a este paciente.",
+      priority: "low",
+      actionLabel: "Abrir financeiro",
+      onAction: () => setActiveTab("finance"),
+    });
   }
 
   if (needsAccessLinkUpdate) {
@@ -1501,17 +1606,6 @@ export default function PatientDetailPage() {
       priority: "medium",
       actionLabel: "Gerenciar link",
       onAction: () => setActiveTab("tasks"),
-    });
-  }
-
-  if (missingEssentialFields.length > 0) {
-    nextActions.push({
-      icon: User,
-      title: "Completar cadastro",
-      reason: `Faltam dados essenciais: ${missingEssentialFields.join(", ")}.`,
-      priority: "low",
-      actionLabel: "Abrir cadastro",
-      onAction: () => setProfileDialogOpen(true),
     });
   }
 
@@ -1547,10 +1641,12 @@ export default function PatientDetailPage() {
       onAction: () => setActiveTab("sessions"),
     });
   }
-  const priorityNextActions = nextActions.slice(0, 4);
+  const featuredNextAction = nextActions[0];
+  const supportingNextActions = nextActions.slice(1, 5);
+  const FeaturedNextActionIcon = featuredNextAction?.icon ?? ListChecks;
   const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setEditForm((prev: any) => ({ ...prev, [name]: value }));
+    setEditForm((prev: Record<string, unknown> | null) => ({ ...(prev ?? {}), [name]: value }));
   };
 
   const handleExportSessions = async () => {
@@ -1609,7 +1705,7 @@ export default function PatientDetailPage() {
   const handleExportNotes = async () => {
     if (!profile || !patient.notes_encrypted) return;
     const completedSessions = sessions.filter(s => s.status === "completed" && hasSessionEvolution(s));
-    const contentBody: any[] = [];
+    const contentBody: PdfContentItem[] = [];
     if (patient.notes_encrypted) {
       contentBody.push({ text: "Notas Gerais", style: "header" });
       contentBody.push({ text: patient.notes_encrypted, style: "normalText", margin: [0, 0, 0, 20] });
@@ -1618,16 +1714,11 @@ export default function PatientDetailPage() {
     if (completedSessions.length > 0) {
       contentBody.push({ text: "Evoluções por Sessão", style: "header", margin: [0, 10, 0, 10] });
       completedSessions.forEach(session => {
-        let evolution: any = null;
-        try {
-          evolution = JSON.parse(session.session_notes_encrypted || "{}");
-        } catch (e) {
-          evolution = { notes: session.session_notes_encrypted };
-        }
+        const evolution = parseEvolutionPayload(session.session_notes_encrypted);
         const dateStr = `${new Date(session.scheduled_at).toLocaleDateString("pt-BR")}`;
         const moodStr = evolution.mood_happy_sad ? ` (Humor: ${evolution.mood_happy_sad}/10)` : "";
         contentBody.push({ text: `${dateStr}${moodStr}`, style: "subheader" });
-        contentBody.push({ text: evolution.notes || evolution || "", style: "normalText", margin: [0, 0, 0, 10] });
+        contentBody.push({ text: evolution.notes || session.session_notes_encrypted || "", style: "normalText", margin: [0, 0, 0, 10] });
       });
     }
 
@@ -1657,12 +1748,7 @@ export default function PatientDetailPage() {
 
   const handleExportSingleSession = async (session: Session) => {
     if (!profile) return;
-    let evolution: any = null;
-    try {
-      evolution = JSON.parse(session.session_notes_encrypted || "{}");
-    } catch (e) {
-      evolution = { notes: session.session_notes_encrypted };
-    }
+    const evolution = parseEvolutionPayload(session.session_notes_encrypted);
 
     const exported = await exportPdf({
       title: "Relatório de Atendimento Individual",
@@ -1753,7 +1839,7 @@ export default function PatientDetailPage() {
               </div>
 
               <div className="mt-4 grid grid-cols-1 gap-2 min-[430px]:grid-cols-2 lg:flex lg:flex-wrap">
-                <Button className="h-9 w-full justify-start rounded-2xl min-[430px]:justify-center lg:w-auto lg:justify-center" onClick={() => router.push("/dashboard/schedule")}>
+                <Button className="h-9 w-full justify-start rounded-2xl min-[430px]:justify-center lg:w-auto lg:justify-center" onClick={() => router.push(schedulePatientHref)}>
                   <Calendar className="size-4" />
                   Agendar sessão
                 </Button>
@@ -1880,7 +1966,82 @@ export default function PatientDetailPage() {
 
           <div className="min-w-0 flex-1 overflow-y-auto bg-white/70 p-4 lg:max-h-[calc(100vh-18rem)] lg:p-5">
             <TabsContent value="overview" className="mt-0 w-full animate-fade-in">
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="space-y-4">
+                <OverviewPanel
+                  title="Próximas ações"
+                  description={
+                    isEarlyPatient
+                      ? "Um roteiro simples para transformar o cadastro em acompanhamento clínico."
+                      : "O próximo melhor passo para manter o caso organizado."
+                  }
+                  icon={ListChecks}
+                >
+                  {featuredNextAction && (
+                    <div className="grid gap-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+                      <div
+                        className={cn(
+                          "rounded-3xl border p-4 shadow-sm",
+                          featuredNextAction.priority === "high"
+                            ? "border-amber-200 bg-amber-50/70"
+                            : featuredNextAction.priority === "success"
+                              ? "border-emerald-200 bg-emerald-50/70"
+                              : "border-primary/15 bg-primary/[0.04]"
+                        )}
+                      >
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="flex min-w-0 gap-3">
+                            <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-white text-primary shadow-sm">
+                              <FeaturedNextActionIcon className="size-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <Badge variant="outline" className="mb-2 rounded-full border-white/70 bg-white/80 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
+                                Próximo melhor passo
+                              </Badge>
+                              <h3 className="text-base font-semibold leading-tight text-foreground">
+                                {featuredNextAction.title}
+                              </h3>
+                              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                                {featuredNextAction.reason}
+                              </p>
+                            </div>
+                          </div>
+                          <Button className="h-9 shrink-0 rounded-2xl px-4" onClick={featuredNextAction.onAction}>
+                            {featuredNextAction.actionLabel}
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between gap-3 px-1">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                            Depois disso
+                          </p>
+                          {nextActions.length > supportingNextActions.length + 1 && (
+                            <span className="text-xs font-medium text-muted-foreground">
+                              +{nextActions.length - supportingNextActions.length - 1}
+                            </span>
+                          )}
+                        </div>
+                        {supportingNextActions.map((action) => (
+                          <NextActionRow
+                            key={`${action.title}-${action.priority}`}
+                            icon={action.icon}
+                            title={action.title}
+                            reason={action.reason}
+                            priority={action.priority}
+                            actionLabel={action.actionLabel}
+                            onAction={action.onAction}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <p className="mt-3 rounded-2xl bg-slate-50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                    Dados clínicos sensíveis devem ser registrados no prontuário ou na evolução, não em campos gerais do cadastro.
+                  </p>
+                </OverviewPanel>
+
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
                 <div className="space-y-4">
                   <OverviewPanel
                     title="Resumo clínico"
@@ -1962,7 +2123,7 @@ export default function PatientDetailPage() {
                             variant: "default",
                           },
                           { label: "Tarefas", icon: ListChecks, onClick: () => setActiveTab("tasks") },
-                          { label: "Agenda", icon: Calendar, onClick: () => router.push("/dashboard/schedule") },
+                          { label: "Agenda", icon: Calendar, onClick: () => router.push(schedulePatientHref) },
                         ]}
                       />
                     )}
@@ -1994,7 +2155,7 @@ export default function PatientDetailPage() {
                         title="Ainda não há histórico clínico recente."
                         description="Quando houver sessões, anamnese, tarefas ou outros registros, eles aparecerão aqui."
                         action={
-                          <Button size="sm" className="h-8 rounded-2xl" onClick={() => router.push("/dashboard/schedule")}>
+                          <Button size="sm" className="h-8 rounded-2xl" onClick={() => router.push(schedulePatientHref)}>
                             Agendar sessão
                           </Button>
                         }
@@ -2004,27 +2165,6 @@ export default function PatientDetailPage() {
                 </div>
 
                 <aside className="space-y-4">
-                  <OverviewPanel title="Próximas ações" icon={ListChecks}>
-                    <div className="space-y-2.5">
-                      {priorityNextActions.map((action) => (
-                        <NextActionRow
-                          key={`${action.title}-${action.priority}`}
-                          icon={action.icon}
-                          title={action.title}
-                          reason={action.reason}
-                          priority={action.priority}
-                          actionLabel={action.actionLabel}
-                          onAction={action.onAction}
-                        />
-                      ))}
-                    </div>
-                    {nextActions.length > priorityNextActions.length && (
-                      <p className="mt-3 px-1 text-xs font-medium text-muted-foreground">
-                        +{nextActions.length - priorityNextActions.length} ação(ões) nas abas específicas.
-                      </p>
-                    )}
-                  </OverviewPanel>
-
                   <TreatmentPlanOverviewCard
                     treatmentPlan={treatmentPlan}
                     onOpenPlan={() => setActiveTab("plan")}
@@ -2094,6 +2234,7 @@ export default function PatientDetailPage() {
                   </OverviewPanel>
 
                 </aside>
+              </div>
               </div>
             </TabsContent>
 
@@ -2278,9 +2419,9 @@ export default function PatientDetailPage() {
                 patientId={patient.id}
                 patientEmail={patient.email}
                 authUserId={patient.auth_user_id}
-                accessToken={(patient as any).access_token ?? null}
-                accessTokenExpiresAt={(patient as any).access_token_expires_at ?? null}
-                accessTokenRevokedAt={(patient as any).access_token_revoked_at ?? null}
+                accessToken={patient.access_token ?? null}
+                accessTokenExpiresAt={patient.access_token_expires_at ?? null}
+                accessTokenRevokedAt={patient.access_token_revoked_at ?? null}
                 dateOfBirth={patient.date_of_birth ?? null}
                 onAccessLinkChanged={loadData}
               />
@@ -2555,9 +2696,12 @@ export default function PatientDetailPage() {
                         <Edit className="w-4 h-4" />
                         Evolução da sessão
                       </Label>
+                      <p className="ml-2 max-w-xl text-xs leading-relaxed text-muted-foreground">
+                        Registre aqui observações clínicas sensíveis vinculadas a este atendimento. Evite usar campos gerais para dados de evolução.
+                      </p>
                       <Textarea 
                         className="min-h-[180px] rounded-[24px] border-primary/20 bg-white/50 p-6 text-sm leading-relaxed focus:bg-white transition-all shadow-inner resize-none"
-                        placeholder="Descreva a evolução do paciente..."
+                        placeholder="Descreva a evolução clínica da sessão, intervenções relevantes, resposta do paciente e próximos cuidados..."
                         value={sessionEditForm.notes}
                         onChange={(e) => setSessionEditForm(p => ({ ...p, notes: e.target.value }))}
                       />
@@ -2621,14 +2765,33 @@ export default function PatientDetailPage() {
                           {hasSessionEvolution(viewingSession) ? "Registrada" : "Pendente"}
                         </Badge>
                       </Label>
-                      <div className="bg-white/40 p-6 rounded-3xl border border-white/60 shadow-sm italic text-sm leading-relaxed text-slate-700">
+                      <div
+                        className={cn(
+                          "rounded-3xl border p-6 text-sm leading-relaxed shadow-sm",
+                          hasSessionEvolution(viewingSession)
+                            ? "border-white/60 bg-white/40 italic text-slate-700"
+                            : "border-amber-200/80 bg-amber-50/70 text-amber-900"
+                        )}
+                      >
                         {(() => {
                           try {
                             const evolution = JSON.parse(viewingSession.session_notes_encrypted || "{}");
-                            return evolution.notes || viewingSession.session_notes_encrypted || "Nenhuma nota registrada.";
+                            const evolutionText = evolution.notes || viewingSession.session_notes_encrypted || "";
+                            if (evolutionText) return evolutionText;
                           } catch (e) {
-                            return viewingSession.session_notes_encrypted || "Nenhuma nota registrada.";
+                            if (viewingSession.session_notes_encrypted) return viewingSession.session_notes_encrypted;
                           }
+                          return (
+                            <div className="flex items-start gap-3">
+                              <FileText className="mt-0.5 size-4 shrink-0" />
+                              <div>
+                                <p className="font-semibold">Atendimento concluído com evolução pendente.</p>
+                                <p className="mt-1 text-amber-800/80">
+                                  Registre a evolução desta sessão para manter o prontuário clínico completo e contextualizado.
+                                </p>
+                              </div>
+                            </div>
+                          );
                         })()}
                       </div>
                     </div>
@@ -2745,7 +2908,7 @@ export default function PatientDetailPage() {
                           className="rounded-full px-6 h-10 font-black bg-emerald-600 text-white hover:bg-emerald-700"
                         >
                           <CheckCircle2 className="w-4 h-4 mr-2" />
-                          MARCAR REALIZADA
+                          CONCLUIR SESSÃO
                         </Button>
                       )}
                       {viewingSession.status === "completed" && (

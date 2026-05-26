@@ -6,6 +6,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useSubscription } from "@/hooks/use-subscription";
+import { ONLINE_PAYMENT_STANDBY_MESSAGE } from "@/lib/billing/payment-standby";
 import { cn } from "@/lib/utils";
 
 function formatLimit(limit: number | null): string {
@@ -123,9 +124,12 @@ export function CurrentPlanCard() {
           href="/dashboard/settings/billing"
           className={cn(buttonVariants({ size: "lg" }), "h-11 w-full rounded-2xl font-bold")}
         >
-          Ver planos
+          Ver planos e status
           <ArrowRight className="ml-2 h-4 w-4" />
         </Link>
+        <p className="text-center text-xs leading-5 text-muted-foreground">
+          {ONLINE_PAYMENT_STANDBY_MESSAGE}
+        </p>
       </CardContent>
     </Card>
   );

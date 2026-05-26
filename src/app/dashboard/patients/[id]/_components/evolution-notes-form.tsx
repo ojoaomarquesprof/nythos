@@ -19,6 +19,33 @@ interface EvolutionNotesFormProps {
   handleAddNote: () => Promise<void>;
 }
 
+type SessionWithEvolutionFlag = Session & {
+  has_session_evolution?: boolean | null;
+};
+
+type EvolutionPayload = {
+  notes?: string | null;
+  mood_happy_sad?: number | string | null;
+};
+
+function parseEvolutionPayload(raw?: string | null): EvolutionPayload {
+  if (!raw) return {};
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") return parsed as EvolutionPayload;
+    if (typeof parsed === "string") return { notes: parsed };
+  } catch {
+    return { notes: raw };
+  }
+
+  return { notes: raw };
+}
+
+function hasSessionEvolution(session: Session) {
+  return Boolean((session as SessionWithEvolutionFlag).has_session_evolution || session.session_notes_encrypted);
+}
+
 export function EvolutionNotesForm({
   patient,
   sessions,
@@ -30,18 +57,21 @@ export function EvolutionNotesForm({
   savingNote,
   handleAddNote,
 }: EvolutionNotesFormProps) {
+  const completedSessions = sessions.filter((session) => session.status === "completed");
+  const completedWithoutEvolution = completedSessions.filter((session) => !hasSessionEvolution(session));
   const sessionEvolutions = sessions.filter(
-    (session) =>
-      session.status === "completed" &&
-      Boolean((session as any).has_session_evolution || session.session_notes_encrypted)
+    (session) => session.status === "completed" && hasSessionEvolution(session)
   );
+  const hasPendingSessionEvolution = completedWithoutEvolution.length > 0;
 
   return (
     <>
       <div className="flex flex-col justify-between gap-4 rounded-2xl border border-border/70 bg-white/75 p-4 shadow-sm md:flex-row md:items-center">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-primary">Prontuário e Evolução</h2>
-          <p className="text-sm text-muted-foreground">Registro de notas de evolução e histórico clínico do paciente.</p>
+          <p className="text-sm text-muted-foreground">
+            Espaço seguro para observações clínicas sensíveis, evolução por sessão e histórico do caso.
+          </p>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
           <Button
@@ -65,6 +95,32 @@ export function EvolutionNotesForm({
         </div>
       </div>
 
+      <div
+        className={
+          hasPendingSessionEvolution
+            ? "rounded-2xl border border-amber-200/80 bg-amber-50/80 p-4 shadow-sm"
+            : "rounded-2xl border border-emerald-200/70 bg-emerald-50/60 p-4 shadow-sm"
+        }
+      >
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-2xl bg-white text-primary shadow-sm">
+            <FileText className="size-4" />
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-foreground">
+              {hasPendingSessionEvolution
+                ? `${completedWithoutEvolution.length} sessão(ões) concluída(s) aguardando evolução`
+                : "Prontuário preparado para registros clínicos"}
+            </p>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+              {hasPendingSessionEvolution
+                ? "Abra a sessão correspondente para registrar a evolução com data, contexto e vínculo correto ao atendimento."
+                : "Depois de cada atendimento, registre aqui os dados clínicos sensíveis que precisam permanecer no histórico protegido do paciente."}
+            </p>
+          </div>
+        </div>
+      </div>
+
       <Card className="glass-panel border-0 shadow-lg rounded-[32px] overflow-hidden">
         <CardHeader className="border-b border-border/60 bg-white/70 pb-4">
           <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
@@ -74,7 +130,7 @@ export function EvolutionNotesForm({
         </CardHeader>
         <CardContent className="space-y-4 p-5">
           <Textarea
-            placeholder="Registre uma nota geral do prontuário, sem vínculo obrigatório com sessão..."
+            placeholder="Registre uma nota geral do prontuário. Para evolução de uma sessão específica, abra a sessão concluída e registre com o vínculo correto..."
             className="min-h-[150px] resize-none rounded-2xl border-border/70 bg-white/80 p-4 text-sm leading-relaxed transition-all focus:bg-white"
             value={newNote}
             onChange={(e) => setNewNote(e.target.value)}
@@ -115,12 +171,8 @@ export function EvolutionNotesForm({
 
             {/* Evoluções de Sessão */}
             {sessionEvolutions.map(session => {
-              let evolution: any = null;
-              try {
-                evolution = JSON.parse(session.session_notes_encrypted || "{}");
-              } catch (e) {
-                evolution = { notes: session.session_notes_encrypted };
-              }
+              const evolution = parseEvolutionPayload(session.session_notes_encrypted);
+              const evolutionText = evolution.notes || session.session_notes_encrypted || "";
 
               return (
                 <div key={session.id} className="space-y-2 animate-in fade-in slide-in-from-bottom-2">
@@ -138,7 +190,7 @@ export function EvolutionNotesForm({
                   </div>
                   <div className="rounded-2xl border border-border/70 bg-white/80 p-5 shadow-sm">
                     <p className="text-sm leading-relaxed font-medium text-slate-700">
-                      {evolution.notes || evolution}
+                      {evolutionText}
                     </p>
                   </div>
                 </div>
@@ -146,7 +198,17 @@ export function EvolutionNotesForm({
             })}
 
             {!patient.notes_encrypted && sessionEvolutions.length === 0 && (
-              <p className="text-sm text-muted-foreground italic text-center py-10">Nenhum registro de evolução encontrado.</p>
+              <div className="rounded-2xl border border-dashed border-border/70 bg-white/70 px-5 py-10 text-center">
+                <FileText className="mx-auto mb-3 size-9 text-muted-foreground/40" />
+                <p className="text-sm font-semibold text-foreground">
+                  {hasPendingSessionEvolution ? "Sessão concluída aguardando evolução." : "Nenhuma evolução registrada ainda."}
+                </p>
+                <p className="mx-auto mt-1 max-w-md text-sm leading-relaxed text-muted-foreground">
+                  {hasPendingSessionEvolution
+                    ? "Use a sessão concluída como ponto de partida para registrar observações clínicas com segurança e contexto."
+                    : "Após a primeira sessão, use este espaço para registrar a evolução clínica com segurança e contexto."}
+                </p>
+              </div>
             )}
           </div>
         </CardContent>

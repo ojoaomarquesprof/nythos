@@ -119,7 +119,7 @@ export async function POST(req: Request) {
         full_name: fullName,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logSafeError("[api/team/invite] Erro interno", error);
     return NextResponse.json({ error: "Erro interno ao processar convite." }, { status: 500 });
   }

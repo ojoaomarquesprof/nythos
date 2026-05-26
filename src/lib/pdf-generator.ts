@@ -8,9 +8,23 @@ export interface PdfOptions {
   title: string;
   subtitle?: string;
   profile: Profile;
-  content: any[]; // Array estruturado do pdfmake
+  content: unknown[]; // Array estruturado do pdfmake
   fileName?: string;
 }
+
+type PdfMakeInstance = {
+  vfs?: unknown;
+  createPdf: (docDefinition: unknown) => {
+    download: (fileName: string) => void;
+  };
+};
+
+type PdfFontsModule = {
+  pdfMake?: {
+    vfs?: unknown;
+  };
+  vfs?: unknown;
+};
 
 // Helper to convert image URL to base64
 export async function getBase64ImageFromUrl(imageUrl: string): Promise<string> {
@@ -31,14 +45,14 @@ export async function getBase64ImageFromUrl(imageUrl: string): Promise<string> {
 export async function generateClinicalPdf(options: PdfOptions): Promise<void> {
   // 1. Dynamic Imports para evitar erros Node.js/Serverless
   const pdfMakeModule = await import("pdfmake/build/pdfmake");
-  const pdfMake: any = pdfMakeModule.default || pdfMakeModule;
+  const pdfMake = (pdfMakeModule.default || pdfMakeModule) as PdfMakeInstance;
   const pdfFontsModule = await import("pdfmake/build/vfs_fonts");
-  const pdfFonts: any = pdfFontsModule.default || pdfFontsModule;
+  const pdfFonts = (pdfFontsModule.default || pdfFontsModule) as PdfFontsModule;
   
-  if (pdfFonts && pdfFonts.pdfMake) {
+  if (pdfFonts.pdfMake?.vfs) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
-  } else if (pdfFonts && (pdfFonts as any).vfs) {
-    pdfMake.vfs = (pdfFonts as any).vfs;
+  } else if (pdfFonts.vfs) {
+    pdfMake.vfs = pdfFonts.vfs;
   }
 
   const { title, subtitle, profile, content, fileName = "relatorio_clinico.pdf" } = options;
@@ -54,10 +68,10 @@ export async function generateClinicalPdf(options: PdfOptions): Promise<void> {
   }
 
   // 3. Montar o layout declarativo (Document Definition)
-  const docDefinition: any = {
+  const docDefinition = {
     pageSize: 'A4',
     pageMargins: [40, 100, 40, 60], // Left, Top, Right, Bottom
-    header: function(currentPage: number) {
+    header: function() {
       return {
         margin: [40, 20, 40, 0],
         columns: [
@@ -182,7 +196,7 @@ export async function createPdfDocument(options: PdfHeaderOptions) {
 }
 
 export function addPdfFooter(doc: jsPDF) {
-  const pageCount = (doc.internal as any).getNumberOfPages();
+  const pageCount = (doc.internal as jsPDF["internal"] & { getNumberOfPages: () => number }).getNumberOfPages();
   const dateStr = new Date().toLocaleDateString("pt-BR", {
     day: "2-digit",
     month: "2-digit",

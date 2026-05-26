@@ -12,7 +12,7 @@ import {
   ShieldCheck,
   Clock,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,34 +38,44 @@ export function Sidebar() {
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
   const { hasSubscription, isTrial, daysLeft } = useSubscription();
-  const supabase = createClient() as any;
+  const [supabase] = useState(() => createClient());
+
+  const loadProfile = useCallback(async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user) {
+      const { data } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+
+      const mergedProfile = {
+        ...(data ?? {}),
+        id: user.id,
+          full_name: data?.full_name || user.user_metadata?.full_name || "Psicóloga",
+        crp: data?.crp || user.user_metadata?.crp,
+      };
+
+      setProfile(mergedProfile as Profile);
+    }
+  }, [supabase]);
 
   useEffect(() => {
-    async function loadProfile() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    let cancelled = false;
 
-      if (user) {
-        const { data } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .single();
-
-        const mergedProfile = {
-          ...data,
-          id: user.id,
-          full_name: data?.full_name || user.user_metadata?.full_name || "Psicóloga",
-          crp: data?.crp || user.user_metadata?.crp,
-        };
-
-        setProfile(mergedProfile as any);
+    queueMicrotask(() => {
+      if (!cancelled) {
+        void loadProfile();
       }
-    }
+    });
 
-    loadProfile();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [loadProfile]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();

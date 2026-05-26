@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { logSafeError, safeClientError } from "@/lib/errors/safe-error";
+import { ONLINE_PAYMENT_STANDBY_MESSAGE } from "@/lib/billing/payment-standby";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -116,6 +117,24 @@ function buildEmbeddedReturnUrl(request: Request): string {
   return `${origin}/dashboard/settings/billing?checkout=return&session_id={CHECKOUT_SESSION_ID}`;
 }
 
+export async function GET() {
+  try {
+    const config = getStripeConfig();
+    return NextResponse.json({
+      checkoutEnabled: config.checkoutEnabled,
+      message: config.checkoutEnabled
+        ? "Checkout Stripe em modo de teste habilitado para esta conta."
+        : ONLINE_PAYMENT_STANDBY_MESSAGE,
+    });
+  } catch (error) {
+    logSafeError("[checkout] Failed to read checkout availability", error);
+    return NextResponse.json({
+      checkoutEnabled: false,
+      message: ONLINE_PAYMENT_STANDBY_MESSAGE,
+    });
+  }
+}
+
 export async function POST(request: Request) {
   let billingCycle: NythosBillingCycle | undefined;
   let checkoutMode: StripeCheckoutMode | undefined;
@@ -162,7 +181,7 @@ export async function POST(request: Request) {
           checkoutEnabled: false,
           code: "stripe_checkout_disabled",
           billingCycle,
-          message: "O pagamento online ainda nao esta disponivel para esta conta. Seu plano nao foi alterado.",
+          message: ONLINE_PAYMENT_STANDBY_MESSAGE,
         }),
         { status: 503 }
       );

@@ -2,6 +2,7 @@ import { createHmac } from "crypto";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { describe, expect, it } from "vitest";
+import { ONLINE_PAYMENT_STANDBY_MESSAGE } from "../billing/payment-standby";
 import {
   assertNoPublicStripeSecrets,
   assertTestCheckoutConfig,
@@ -348,6 +349,17 @@ describe("Nythos Stripe billing helpers", () => {
       ...common,
       profile: { role: "therapist", employer_id: null },
       subscription: stripeCustomerSubscription,
+      config: { ...enabledConfig, checkoutEnabled: false },
+    })).resolves.toMatchObject({
+      ok: false,
+      code: "stripe_portal_disabled",
+      message: ONLINE_PAYMENT_STANDBY_MESSAGE,
+    });
+
+    await expect(createNythosStripePortalSession({
+      ...common,
+      profile: { role: "therapist", employer_id: null },
+      subscription: stripeCustomerSubscription,
       config: { ...enabledConfig, environment: "live" },
     })).rejects.toThrow("Pagamento online indisponivel para esta conta no momento.");
   });
@@ -419,6 +431,7 @@ describe("Nythos Stripe billing helpers", () => {
     expect(result).toMatchObject({
       ok: false,
       checkoutEnabled: false,
+      message: ONLINE_PAYMENT_STANDBY_MESSAGE,
     });
     expect(stripeCalls).toBe(0);
     expect(storeCalls).toBe(0);

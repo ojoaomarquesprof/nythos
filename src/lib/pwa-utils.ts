@@ -6,7 +6,8 @@ export const isIOS = () => {
 
 export const isStandalone = () => {
   if (typeof window === 'undefined') return false;
-  return ('standalone' in navigator && !!(navigator as any).standalone) || 
+  const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
+  return ('standalone' in navigator && !!navigatorWithStandalone.standalone) ||
          window.matchMedia('(display-mode: standalone)').matches;
 };
 

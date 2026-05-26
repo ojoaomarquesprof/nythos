@@ -1,9 +1,14 @@
 import { redirect } from "next/navigation";
-import { InteractivePatientDashboard } from "@/components/patient/interactive-dashboard";
+import {
+  InteractivePatientDashboard,
+  type PatientPortalDiary,
+  type PatientPortalMoodCheckin,
+  type PatientPortalTask,
+} from "@/components/patient/interactive-dashboard";
 import { getPatientAccessState } from "@/lib/auth/patient-access";
 import { getPatientSessionDetails } from "@/lib/auth/patient-session";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { Patient, PatientMoodCheckin } from "@/types/database";
+import type { Patient } from "@/types/database";
 
 type PatientDashboardProfile = Pick<Patient, "id" | "full_name">;
 
@@ -35,13 +40,18 @@ export default async function PatientDashboardPage() {
     id: patient.id,
     full_name: patient.full_name,
   };
+  const initialTasks: PatientPortalTask[] = Array.isArray(tasksRaw) ? tasksRaw as PatientPortalTask[] : [];
+  const initialDiary: PatientPortalDiary[] = Array.isArray(diaryRaw) ? diaryRaw as PatientPortalDiary[] : [];
+  const initialMoodCheckins: PatientPortalMoodCheckin[] = Array.isArray(moodCheckinsRaw)
+    ? moodCheckinsRaw as PatientPortalMoodCheckin[]
+    : [];
 
   return (
     <InteractivePatientDashboard
       patient={patientProfile}
-      initialTasks={Array.isArray(tasksRaw) ? tasksRaw as any : []}
-      initialDiary={Array.isArray(diaryRaw) ? diaryRaw as any : []}
-      initialMoodCheckins={Array.isArray(moodCheckinsRaw) ? moodCheckinsRaw as PatientMoodCheckin[] : []}
+      initialTasks={initialTasks}
+      initialDiary={initialDiary}
+      initialMoodCheckins={initialMoodCheckins}
     />
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { CalendarDays, ChevronRight, Clock, Video } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,21 +34,12 @@ function getInitials(name?: string | null) {
 
 export function UpcomingSessions() {
   const { therapistId } = useSubscription();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
   const [sessions, setSessions] = useState<(Session & { patient?: Patient })[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
 
-  useEffect(() => {
-    if (therapistId) {
-      loadSessions();
-    }
-  }, [therapistId]);
-
-  async function loadSessions() {
-    setLoading(true);
-    setHasError(false);
-
+  const loadSessions = useCallback(async () => {
     try {
       const now = new Date();
       const endOfDay = new Date(now);
@@ -66,6 +57,7 @@ export function UpcomingSessions() {
       if (error) throw error;
 
       if (!sessionsData || sessionsData.length === 0) {
+        setHasError(false);
         setSessions([]);
         return;
       }
@@ -84,6 +76,7 @@ export function UpcomingSessions() {
           patient: patientsData?.find((patient) => patient.id === session.patient_id),
         }))
       );
+      setHasError(false);
     } catch {
       console.error("[upcoming-sessions] Failed to load sessions");
       setHasError(true);
@@ -91,7 +84,23 @@ export function UpcomingSessions() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [supabase]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (therapistId) {
+      queueMicrotask(() => {
+        if (!cancelled) {
+          void loadSessions();
+        }
+      });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [therapistId, loadSessions]);
 
   return (
     <Card className="animate-fade-in border-border/70 bg-card/95 py-0 shadow-[0_16px_42px_rgba(41,31,67,0.08)]">

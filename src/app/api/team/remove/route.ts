@@ -81,7 +81,7 @@ export async function DELETE(req: Request) {
       success: true,
       message: "Acesso removido com sucesso!",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logSafeError("[api/team/remove] Erro interno", error);
     return NextResponse.json({ error: "Erro interno ao remover membro da equipe." }, { status: 500 });
   }

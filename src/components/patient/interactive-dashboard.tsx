@@ -1,150 +1,354 @@
 "use client";
 
-import { useState, useTransition, useOptimistic } from "react";
+import { useOptimistic, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import {
-  Heart, Sparkles, ShieldCheck, LogOut, CheckSquare, Square,
-  BookHeart, Smile, Meh, Frown, Clock, AlertCircle, Brain,
-  Dumbbell, BookOpen, ListChecks, TrendingUp, Calendar, Plus, X, Loader2,
-  MessageSquare, Moon, Battery,
+  AlertCircle,
+  Battery,
+  BookHeart,
+  BookOpen,
+  Brain,
+  Calendar,
+  CheckSquare,
+  Clock,
+  Dumbbell,
+  Frown,
+  Heart,
+  ListChecks,
+  Loader2,
+  LogOut,
+  Meh,
+  MessageSquare,
+  Moon,
+  Plus,
+  ShieldCheck,
+  Smile,
+  Sparkles,
+  TrendingUp,
+  X,
 } from "lucide-react";
-import type { Patient, PatientTask, EmotionDiary, PatientMoodCheckin } from "@/types/database";
-import { toggleTaskStatus, saveDiaryEntry, saveMoodCheckin, respondToTask } from "@/app/actions/patient-engagement";
+import { respondToTask, saveDiaryEntry, saveMoodCheckin, toggleTaskStatus } from "@/app/actions/patient-engagement";
 import { logoutPatient } from "@/app/actions/patient-auth";
+import type { EmotionDiary, Patient, PatientMoodCheckin, PatientTask } from "@/types/database";
 
-type PatientPortalTask = Pick<
+export type PatientPortalTask = Pick<
   PatientTask,
   "id" | "patient_id" | "title" | "description" | "category" | "due_date" | "status" | "completed_at" | "responded_at" | "patient_feedback" | "created_at" | "updated_at"
 >;
 
-type PatientPortalDiary = Pick<
+export type PatientPortalDiary = Pick<
   EmotionDiary,
   "id" | "patient_id" | "emotion" | "intensity" | "notes" | "context" | "created_at"
 >;
 
-type PatientPortalMoodCheckin = Pick<
+export type PatientPortalMoodCheckin = Pick<
   PatientMoodCheckin,
   "id" | "patient_id" | "mood_score" | "anxiety_score" | "sleep_quality" | "energy_score" | "notes" | "created_at"
 >;
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const CATEGORY_META: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  general:           { label: "Geral",              icon: <ListChecks className="w-4 h-4" />, color: "text-violet-500" },
-  homework:          { label: "Tarefa",             icon: <CheckSquare className="w-4 h-4" />, color: "text-blue-500" },
-  reading:           { label: "Leitura",            icon: <BookOpen className="w-4 h-4" />, color: "text-cyan-500" },
-  exercise:          { label: "Exercício",          icon: <Dumbbell className="w-4 h-4" />, color: "text-emerald-500" },
-  reflection:        { label: "Reflexão",           icon: <Brain className="w-4 h-4" />, color: "text-pink-500" },
-  behavior_tracking: { label: "Automonitoramento",  icon: <TrendingUp className="w-4 h-4" />, color: "text-orange-500" },
+const CATEGORY_META: Record<string, { label: string; icon: ReactNode; color: string }> = {
+  general: { label: "Geral", icon: <ListChecks className="w-4 h-4" />, color: "text-violet-500" },
+  homework: { label: "Tarefa", icon: <CheckSquare className="w-4 h-4" />, color: "text-blue-500" },
+  reading: { label: "Leitura", icon: <BookOpen className="w-4 h-4" />, color: "text-cyan-500" },
+  exercise: { label: "Exercício", icon: <Dumbbell className="w-4 h-4" />, color: "text-emerald-500" },
+  reflection: { label: "Reflexão", icon: <Brain className="w-4 h-4" />, color: "text-pink-500" },
+  behavior_tracking: { label: "Automonitoramento", icon: <TrendingUp className="w-4 h-4" />, color: "text-orange-500" },
 };
 
 const CONTEXTS = [
-  { value: "morning", label: "Manhã" }, { value: "afternoon", label: "Tarde" },
-  { value: "evening", label: "Noite" }, { value: "night", label: "Madrugada" },
-  { value: "work", label: "Trabalho" }, { value: "home", label: "Casa" },
-  { value: "social", label: "Social" }, { value: "other", label: "Outro" },
+  { value: "morning", label: "Manhã" },
+  { value: "afternoon", label: "Tarde" },
+  { value: "evening", label: "Noite" },
+  { value: "night", label: "Madrugada" },
+  { value: "work", label: "Trabalho" },
+  { value: "home", label: "Casa" },
+  { value: "social", label: "Social" },
+  { value: "other", label: "Outro" },
 ];
 
-function intensityMeta(v: number) {
-  if (v <= 3) return { icon: <Smile className="w-5 h-5" />, label: "Leve", color: "text-emerald-500" };
-  if (v <= 6) return { icon: <Meh className="w-5 h-5" />, label: "Moderada", color: "text-amber-500" };
+const MOOD_FIELDS = [
+  { key: "mood_score", label: "Humor", icon: Smile, low: "Difícil", high: "Bem" },
+  { key: "anxiety_score", label: "Ansiedade", icon: Brain, low: "Baixa", high: "Alta" },
+  { key: "sleep_quality", label: "Sono", icon: Moon, low: "Ruim", high: "Bom" },
+  { key: "energy_score", label: "Energia", icon: Battery, low: "Baixa", high: "Alta" },
+] as const;
+
+const DISPLAY_REPLACEMENTS: Array<[string, string]> = [
+  ["NÃƒÂ£o", "Não"],
+  ["nÃƒÂ£o", "não"],
+  ["NÃ£o", "Não"],
+  ["nÃ£o", "não"],
+  ["possÃƒÂ­vel", "possível"],
+  ["possÃ­vel", "possível"],
+  ["invÃƒÂ¡lido", "inválido"],
+  ["invÃ¡lido", "inválido"],
+  ["diÃƒÂ¡rio", "diário"],
+  ["diÃ¡rio", "diário"],
+  ["Sessao invalida", "Sessão inválida"],
+  ["emocao", "emoção"],
+  ["resposta", "resposta"],
+];
+
+function intensityMeta(value: number) {
+  if (value <= 3) return { icon: <Smile className="w-5 h-5" />, label: "Leve", color: "text-emerald-500" };
+  if (value <= 6) return { icon: <Meh className="w-5 h-5" />, label: "Moderada", color: "text-amber-500" };
   return { icon: <Frown className="w-5 h-5" />, label: "Intensa", color: "text-rose-500" };
 }
 
-function relDate(iso: string) {
-  const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
-  if (d === 0) return "Hoje"; if (d === 1) return "Ontem";
-  if (d < 7) return `Há ${d} dias`;
+function relDate(iso: string | null | undefined) {
+  if (!iso) return "Hoje";
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (days === 0) return "Hoje";
+  if (days === 1) return "Ontem";
+  if (days < 7) return `Há ${days} dias`;
   return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
 }
 
 function dueDateLabel(iso: string | null) {
   if (!iso) return null;
-  const d = Math.floor((new Date(iso).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000);
-  if (d < 0) return { text: "Atrasada", overdue: true };
-  if (d === 0) return { text: "Vence hoje", overdue: false };
-  if (d === 1) return { text: "Vence amanhã", overdue: false };
-  return { text: `Vence em ${d} dias`, overdue: false };
+  const days = Math.floor((new Date(iso).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000);
+  if (days < 0) return { text: "Atrasada", overdue: true };
+  if (days === 0) return { text: "Vence hoje", overdue: false };
+  if (days === 1) return { text: "Vence amanhã", overdue: false };
+  return { text: `Vence em ${days} dias`, overdue: false };
 }
 
-// ─── Diary Form ───────────────────────────────────────────────────────────────
+function normalizeDisplayMessage(message: string) {
+  return DISPLAY_REPLACEMENTS.reduce((text, [from, to]) => text.replaceAll(from, to), message);
+}
 
-function DiaryForm({ patientId, onClose, onSaved }: { patientId: string; onClose: () => void; onSaved: (e: PatientPortalDiary) => void }) {
+function safePatientActionError(message: string | null | undefined, fallback: string) {
+  if (!message) return fallback;
+  const lower = message.toLowerCase();
+  if (
+    lower.includes("payload")
+    || lower.includes("uuid")
+    || lower.includes("cookie")
+    || lower.includes("invalid")
+    || lower.includes("service_role")
+  ) {
+    return fallback;
+  }
+  return normalizeDisplayMessage(message);
+}
+
+function scoreText(value: number | null | undefined) {
+  return value ? `${value}/5` : "Sem registro";
+}
+
+function InlineError({ message }: { message: string }) {
+  return (
+    <p className="flex items-start gap-2 rounded-2xl bg-rose-50 px-3 py-2 text-xs font-semibold leading-relaxed text-rose-700">
+      <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+      {message}
+    </p>
+  );
+}
+
+function EmptyState({
+  icon,
+  title,
+  description,
+  actionLabel,
+  onAction,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="glass-panel rounded-3xl p-7 text-center shadow-lg sm:p-8">
+      <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl bg-white/70 text-[oklch(0.55_0.2_280)] shadow-sm">
+        {icon}
+      </div>
+      <p className="font-semibold text-[oklch(0.35_0.03_280)]">{title}</p>
+      <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-[oklch(0.55_0.02_280)]">{description}</p>
+      {actionLabel && onAction && (
+        <button
+          type="button"
+          onClick={onAction}
+          className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl gradient-primary px-5 text-sm font-black text-white shadow-lg shadow-violet-500/20 transition-all hover:-translate-y-0.5"
+        >
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function DiaryForm({
+  patientId,
+  onClose,
+  onSaved,
+}: {
+  patientId: string;
+  onClose: () => void;
+  onSaved: (entry: PatientPortalDiary) => void;
+}) {
   const [form, setForm] = useState({ emotion: "", intensity: 5, context: "", notes: "" });
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState("");
 
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!form.emotion.trim()) { setError("Informe a emoção."); return; }
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pending) return;
+    if (!form.emotion.trim()) {
+      setError("Conte em uma palavra como você está se sentindo.");
+      return;
+    }
+
     setError("");
     startTransition(async () => {
-      const r = await saveDiaryEntry({ emotion: form.emotion, intensity: form.intensity, context: form.context || undefined, notes: form.notes || undefined });
-      if (r.success) {
-        onSaved({ id: r.id ?? crypto.randomUUID(), patient_id: patientId, emotion: form.emotion, intensity: form.intensity, notes: form.notes || null, context: form.context || null, created_at: new Date().toISOString() });
+      const result = await saveDiaryEntry({
+        emotion: form.emotion,
+        intensity: form.intensity,
+        context: form.context || undefined,
+        notes: form.notes || undefined,
+      });
+
+      if (result.success) {
+        onSaved({
+          id: result.id ?? crypto.randomUUID(),
+          patient_id: patientId,
+          emotion: form.emotion,
+          intensity: form.intensity,
+          notes: form.notes || null,
+          context: form.context || null,
+          created_at: new Date().toISOString(),
+        });
         onClose();
-      } else { setError(r.error ?? "Erro ao salvar."); }
+        return;
+      }
+
+      setError(safePatientActionError(result.error, "Não foi possível salvar agora. Tente novamente em instantes."));
     });
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 backdrop-blur-sm sm:items-center sm:p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="glass-panel w-full max-w-md max-h-[85dvh] space-y-5 overflow-y-auto rounded-[28px] p-4 shadow-2xl shadow-violet-900/20 sm:rounded-3xl sm:p-6">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-black text-[oklch(0.22_0.02_280)] flex items-center gap-2">
-            <BookHeart className="w-5 h-5 text-[oklch(0.55_0.18_340)]" /> Nova Entrada
-          </h3>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors"><X className="w-4 h-4" /></button>
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 backdrop-blur-sm sm:items-center sm:p-4"
+      onClick={(event) => event.target === event.currentTarget && !pending && onClose()}
+    >
+      <div className="glass-panel max-h-[85dvh] w-full max-w-md space-y-5 overflow-y-auto rounded-[28px] p-4 shadow-2xl shadow-violet-900/20 sm:rounded-3xl sm:p-6">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="flex items-center gap-2 text-lg font-black text-[oklch(0.22_0.02_280)]">
+              <BookHeart className="w-5 h-5 text-[oklch(0.55_0.18_340)]" />
+              Registrar emoção
+            </h3>
+            <p className="mt-1 text-sm leading-relaxed text-[oklch(0.5_0.02_280)]">
+              Um registro breve já ajuda seu terapeuta a acompanhar seu processo.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={pending}
+            aria-label="Fechar diário emocional"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         <form onSubmit={submit} className="space-y-4">
           <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-[oklch(0.5_0.02_280)] block mb-1.5">Como você está se sentindo?</label>
-            <input value={form.emotion} onChange={e => setForm(f => ({...f, emotion: e.target.value}))} placeholder="Ex: ansioso, feliz, triste..." className="w-full px-4 py-3 rounded-2xl bg-white/70 border border-[oklch(0.92_0.01_290)] text-sm font-semibold text-[oklch(0.22_0.02_280)] focus:outline-none focus:ring-2 focus:ring-[oklch(0.55_0.2_280)]/20 transition-all" />
+            <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-[oklch(0.5_0.02_280)]">
+              Como você está se sentindo agora?
+            </label>
+            <input
+              value={form.emotion}
+              onChange={(event) => setForm((current) => ({ ...current, emotion: event.target.value }))}
+              placeholder="Ex.: ansiosa, tranquila, irritada..."
+              disabled={pending}
+              className="w-full min-h-12 rounded-2xl border border-[oklch(0.92_0.01_290)] bg-white/70 px-4 py-3 text-sm font-semibold text-[oklch(0.22_0.02_280)] transition-all focus:outline-none focus:ring-2 focus:ring-[oklch(0.55_0.2_280)]/20 disabled:opacity-70"
+            />
           </div>
 
           <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-[oklch(0.5_0.02_280)] block mb-1.5">Intensidade: {form.intensity}/10</label>
-            <input type="range" min="1" max="10" value={form.intensity} onChange={e => setForm(f => ({...f, intensity: +e.target.value}))} className="w-full accent-violet-600" />
-            <div className="flex justify-between text-[10px] text-[oklch(0.6_0.02_280)] mt-1 font-medium">
-              <span>1 · Leve</span><span>10 · Muito intenso</span>
+            <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-[oklch(0.5_0.02_280)]">
+              Intensidade: {form.intensity}/10
+            </label>
+            <input
+              type="range"
+              min="1"
+              max="10"
+              value={form.intensity}
+              onChange={(event) => setForm((current) => ({ ...current, intensity: Number(event.target.value) }))}
+              disabled={pending}
+              className="w-full accent-violet-600"
+            />
+            <div className="mt-1 flex justify-between text-[10px] font-medium text-[oklch(0.6_0.02_280)]">
+              <span>1 - Leve</span>
+              <span>10 - Muito intenso</span>
             </div>
           </div>
 
           <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-[oklch(0.5_0.02_280)] block mb-1.5">Contexto</label>
+            <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-[oklch(0.5_0.02_280)]">
+              Onde ou quando isso apareceu?
+            </label>
             <div className="flex flex-wrap gap-2">
-              {CONTEXTS.map(c => (
-                <button key={c.value} type="button" onClick={() => setForm(f => ({...f, context: f.context === c.value ? "" : c.value}))}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${form.context === c.value ? "bg-violet-600 text-white" : "bg-white/60 border border-[oklch(0.92_0.01_290)] text-[oklch(0.5_0.02_280)] hover:border-violet-300"}`}>
-                  {c.label}
+              {CONTEXTS.map((context) => (
+                <button
+                  key={context.value}
+                  type="button"
+                  onClick={() => setForm((current) => ({ ...current, context: current.context === context.value ? "" : context.value }))}
+                  disabled={pending}
+                  className={`min-h-9 rounded-full px-3 py-1.5 text-xs font-bold transition-all disabled:opacity-60 ${form.context === context.value ? "bg-violet-600 text-white" : "border border-[oklch(0.92_0.01_290)] bg-white/60 text-[oklch(0.5_0.02_280)] hover:border-violet-300"}`}
+                >
+                  {context.label}
                 </button>
               ))}
             </div>
           </div>
 
           <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-[oklch(0.5_0.02_280)] block mb-1.5">Observações (opcional)</label>
-            <textarea value={form.notes} onChange={e => setForm(f => ({...f, notes: e.target.value}))} rows={2} placeholder="O que estava acontecendo?" className="w-full px-4 py-3 rounded-2xl bg-white/70 border border-[oklch(0.92_0.01_290)] text-sm text-[oklch(0.22_0.02_280)] resize-none focus:outline-none focus:ring-2 focus:ring-[oklch(0.55_0.2_280)]/20 transition-all" />
+            <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-[oklch(0.5_0.02_280)]">
+              Observações (opcional)
+            </label>
+            <textarea
+              value={form.notes}
+              onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+              rows={3}
+              placeholder="O que aconteceu? O que ajudou ou dificultou?"
+              disabled={pending}
+              className="w-full resize-none rounded-2xl border border-[oklch(0.92_0.01_290)] bg-white/70 px-4 py-3 text-sm text-[oklch(0.22_0.02_280)] transition-all focus:outline-none focus:ring-2 focus:ring-[oklch(0.55_0.2_280)]/20 disabled:opacity-70"
+            />
           </div>
 
-          {error && <p className="text-xs text-rose-600 font-semibold bg-rose-50 px-3 py-2 rounded-xl">{error}</p>}
+          {error && <InlineError message={error} />}
 
           <div className="flex flex-col-reverse gap-3 sm:flex-row">
-            <button type="button" onClick={onClose} className="h-11 flex-1 rounded-xl border border-[oklch(0.92_0.01_290)] text-sm font-bold text-[oklch(0.5_0.02_280)] transition-colors hover:bg-slate-50">Cancelar</button>
-            <button type="submit" disabled={pending} className="flex h-11 flex-[1.5] items-center justify-center gap-2 rounded-xl gradient-primary text-sm font-black text-white shadow-lg shadow-violet-500/25 transition-all hover:-translate-y-0.5 disabled:opacity-60">
-              {pending ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvando…</> : "Salvar Registro"}
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={pending}
+              className="h-11 flex-1 rounded-xl border border-[oklch(0.92_0.01_290)] text-sm font-bold text-[oklch(0.5_0.02_280)] transition-colors hover:bg-slate-50 disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={pending}
+              aria-busy={pending}
+              className="flex h-11 flex-[1.5] items-center justify-center gap-2 rounded-xl gradient-primary text-sm font-black text-white shadow-lg shadow-violet-500/25 transition-all hover:-translate-y-0.5 disabled:opacity-60"
+            >
+              {pending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                "Salvar diário"
+              )}
             </button>
           </div>
         </form>
       </div>
     </div>
   );
-}
-
-// ─── Main Component ───────────────────────────────────────────────────────────
-
-function scoreText(value: number | null | undefined) {
-  return value ? `${value}/5` : "—";
 }
 
 interface Props {
@@ -164,6 +368,7 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
   const [moodForm, setMoodForm] = useState({ mood_score: 3, anxiety_score: 3, sleep_quality: 3, energy_score: 3, notes: "" });
   const [taskResponse, setTaskResponse] = useState("");
   const [formError, setFormError] = useState("");
+  const [taskError, setTaskError] = useState("");
   const [togglingPending, startTransition] = useTransition();
   const [moodPending, startMoodTransition] = useTransition();
   const [responsePending, startResponseTransition] = useTransition();
@@ -171,43 +376,100 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
 
   const [optimisticTasks, updateOptimistic] = useOptimistic(
     tasks,
-    (current, { id, status }: { id: string; status: string }) =>
-      current.map(t => t.id === id ? { ...t, status: status as PatientTask["status"], completed_at: status === "completed" ? new Date().toISOString() : null } : t)
+    (current, { id, status }: { id: string; status: PatientTask["status"] }) =>
+      current.map((task) =>
+        task.id === id
+          ? { ...task, status, completed_at: status === "completed" ? new Date().toISOString() : null }
+          : task
+      )
   );
 
   async function handleLogout() {
+    if (logoutPending) return;
     setLogoutPending(true);
-    await logoutPatient(); // server action: apaga cookie e redireciona
+    await logoutPatient();
   }
 
   function handleToggle(task: PatientPortalTask) {
     if (togglingPending) return;
-    const newStatus = task.status === "completed" ? "pending" : "completed";
+    const newStatus: PatientTask["status"] = task.status === "completed" ? "pending" : "completed";
+
+    setTaskError("");
     startTransition(async () => {
       updateOptimistic({ id: task.id, status: newStatus });
-      const r = await toggleTaskStatus(task.id, task.status);
-      if (r.success) {
-        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus as PatientTask["status"], completed_at: newStatus === "completed" ? new Date().toISOString() : null } : t));
+      const result = await toggleTaskStatus(task.id, task.status);
+
+      if (result.success) {
+        setTasks((current) =>
+          current.map((item) =>
+            item.id === task.id
+              ? { ...item, status: newStatus, completed_at: newStatus === "completed" ? new Date().toISOString() : null }
+              : item
+          )
+        );
+        return;
       }
+
+      setTaskError(safePatientActionError(result.error, "Não foi possível atualizar a tarefa agora."));
     });
   }
 
   function handleResponseSaved(taskId: string, response: string) {
-    setTasks(prev => prev.map(task => task.id === taskId ? {
-      ...task,
-      patient_feedback: response,
-      responded_at: new Date().toISOString(),
-      status: "completed" as PatientTask["status"],
-      completed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    } : task));
+    const now = new Date().toISOString();
+    setTasks((current) =>
+      current.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              patient_feedback: response,
+              responded_at: now,
+              status: "completed" as PatientTask["status"],
+              completed_at: now,
+              updated_at: now,
+            }
+          : task
+      )
+    );
   }
 
-  function handleMoodSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function openMoodCheckin() {
+    setFormError("");
+    setShowMoodCheckinForm(true);
+  }
+
+  function closeMoodCheckin() {
+    if (moodPending) return;
+    setFormError("");
+    setShowMoodCheckinForm(false);
+  }
+
+  function openTaskResponse(task: PatientPortalTask) {
+    setRespondingTask(task);
+    setTaskResponse(task.patient_feedback ?? "");
+    setFormError("");
+  }
+
+  function closeTaskResponse() {
+    if (responsePending) return;
+    setRespondingTask(null);
+    setTaskResponse("");
+    setFormError("");
+  }
+
+  function handleMoodSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (moodPending) return;
+
     setFormError("");
     startMoodTransition(async () => {
-      const result = await saveMoodCheckin(moodForm);
+      const result = await saveMoodCheckin({
+        mood_score: moodForm.mood_score,
+        anxiety_score: moodForm.anxiety_score,
+        sleep_quality: moodForm.sleep_quality,
+        energy_score: moodForm.energy_score,
+        notes: moodForm.notes.trim() || undefined,
+      });
+
       if (result.success && result.checkin) {
         const checkin: PatientPortalMoodCheckin = {
           id: result.checkin.id,
@@ -219,166 +481,232 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
           notes: result.checkin.notes,
           created_at: result.checkin.created_at,
         };
-        setMoodCheckins(prev => [checkin, ...prev]);
+
+        setMoodCheckins((current) => [checkin, ...current]);
         setMoodForm({ mood_score: 3, anxiety_score: 3, sleep_quality: 3, energy_score: 3, notes: "" });
         setShowMoodCheckinForm(false);
-      } else {
-        setFormError(result.error ?? "Erro ao salvar check-in.");
+        return;
       }
+
+      setFormError(safePatientActionError(result.error, "Não foi possível salvar o check-in agora."));
     });
   }
 
-  function handleTaskResponseSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!respondingTask) return;
+  function handleTaskResponseSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!respondingTask || responsePending) return;
+
+    const response = taskResponse.trim();
+    if (!response) {
+      setFormError("Escreva uma resposta breve antes de enviar.");
+      return;
+    }
+
     setFormError("");
     startResponseTransition(async () => {
-      const result = await respondToTask({ task_id: respondingTask.id, response: taskResponse });
+      const result = await respondToTask({ task_id: respondingTask.id, response });
+
       if (result.success) {
-        handleResponseSaved(respondingTask.id, taskResponse);
+        handleResponseSaved(respondingTask.id, response);
         setRespondingTask(null);
         setTaskResponse("");
-      } else {
-        setFormError(result.error ?? "Erro ao enviar resposta.");
+        return;
       }
+
+      setFormError(safePatientActionError(result.error, "Não foi possível enviar sua resposta agora."));
     });
   }
 
-
-  const firstName = patient.full_name.split(" ")[0];
-  const pending = optimisticTasks.filter(t => t.status !== "completed");
-  const completed = optimisticTasks.filter(t => t.status === "completed");
-  const rate = optimisticTasks.length > 0 ? Math.round((completed.length / optimisticTasks.length) * 100) : 0;
+  const firstName = patient.full_name.trim().split(" ")[0] || "olá";
+  const pendingTasks = optimisticTasks.filter((task) => task.status !== "completed");
+  const completedTasks = optimisticTasks.filter((task) => task.status === "completed");
+  const hasTasks = optimisticTasks.length > 0;
+  const allTasksDone = hasTasks && pendingTasks.length === 0;
+  const progressRate = optimisticTasks.length > 0 ? Math.round((completedTasks.length / optimisticTasks.length) * 100) : 0;
 
   return (
-    <main className="min-h-screen relative overflow-x-hidden bg-gradient-to-br from-[oklch(0.97_0.02_290)] via-[oklch(0.96_0.03_310)] to-[oklch(0.95_0.04_160)]">
+    <main className="relative min-h-screen overflow-x-hidden bg-gradient-to-br from-[oklch(0.97_0.02_290)] via-[oklch(0.96_0.03_310)] to-[oklch(0.95_0.04_160)]">
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -top-32 -left-32 w-[480px] h-[480px] rounded-full bg-[oklch(0.78_0.1_160)]/20 blur-3xl animate-pulse" />
-        <div className="absolute -bottom-40 -right-40 w-[520px] h-[520px] rounded-full bg-[oklch(0.72_0.18_280)]/15 blur-3xl animate-pulse [animation-delay:1.5s]" />
+        <div className="absolute -left-32 -top-32 h-[480px] w-[480px] rounded-full bg-[oklch(0.78_0.1_160)]/20 blur-3xl" />
+        <div className="absolute -bottom-40 -right-40 h-[520px] w-[520px] rounded-full bg-[oklch(0.72_0.18_280)]/15 blur-3xl" />
       </div>
 
       <div className="relative z-10 mx-auto max-w-2xl space-y-6 px-4 py-6 pb-24 sm:py-8">
-
-        {/* Header */}
         <header className="flex items-start justify-between gap-4 sm:items-center">
           <div className="flex min-w-0 items-center gap-3">
             <div className="relative shrink-0">
-              <div className="w-12 h-12 rounded-2xl gradient-primary flex items-center justify-center shadow-lg shadow-violet-500/30">
-                <Heart className="w-6 h-6 text-white fill-white/30" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl gradient-primary shadow-lg shadow-violet-500/30">
+                <Heart className="h-6 w-6 fill-white/30 text-white" />
               </div>
-              <div className="absolute -top-1 -right-1 w-4 h-4 bg-[oklch(0.78_0.1_160)] rounded-full flex items-center justify-center">
-                <Sparkles className="w-2.5 h-2.5 text-white" />
+              <div className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[oklch(0.78_0.1_160)]">
+                <Sparkles className="h-2.5 w-2.5 text-white" />
               </div>
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-medium text-[oklch(0.55_0.04_280)] uppercase tracking-wider">Área do Paciente · Nythos</p>
-              <h1 className="text-xl font-bold text-[oklch(0.22_0.02_280)]">Olá, {firstName} 👋</h1>
+              <p className="text-xs font-medium uppercase tracking-wider text-[oklch(0.55_0.04_280)]">Área do Paciente - Nythos</p>
+              <h1 className="text-xl font-bold text-[oklch(0.22_0.02_280)]">Olá, {firstName}</h1>
+              <p className="mt-1 max-w-xs text-sm leading-relaxed text-[oklch(0.5_0.02_280)]">
+                Seu espaço para acompanhar tarefas, emoções e check-ins com calma.
+              </p>
             </div>
           </div>
-          <button onClick={handleLogout} disabled={logoutPending} title="Sair"
-            className="w-10 h-10 rounded-xl bg-white/60 border border-[oklch(0.92_0.01_290)] text-[oklch(0.5_0.02_280)] hover:bg-white/90 transition-all flex items-center justify-center disabled:opacity-50">
-            {logoutPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={logoutPending}
+            title="Sair com segurança"
+            aria-label="Sair da área do paciente"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[oklch(0.92_0.01_290)] bg-white/60 text-[oklch(0.5_0.02_280)] transition-all hover:bg-white/90 disabled:opacity-50"
+          >
+            {logoutPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
           </button>
         </header>
 
-        {/* Progress */}
         <div className="glass-panel rounded-3xl p-6 shadow-xl shadow-violet-900/5">
-          <div className="flex items-center justify-between mb-4">
+          <div className="mb-4 flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-[oklch(0.55_0.04_280)] uppercase tracking-wider">Progresso Geral</p>
-              <p className="text-2xl font-bold text-[oklch(0.22_0.02_280)] mt-0.5">{rate}%</p>
-              <p className="text-xs text-[oklch(0.55_0.02_280)] mt-0.5">{completed.length} de {optimisticTasks.length} tarefas concluídas</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-[oklch(0.55_0.04_280)]">Seu caminho</p>
+              <p className="mt-0.5 text-2xl font-bold text-[oklch(0.22_0.02_280)]">{progressRate}%</p>
+              <p className="mt-0.5 text-xs text-[oklch(0.55_0.02_280)]">
+                {hasTasks
+                  ? allTasksDone
+                    ? "Tudo em dia por aqui."
+                    : `${completedTasks.length} de ${optimisticTasks.length} tarefas concluídas`
+                  : "Sem tarefas ativas por enquanto."}
+              </p>
             </div>
-            <div className="relative w-20 h-20">
-              <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
+            <div className="relative h-20 w-20">
+              <svg className="h-full w-full -rotate-90" viewBox="0 0 36 36">
                 <circle cx="18" cy="18" r="14" fill="none" stroke="oklch(0.92 0.02 280)" strokeWidth="3" />
-                <circle cx="18" cy="18" r="14" fill="none" stroke="oklch(0.55 0.2 280)" strokeWidth="3" strokeLinecap="round"
-                  strokeDasharray={`${(rate / 100) * 88} 88`} className="transition-all duration-700" />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="oklch(0.55 0.2 280)"
+                  strokeLinecap="round"
+                  strokeDasharray={`${(progressRate / 100) * 88} 88`}
+                  strokeWidth="3"
+                  className="transition-all duration-700"
+                />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <CheckSquare className="w-6 h-6 text-[oklch(0.55_0.2_280)]" />
+                <CheckSquare className="h-6 w-6 text-[oklch(0.55_0.2_280)]" />
               </div>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3 pt-3 border-t border-[oklch(0.92_0.01_290)]/60">
+          <div className="grid grid-cols-3 gap-3 border-t border-[oklch(0.92_0.01_290)]/60 pt-3">
             {[
-              { label: "Pendentes", value: pending.filter(t => t.status === "pending").length, color: "text-[oklch(0.55_0.18_60)]" },
-              { label: "Em andamento", value: pending.filter(t => t.status === "in_progress").length, color: "text-[oklch(0.55_0.2_280)]" },
-              { label: "Concluídas", value: completed.length, color: "text-[oklch(0.55_0.18_160)]" },
-            ].map(s => (
-              <div key={s.label} className="text-center">
-                <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-                <p className="text-[10px] font-medium text-[oklch(0.6_0.02_280)] mt-0.5 leading-tight">{s.label}</p>
+              { label: "Pendentes", value: pendingTasks.filter((task) => task.status === "pending").length, color: "text-[oklch(0.55_0.18_60)]" },
+              { label: "Em andamento", value: pendingTasks.filter((task) => task.status === "in_progress").length, color: "text-[oklch(0.55_0.2_280)]" },
+              { label: "Concluídas", value: completedTasks.length, color: "text-[oklch(0.55_0.18_160)]" },
+            ].map((stat) => (
+              <div key={stat.label} className="text-center">
+                <p className={`text-xl font-bold ${stat.color}`}>{stat.value}</p>
+                <p className="mt-0.5 text-[10px] font-medium leading-tight text-[oklch(0.6_0.02_280)]">{stat.label}</p>
               </div>
             ))}
           </div>
+          <p className="mt-4 rounded-2xl bg-white/55 px-3 py-2 text-xs leading-relaxed text-[oklch(0.48_0.03_280)]">
+            Suas respostas ajudam seu terapeuta a acompanhar como o processo está chegando no seu dia a dia.
+          </p>
         </div>
 
-        {/* Tasks */}
         <section>
-          <div className="flex items-center gap-2 mb-3 px-1">
-            <ListChecks className="w-4 h-4 text-[oklch(0.55_0.2_280)]" />
-            <h2 className="text-base font-bold text-[oklch(0.22_0.02_280)]">Minhas Tarefas</h2>
-            {pending.length > 0 && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[oklch(0.55_0.2_280)]/10 text-[oklch(0.45_0.2_280)]">
-                {pending.length} pendente{pending.length !== 1 ? "s" : ""}
-              </span>
-            )}
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-3 px-1">
+            <div>
+              <div className="flex items-center gap-2">
+                <ListChecks className="h-4 w-4 text-[oklch(0.55_0.2_280)]" />
+                <h2 className="text-base font-bold text-[oklch(0.22_0.02_280)]">Minhas tarefas</h2>
+                {pendingTasks.length > 0 && (
+                  <span className="rounded-full bg-[oklch(0.55_0.2_280)]/10 px-2 py-0.5 text-[10px] font-bold text-[oklch(0.45_0.2_280)]">
+                    {pendingTasks.length} pendente{pendingTasks.length !== 1 ? "s" : ""}
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-[oklch(0.52_0.02_280)]">
+                Pequenos passos combinados com seu terapeuta.
+              </p>
+            </div>
           </div>
 
-          {optimisticTasks.length === 0 ? (
-            <div className="glass-panel rounded-3xl p-10 text-center shadow-lg">
-              <CheckSquare className="w-7 h-7 text-[oklch(0.55_0.2_280)] mx-auto mb-3" />
-              <p className="font-semibold text-[oklch(0.35_0.03_280)]">Nenhuma tarefa ainda</p>
-              <p className="text-sm text-[oklch(0.55_0.02_280)] mt-1">Seu terapeuta atribuirá atividades em breve.</p>
-            </div>
+          {taskError && <div className="mb-3"><InlineError message={taskError} /></div>}
+
+          {!hasTasks ? (
+            <EmptyState
+              icon={<CheckSquare className="h-6 w-6" />}
+              title="Nenhuma tarefa por enquanto"
+              description="Quando seu terapeuta enviar uma atividade, ela aparecerá aqui de forma simples."
+            />
           ) : (
             <div className="space-y-3">
-              {[...pending, ...completed].map(task => {
-                const categoryKey = (task.category ?? "general") as keyof typeof CATEGORY_META;
+              {allTasksDone && (
+                <div className="glass-panel rounded-2xl border border-emerald-200/60 bg-emerald-50/40 p-4 shadow-md">
+                  <p className="flex items-center gap-2 text-sm font-black text-emerald-700">
+                    <CheckSquare className="h-4 w-4" />
+                    Tudo concluído por enquanto
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-emerald-800/70">
+                    Você já respondeu ou marcou as tarefas abertas. Novas atividades aparecerão aqui.
+                  </p>
+                </div>
+              )}
+
+              {[...pendingTasks, ...completedTasks].map((task) => {
+                const categoryKey = task.category ?? "general";
                 const meta = CATEGORY_META[categoryKey] ?? CATEGORY_META.general;
                 const due = dueDateLabel(task.due_date);
                 const isCompleted = task.status === "completed";
 
                 return (
-                  <div key={task.id} className={`glass-panel rounded-2xl p-4 shadow-md border transition-all duration-300 ${isCompleted ? "opacity-60 border-[oklch(0.92_0.01_290)]/40" : "border-[oklch(0.92_0.01_290)]/60 hover:border-[oklch(0.78_0.12_280)]/40"}`}>
+                  <div
+                    key={task.id}
+                    className={`glass-panel rounded-2xl border p-4 shadow-md transition-all duration-300 ${isCompleted ? "border-[oklch(0.92_0.01_290)]/40 opacity-70" : "border-[oklch(0.92_0.01_290)]/60 hover:border-[oklch(0.78_0.12_280)]/40"}`}
+                  >
                     <div className="flex items-start gap-3">
-                      <button onClick={() => handleToggle(task)} disabled={togglingPending}
-                        className={`mt-0.5 shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${isCompleted ? "bg-[oklch(0.55_0.18_160)] border-[oklch(0.55_0.18_160)]" : "border-[oklch(0.78_0.12_280)] hover:border-[oklch(0.55_0.2_280)]"}`}>
-                        {isCompleted ? <span className="text-white text-xs font-black">✓</span> : null}
+                      <button
+                        type="button"
+                        onClick={() => handleToggle(task)}
+                        disabled={togglingPending}
+                        aria-label={isCompleted ? "Marcar tarefa como pendente" : "Marcar tarefa como concluída"}
+                        aria-busy={togglingPending}
+                        className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 transition-all disabled:opacity-50 ${isCompleted ? "border-[oklch(0.55_0.18_160)] bg-[oklch(0.55_0.18_160)]" : "border-[oklch(0.78_0.12_280)] hover:border-[oklch(0.55_0.2_280)]"}`}
+                      >
+                        {isCompleted ? <span className="text-xs font-black text-white">✓</span> : null}
                       </button>
 
-
-                      <div className="flex-1 min-w-0">
-                        <p className={`font-semibold text-sm leading-snug ${isCompleted ? "line-through text-[oklch(0.5_0.02_280)]" : "text-[oklch(0.22_0.02_280)]"}`}>{task.title}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-sm font-semibold leading-snug ${isCompleted ? "line-through text-[oklch(0.5_0.02_280)]" : "text-[oklch(0.22_0.02_280)]"}`}>
+                          {task.title}
+                        </p>
                         {task.description && !isCompleted && (
-                          <p className="text-xs text-[oklch(0.5_0.02_280)] mt-1 leading-relaxed line-clamp-2">{task.description}</p>
+                          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-[oklch(0.5_0.02_280)]">{task.description}</p>
                         )}
                         {task.patient_feedback && (
-                          <p className="text-xs text-[oklch(0.45_0.14_160)] mt-1 leading-relaxed line-clamp-2">
+                          <p className="mt-2 line-clamp-2 rounded-2xl bg-emerald-50/70 px-3 py-2 text-xs leading-relaxed text-[oklch(0.45_0.14_160)]">
                             Resposta enviada: {task.patient_feedback}
                           </p>
                         )}
-                        <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                          <span className={`text-[10px] font-medium ${meta.color} flex items-center gap-1`}>{meta.icon}{meta.label}</span>
+                        <div className="mt-2 flex flex-wrap items-center gap-3">
+                          <span className={`flex items-center gap-1 text-[10px] font-medium ${meta.color}`}>
+                            {meta.icon}
+                            {meta.label}
+                          </span>
                           {due && !isCompleted && (
                             <span className={`flex items-center gap-1 text-[10px] font-medium ${due.overdue ? "text-rose-500" : "text-[oklch(0.55_0.02_280)]"}`}>
-                              {due.overdue ? <AlertCircle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}{due.text}
+                              {due.overdue ? <AlertCircle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+                              {due.text}
                             </span>
                           )}
                         </div>
                         {!isCompleted && (
                           <button
                             type="button"
-                            onClick={() => {
-                              setRespondingTask(task);
-                              setTaskResponse(task.patient_feedback ?? "");
-                              setFormError("");
-                            }}
-                            className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[oklch(0.55_0.2_280)]/10 px-3 py-1.5 text-xs font-black text-[oklch(0.45_0.2_280)]"
+                            onClick={() => openTaskResponse(task)}
+                            className="mt-3 inline-flex min-h-9 items-center gap-1.5 rounded-full bg-[oklch(0.55_0.2_280)]/10 px-3 py-1.5 text-xs font-black text-[oklch(0.45_0.2_280)]"
                           >
-                            <MessageSquare className="w-3.5 h-3.5" />
-                            Responder
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            Responder com calma
                           </button>
                         )}
                       </div>
@@ -390,35 +718,46 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
           )}
         </section>
 
-        {/* Mood Check-ins */}
         <section>
-          <div className="flex items-center justify-between mb-3 px-1">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-[oklch(0.55_0.2_280)]" />
-              <h2 className="text-base font-bold text-[oklch(0.22_0.02_280)]">Check-in de Humor</h2>
+          <div className="mb-3 flex items-start justify-between gap-3 px-1">
+            <div>
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-[oklch(0.55_0.2_280)]" />
+                <h2 className="text-base font-bold text-[oklch(0.22_0.02_280)]">Check-in de humor</h2>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-[oklch(0.52_0.02_280)]">
+                Registre sinais simples do dia para acompanhar padrões ao longo do tempo.
+              </p>
             </div>
-            <button onClick={() => { setShowMoodCheckinForm(true); setFormError(""); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full gradient-primary text-white text-xs font-black shadow-lg shadow-violet-500/25 hover:-translate-y-0.5 transition-all active:scale-95">
-              <Plus className="w-3.5 h-3.5" /> Check-in
+            <button
+              type="button"
+              onClick={openMoodCheckin}
+              className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-full gradient-primary px-3 py-1.5 text-xs font-black text-white shadow-lg shadow-violet-500/25 transition-all hover:-translate-y-0.5 active:scale-95"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Check-in
             </button>
           </div>
 
           {moodCheckins.length === 0 ? (
-            <div className="glass-panel rounded-3xl p-8 text-center shadow-lg">
-              <TrendingUp className="w-7 h-7 text-[oklch(0.55_0.2_280)] mx-auto mb-3" />
-              <p className="font-semibold text-[oklch(0.35_0.03_280)]">Nenhum check-in registrado</p>
-              <p className="text-sm text-[oklch(0.55_0.02_280)] mt-1">Registre como vocÃª estÃ¡ hoje.</p>
-            </div>
+            <EmptyState
+              icon={<TrendingUp className="h-6 w-6" />}
+              title="Nenhum check-in ainda"
+              description="Quando quiser, registre como estão humor, ansiedade, sono e energia. Isso ajuda seu terapeuta a perceber padrões."
+              actionLabel="Fazer primeiro check-in"
+              onAction={openMoodCheckin}
+            />
           ) : (
             <div className="space-y-3">
-              {moodCheckins.slice(0, 3).map(entry => (
-                <div key={entry.id} className="glass-panel rounded-2xl p-4 shadow-md border border-[oklch(0.92_0.01_290)]/60">
+              {moodCheckins.slice(0, 3).map((entry) => (
+                <div key={entry.id} className="glass-panel rounded-2xl border border-[oklch(0.92_0.01_290)]/60 p-4 shadow-md">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-[oklch(0.6_0.02_280)] flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />{relDate(entry.created_at)}
+                    <span className="flex items-center gap-1 text-xs text-[oklch(0.6_0.02_280)]">
+                      <Calendar className="h-3 w-3" />
+                      {relDate(entry.created_at)}
                     </span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[oklch(0.55_0.2_280)]/10 text-[oklch(0.45_0.2_280)]">
-                      Relatado
+                    <span className="rounded-full bg-[oklch(0.55_0.2_280)]/10 px-2 py-0.5 text-[10px] font-bold text-[oklch(0.45_0.2_280)]">
+                      Registrado
                     </span>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
@@ -434,60 +773,84 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
                       </div>
                     ))}
                   </div>
-                  {entry.notes && <p className="mt-2 line-clamp-2 text-xs italic text-[oklch(0.5_0.02_280)]">"{entry.notes}"</p>}
+                  {entry.notes && (
+                    <p className="mt-2 line-clamp-2 rounded-2xl bg-white/45 px-3 py-2 text-xs leading-relaxed text-[oklch(0.5_0.02_280)]">
+                      {entry.notes}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
           )}
         </section>
 
-        {/* Diary */}
         <section>
-          <div className="flex items-center justify-between mb-3 px-1">
-            <div className="flex items-center gap-2">
-              <BookHeart className="w-4 h-4 text-[oklch(0.55_0.18_340)]" />
-              <h2 className="text-base font-bold text-[oklch(0.22_0.02_280)]">Meu Diário de Emoções</h2>
+          <div className="mb-3 flex items-start justify-between gap-3 px-1">
+            <div>
+              <div className="flex items-center gap-2">
+                <BookHeart className="h-4 w-4 text-[oklch(0.55_0.18_340)]" />
+                <h2 className="text-base font-bold text-[oklch(0.22_0.02_280)]">Diário emocional</h2>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-[oklch(0.52_0.02_280)]">
+                Um espaço breve para nomear emoções e levar mais contexto para a terapia.
+              </p>
             </div>
-            <button onClick={() => setShowDiaryForm(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full gradient-primary text-white text-xs font-black shadow-lg shadow-violet-500/25 hover:-translate-y-0.5 transition-all active:scale-95">
-              <Plus className="w-3.5 h-3.5" /> Nova Entrada
+            <button
+              type="button"
+              onClick={() => setShowDiaryForm(true)}
+              className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-full gradient-primary px-3 py-1.5 text-xs font-black text-white shadow-lg shadow-violet-500/25 transition-all hover:-translate-y-0.5 active:scale-95"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Registrar
             </button>
           </div>
 
           {diary.length === 0 ? (
-            <div className="glass-panel rounded-3xl p-8 text-center shadow-lg">
-              <BookHeart className="w-7 h-7 text-[oklch(0.55_0.18_340)] mx-auto mb-3" />
-              <p className="font-semibold text-[oklch(0.35_0.03_280)]">Diário vazio por enquanto</p>
-              <p className="text-sm text-[oklch(0.55_0.02_280)] mt-1">Registre sua primeira emoção!</p>
-              <button onClick={() => setShowDiaryForm(true)} className="mt-4 px-6 py-2.5 rounded-xl gradient-primary text-white text-sm font-black shadow-lg shadow-violet-500/20 hover:-translate-y-0.5 transition-all">
-                Registrar Emoção
-              </button>
-            </div>
+            <EmptyState
+              icon={<BookHeart className="h-6 w-6" />}
+              title="Diário vazio por enquanto"
+              description="Você pode registrar uma emoção em poucos segundos, sem precisar escrever muito."
+              actionLabel="Registrar emoção"
+              onAction={() => setShowDiaryForm(true)}
+            />
           ) : (
             <div className="space-y-3">
-              {diary.map(entry => {
-                const im = intensityMeta(entry.intensity);
+              {diary.map((entry) => {
+                const intensity = intensityMeta(entry.intensity);
+
                 return (
-                  <div key={entry.id} className="glass-panel rounded-2xl p-4 shadow-md border border-[oklch(0.92_0.01_290)]/60">
+                  <div key={entry.id} className="glass-panel rounded-2xl border border-[oklch(0.92_0.01_290)]/60 p-4 shadow-md">
                     <div className="flex items-start gap-3">
-                      <div className={`mt-0.5 w-8 h-8 rounded-xl bg-[oklch(0.97_0.01_280)] flex items-center justify-center shrink-0 ${im.color}`}>{im.icon}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <p className="font-semibold text-sm text-[oklch(0.22_0.02_280)] capitalize">{entry.emotion}</p>
+                      <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[oklch(0.97_0.01_280)] ${intensity.color}`}>
+                        {intensity.icon}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-semibold capitalize text-[oklch(0.22_0.02_280)]">{entry.emotion}</p>
                           <div className="flex items-center gap-2">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full bg-current/10 ${im.color}`}>{im.label}</span>
-                            <span className="text-[10px] text-[oklch(0.6_0.02_280)] flex items-center gap-1">
-                              <Calendar className="w-3 h-3" />{relDate(entry.created_at ?? new Date().toISOString())}
+                            <span className={`rounded-full bg-current/10 px-2 py-0.5 text-[10px] font-bold ${intensity.color}`}>
+                              {intensity.label}
+                            </span>
+                            <span className="flex items-center gap-1 text-[10px] text-[oklch(0.6_0.02_280)]">
+                              <Calendar className="h-3 w-3" />
+                              {relDate(entry.created_at)}
                             </span>
                           </div>
                         </div>
                         <div className="mt-2 flex items-center gap-2">
-                          <div className="flex-1 h-1.5 rounded-full bg-[oklch(0.92_0.02_280)]">
-                            <div className="h-full rounded-full bg-gradient-to-r from-[oklch(0.78_0.1_160)] to-[oklch(0.55_0.18_340)] transition-all duration-500" style={{ width: `${(entry.intensity / 10) * 100}%` }} />
+                          <div className="h-1.5 flex-1 rounded-full bg-[oklch(0.92_0.02_280)]">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-[oklch(0.78_0.1_160)] to-[oklch(0.55_0.18_340)] transition-all duration-500"
+                              style={{ width: `${(entry.intensity / 10) * 100}%` }}
+                            />
                           </div>
-                          <span className="text-[10px] font-bold text-[oklch(0.5_0.02_280)] w-6 text-right">{entry.intensity}/10</span>
+                          <span className="w-6 text-right text-[10px] font-bold text-[oklch(0.5_0.02_280)]">{entry.intensity}/10</span>
                         </div>
-                        {entry.notes && <p className="text-xs text-[oklch(0.5_0.02_280)] mt-2 leading-relaxed italic line-clamp-2">"{entry.notes}"</p>}
+                        {entry.notes && (
+                          <p className="mt-2 line-clamp-2 rounded-2xl bg-white/45 px-3 py-2 text-xs leading-relaxed text-[oklch(0.5_0.02_280)]">
+                            {entry.notes}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -497,9 +860,9 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
           )}
         </section>
 
-        <footer className="pt-2 flex items-center justify-center gap-2 text-xs text-[oklch(0.6_0.01_290)]">
-          <ShieldCheck className="w-3.5 h-3.5 text-[oklch(0.55_0.18_160)]" />
-          <span>Dados protegidos pela LGPD · Nythos</span>
+        <footer className="flex items-center justify-center gap-2 pt-2 text-xs text-[oklch(0.6_0.01_290)]">
+          <ShieldCheck className="h-3.5 w-3.5 text-[oklch(0.55_0.18_160)]" />
+          <span>Dados protegidos pela LGPD - Nythos</span>
         </footer>
       </div>
 
@@ -507,47 +870,91 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
         <DiaryForm
           patientId={patient.id}
           onClose={() => setShowDiaryForm(false)}
-          onSaved={(entry) => setDiary(prev => [entry, ...prev])}
+          onSaved={(entry) => setDiary((current) => [entry, ...current])}
         />
       )}
 
       {showMoodCheckinForm && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 backdrop-blur-sm sm:items-center sm:p-4" onClick={(e) => e.target === e.currentTarget && setShowMoodCheckinForm(false)}>
-          <div className="glass-panel w-full max-w-md max-h-[85dvh] space-y-5 overflow-y-auto rounded-[28px] p-4 shadow-2xl shadow-violet-900/20 sm:rounded-3xl sm:p-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-black text-[oklch(0.22_0.02_280)] flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-[oklch(0.55_0.2_280)]" /> Check-in
-              </h3>
-              <button onClick={() => setShowMoodCheckinForm(false)} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors"><X className="w-4 h-4" /></button>
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 backdrop-blur-sm sm:items-center sm:p-4"
+          onClick={(event) => event.target === event.currentTarget && closeMoodCheckin()}
+        >
+          <div className="glass-panel max-h-[85dvh] w-full max-w-md space-y-5 overflow-y-auto rounded-[28px] p-4 shadow-2xl shadow-violet-900/20 sm:rounded-3xl sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="flex items-center gap-2 text-lg font-black text-[oklch(0.22_0.02_280)]">
+                  <TrendingUp className="h-5 w-5 text-[oklch(0.55_0.2_280)]" />
+                  Check-in de hoje
+                </h3>
+                <p className="mt-1 text-sm leading-relaxed text-[oklch(0.5_0.02_280)]">
+                  Use notas rápidas. Não precisa estar perfeito.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeMoodCheckin}
+                disabled={moodPending}
+                aria-label="Fechar check-in"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
             <form onSubmit={handleMoodSubmit} className="space-y-4">
-              {[
-                { key: "mood_score", label: "Humor", icon: Smile },
-                { key: "anxiety_score", label: "Ansiedade", icon: Brain },
-                { key: "sleep_quality", label: "Sono", icon: Moon },
-                { key: "energy_score", label: "Energia", icon: Battery },
-              ].map(({ key, label, icon: Icon }) => (
+              {MOOD_FIELDS.map(({ key, label, icon: Icon, low, high }) => (
                 <div key={key}>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-[oklch(0.5_0.02_280)] mb-1.5 flex items-center gap-1.5">
-                    <Icon className="w-3.5 h-3.5" />
-                    {label}: {moodForm[key as keyof typeof moodForm]}/5
+                  <label className="mb-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[oklch(0.5_0.02_280)]">
+                    <Icon className="h-3.5 w-3.5" />
+                    {label}: {moodForm[key]}/5
                   </label>
                   <input
                     type="range"
                     min="1"
                     max="5"
-                    value={moodForm[key as keyof typeof moodForm]}
-                    onChange={e => setMoodForm(prev => ({ ...prev, [key]: +e.target.value }))}
+                    value={moodForm[key]}
+                    onChange={(event) => setMoodForm((current) => ({ ...current, [key]: Number(event.target.value) }))}
+                    disabled={moodPending}
                     className="w-full accent-violet-600"
                   />
+                  <div className="mt-1 flex justify-between text-[10px] font-medium text-[oklch(0.6_0.02_280)]">
+                    <span>{low}</span>
+                    <span>{high}</span>
+                  </div>
                 </div>
               ))}
-              <textarea value={moodForm.notes} onChange={e => setMoodForm(f => ({...f, notes: e.target.value}))} rows={2} placeholder="Algo importante sobre hoje? (opcional)" className="w-full px-4 py-3 rounded-2xl bg-white/70 border border-[oklch(0.92_0.01_290)] text-sm text-[oklch(0.22_0.02_280)] resize-none focus:outline-none focus:ring-2 focus:ring-[oklch(0.55_0.2_280)]/20 transition-all" />
-              {formError && <p className="text-xs text-rose-600 font-semibold bg-rose-50 px-3 py-2 rounded-xl">{formError}</p>}
+
+              <textarea
+                value={moodForm.notes}
+                onChange={(event) => setMoodForm((current) => ({ ...current, notes: event.target.value }))}
+                rows={3}
+                placeholder="Algo importante sobre hoje? Pode ser uma frase curta."
+                disabled={moodPending}
+                className="w-full resize-none rounded-2xl border border-[oklch(0.92_0.01_290)] bg-white/70 px-4 py-3 text-sm text-[oklch(0.22_0.02_280)] transition-all focus:outline-none focus:ring-2 focus:ring-[oklch(0.55_0.2_280)]/20 disabled:opacity-70"
+              />
+              {formError && <InlineError message={formError} />}
               <div className="flex flex-col-reverse gap-3 sm:flex-row">
-                <button type="button" onClick={() => setShowMoodCheckinForm(false)} className="h-11 flex-1 rounded-xl border border-[oklch(0.92_0.01_290)] text-sm font-bold text-[oklch(0.5_0.02_280)] transition-colors hover:bg-slate-50">Cancelar</button>
-                <button type="submit" disabled={moodPending} className="flex h-11 flex-[1.5] items-center justify-center gap-2 rounded-xl gradient-primary text-sm font-black text-white shadow-lg shadow-violet-500/25 transition-all hover:-translate-y-0.5 disabled:opacity-60">
-                  {moodPending ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvando...</> : "Salvar Check-in"}
+                <button
+                  type="button"
+                  onClick={closeMoodCheckin}
+                  disabled={moodPending}
+                  className="h-11 flex-1 rounded-xl border border-[oklch(0.92_0.01_290)] text-sm font-bold text-[oklch(0.5_0.02_280)] transition-colors hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={moodPending}
+                  aria-busy={moodPending}
+                  className="flex h-11 flex-[1.5] items-center justify-center gap-2 rounded-xl gradient-primary text-sm font-black text-white shadow-lg shadow-violet-500/25 transition-all hover:-translate-y-0.5 disabled:opacity-60"
+                >
+                  {moodPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Salvando...
+                    </>
+                  ) : (
+                    "Salvar check-in"
+                  )}
                 </button>
               </div>
             </form>
@@ -556,22 +963,65 @@ export function InteractivePatientDashboard({ patient, initialTasks, initialDiar
       )}
 
       {respondingTask && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 backdrop-blur-sm sm:items-center sm:p-4" onClick={(e) => e.target === e.currentTarget && setRespondingTask(null)}>
-          <div className="glass-panel w-full max-w-md max-h-[85dvh] space-y-5 overflow-y-auto rounded-[28px] p-4 shadow-2xl shadow-violet-900/20 sm:rounded-3xl sm:p-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-black text-[oklch(0.22_0.02_280)] flex items-center gap-2">
-                <MessageSquare className="w-5 h-5 text-[oklch(0.55_0.2_280)]" /> Responder tarefa
-              </h3>
-              <button onClick={() => setRespondingTask(null)} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors"><X className="w-4 h-4" /></button>
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 backdrop-blur-sm sm:items-center sm:p-4"
+          onClick={(event) => event.target === event.currentTarget && closeTaskResponse()}
+        >
+          <div className="glass-panel max-h-[85dvh] w-full max-w-md space-y-5 overflow-y-auto rounded-[28px] p-4 shadow-2xl shadow-violet-900/20 sm:rounded-3xl sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="flex items-center gap-2 text-lg font-black text-[oklch(0.22_0.02_280)]">
+                  <MessageSquare className="h-5 w-5 text-[oklch(0.55_0.2_280)]" />
+                  Responder tarefa
+                </h3>
+                <p className="mt-1 text-sm leading-relaxed text-[oklch(0.5_0.02_280)]">
+                  Seu terapeuta verá essa resposta para acompanhar seu processo.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeTaskResponse}
+                disabled={responsePending}
+                aria-label="Fechar resposta da tarefa"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
-            <p className="text-sm font-semibold text-[oklch(0.22_0.02_280)]">{respondingTask.title}</p>
+            <p className="rounded-2xl bg-white/55 px-3 py-2 text-sm font-semibold text-[oklch(0.22_0.02_280)]">{respondingTask.title}</p>
             <form onSubmit={handleTaskResponseSubmit} className="space-y-4">
-              <textarea value={taskResponse} onChange={e => setTaskResponse(e.target.value)} rows={5} placeholder="Escreva sua resposta ou relato breve..." className="w-full px-4 py-3 rounded-2xl bg-white/70 border border-[oklch(0.92_0.01_290)] text-sm text-[oklch(0.22_0.02_280)] resize-none focus:outline-none focus:ring-2 focus:ring-[oklch(0.55_0.2_280)]/20 transition-all" />
-              {formError && <p className="text-xs text-rose-600 font-semibold bg-rose-50 px-3 py-2 rounded-xl">{formError}</p>}
+              <textarea
+                value={taskResponse}
+                onChange={(event) => setTaskResponse(event.target.value)}
+                rows={5}
+                placeholder="Escreva do seu jeito. Pode ser breve."
+                disabled={responsePending}
+                className="w-full resize-none rounded-2xl border border-[oklch(0.92_0.01_290)] bg-white/70 px-4 py-3 text-sm text-[oklch(0.22_0.02_280)] transition-all focus:outline-none focus:ring-2 focus:ring-[oklch(0.55_0.2_280)]/20 disabled:opacity-70"
+              />
+              {formError && <InlineError message={formError} />}
               <div className="flex flex-col-reverse gap-3 sm:flex-row">
-                <button type="button" onClick={() => setRespondingTask(null)} className="h-11 flex-1 rounded-xl border border-[oklch(0.92_0.01_290)] text-sm font-bold text-[oklch(0.5_0.02_280)] transition-colors hover:bg-slate-50">Cancelar</button>
-                <button type="submit" disabled={responsePending || !taskResponse.trim()} className="flex h-11 flex-[1.5] items-center justify-center gap-2 rounded-xl gradient-primary text-sm font-black text-white shadow-lg shadow-violet-500/25 transition-all hover:-translate-y-0.5 disabled:opacity-60">
-                  {responsePending ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando...</> : "Enviar resposta"}
+                <button
+                  type="button"
+                  onClick={closeTaskResponse}
+                  disabled={responsePending}
+                  className="h-11 flex-1 rounded-xl border border-[oklch(0.92_0.01_290)] text-sm font-bold text-[oklch(0.5_0.02_280)] transition-colors hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={responsePending || !taskResponse.trim()}
+                  aria-busy={responsePending}
+                  className="flex h-11 flex-[1.5] items-center justify-center gap-2 rounded-xl gradient-primary text-sm font-black text-white shadow-lg shadow-violet-500/25 transition-all hover:-translate-y-0.5 disabled:opacity-60"
+                >
+                  {responsePending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Enviando...
+                    </>
+                  ) : (
+                    "Enviar resposta"
+                  )}
                 </button>
               </div>
             </form>

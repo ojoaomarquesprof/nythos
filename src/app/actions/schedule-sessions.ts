@@ -1467,7 +1467,7 @@ export async function completeScheduleSession(
     const hasActivePackageUsageAfter = shouldCountPackageUsageAsActive(existingPackageUsageAfter?.status);
 
     let billingCreated = !hadActiveBillingBefore && hasActiveBillingAfter;
-    let billingAlreadyExists = hadActiveBillingBefore || (hasActiveBillingAfter && !billingCreated);
+    const billingAlreadyExists = hadActiveBillingBefore || (hasActiveBillingAfter && !billingCreated);
     let billingSkippedReason: CompleteSessionResult["billingSkippedReason"];
     const packageCreditConsumed =
       billingMode === "package" && !hadActivePackageUsageBefore && hasActivePackageUsageAfter;

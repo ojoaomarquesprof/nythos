@@ -268,11 +268,99 @@ function FieldShell({ children, className }: { children: React.ReactNode; classN
   return <div className={cn("space-y-1.5", className)}>{children}</div>;
 }
 
+function FieldHint({ children }: { children: React.ReactNode }) {
+  return <p className="text-[11px] leading-relaxed text-muted-foreground">{children}</p>;
+}
+
 function nativeSelectClassName(className?: string) {
   return cn(
     "h-10 w-full rounded-xl border border-border/70 bg-white/80 px-3 text-sm font-medium text-foreground shadow-sm outline-none transition-all",
     "hover:border-primary/20 focus:border-primary/40 focus:bg-white focus:ring-4 focus:ring-primary/10",
     className
+  );
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function getFriendlyPackageBlockMessage(reason: string | null, isRecurring: boolean) {
+  if (!reason) return null;
+  if (reason === "package_without_balance") {
+    return isRecurring
+      ? "Este pacote não tem créditos suficientes para todas as sessões da recorrência."
+      : "Este pacote não tem crédito disponível para esta data.";
+  }
+  if (reason === "package_payment_blocked") {
+    return "Este pacote ainda precisa estar pago para ser usado nesta sessão.";
+  }
+  if (reason === "package_expired") {
+    return "Este pacote não cobre a data escolhida. Revise a validade ou selecione outro pacote.";
+  }
+  if (reason === "package_not_active") {
+    return "Este pacote não está ativo para novos agendamentos.";
+  }
+  return SESSION_PACKAGE_SCHEDULE_BLOCK_MESSAGES[reason as keyof typeof SESSION_PACKAGE_SCHEDULE_BLOCK_MESSAGES] ?? null;
+}
+
+function getCompleteSessionFinancialMessage(result: {
+  billingCreated?: boolean;
+  billingAlreadyExists?: boolean;
+  billingSkippedReason?: "courtesy_or_zero_value" | "package_session";
+  packageCreditConsumed?: boolean;
+  packageCreditAlreadyConsumed?: boolean;
+}) {
+  if (result.packageCreditConsumed) {
+    return "Um crédito do pacote foi consumido.";
+  }
+  if (result.packageCreditAlreadyConsumed) {
+    return "O crédito do pacote já estava consumido para esta sessão.";
+  }
+  if (result.billingCreated) {
+    return "Uma pendência financeira foi criada para acompanhamento.";
+  }
+  if (result.billingAlreadyExists) {
+    return "O lançamento financeiro vinculado já estava registrado.";
+  }
+  if (result.billingSkippedReason === "courtesy_or_zero_value") {
+    return "Sessão marcada como cortesia, sem geração de cobrança.";
+  }
+  if (result.billingSkippedReason === "package_session") {
+    return "Sessão vinculada a pacote, sem cobrança avulsa.";
+  }
+  return "Financeiro e pacote foram preservados conforme a configuração da sessão.";
+}
+
+function ScheduleEmptyState({
+  title,
+  description,
+  ctaLabel = "Agendar primeira sessão",
+  onSchedule,
+  compact = false,
+}: {
+  title: string;
+  description: string;
+  ctaLabel?: string;
+  onSchedule: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border border-dashed border-border/80 bg-white/70 text-center shadow-sm",
+        compact ? "p-4" : "p-6"
+      )}
+    >
+      <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+        <CalendarCheck2 className="size-5" />
+      </div>
+      <p className="text-sm font-semibold text-foreground">{title}</p>
+      <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">{description}</p>
+      <Button type="button" size="sm" className="mt-4 h-8 rounded-2xl" onClick={onSchedule}>
+        <Plus className="size-3.5" />
+        {ctaLabel}
+      </Button>
+    </div>
   );
 }
 
@@ -326,16 +414,22 @@ function PatientCombobox({
 
   useEffect(() => {
     if (!open) {
-      setSearch("");
-      setActiveIndex(0);
-      return;
+      const timer = window.setTimeout(() => {
+        setSearch("");
+        setActiveIndex(0);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
 
     const selectedIndex = filteredPatients.findIndex((patient) => patient.id === value);
-    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
-
+    const timer = window.setTimeout(() => {
+      setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    }, 0);
     const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
-    return () => window.cancelAnimationFrame(frame);
+    return () => {
+      window.clearTimeout(timer);
+      window.cancelAnimationFrame(frame);
+    };
   }, [filteredPatients, open, value]);
 
   function handleSelect(patientId: string) {
@@ -528,6 +622,7 @@ export default function SchedulePage() {
   const [reversingSession, setReversingSession] = useState(false);
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const handledPrefillRef = React.useRef(false);
 
   useEffect(() => {
     if (scrollRef.current && schedule.view !== "month") {
@@ -682,11 +777,7 @@ export default function SchedulePage() {
       ? "Recorrência sem data final não pode usar pacote nesta fase."
       : !selectedPackage
         ? "Selecione um pacote para esta sessão."
-        : selectedPackageBlockReason === "package_without_balance" && schedule.newSession.is_recurring
-          ? "O pacote selecionado não possui saldo suficiente para esta recorrência."
-          : selectedPackageBlockReason
-            ? SESSION_PACKAGE_SCHEDULE_BLOCK_MESSAGES[selectedPackageBlockReason]
-            : null
+        : getFriendlyPackageBlockMessage(selectedPackageBlockReason, schedule.newSession.is_recurring)
     : null;
 
   function setBillingMode(nextMode: "single" | "free" | "package") {
@@ -729,6 +820,53 @@ export default function SchedulePage() {
               : "",
     });
   }
+
+  const openNewSessionDialog = React.useCallback(
+    (targetDate: Date = schedule.currentDate, patientId = schedule.newSession.patient_id) => {
+      const patient = schedule.patients.find((item) => item.id === patientId) ?? null;
+      const resolvedPrice = patient?.session_price ?? schedule.profile?.session_price_default ?? suggestedPrice;
+      const nextBillingMode = schedule.newSession.billing_mode === "package" ? "single" : schedule.newSession.billing_mode;
+
+      schedule.setCurrentDate(targetDate);
+      schedule.setSelectedDate(targetDate);
+      schedule.setNewSession({
+        ...schedule.newSession,
+        patient_id: patient?.id ?? "",
+        scheduled_at: formatIsoDate(targetDate),
+        package_id: "",
+        billing_mode: nextBillingMode,
+        session_price:
+          nextBillingMode === "free"
+            ? "0"
+            : resolvedPrice != null
+              ? String(resolvedPrice)
+              : schedule.newSession.session_price,
+      });
+      setScheduleError(null);
+      schedule.setShowNewSession(true);
+    },
+    [
+      schedule,
+      suggestedPrice,
+    ]
+  );
+
+  useEffect(() => {
+    if (handledPrefillRef.current || schedule.patients.length === 0) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const patientId = params.get("patientId") ?? params.get("patient_id");
+    if (!patientId || !schedule.patients.some((patient) => patient.id === patientId)) return;
+
+    handledPrefillRef.current = true;
+    const dateParam = params.get("date");
+    const prefillDate = dateParam ? parseIsoDate(dateParam) : null;
+    const timer = window.setTimeout(() => {
+      openNewSessionDialog(prefillDate ?? schedule.currentDate, patientId);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [openNewSessionDialog, schedule.currentDate, schedule.patients]);
 
   async function handleCreateSession() {
     if (!schedule.therapistId) {
@@ -785,23 +923,32 @@ export default function SchedulePage() {
 
       const createdCount = result.createdCount ?? 1;
       const googleCreatedCount = result.googleCreatedCount ?? 0;
+      const createdDate = parseIsoDate(schedule.newSession.scheduled_at);
       if (result.warning) {
         calendar.setSyncBanner({
           type: "info",
           message: `${createdCount} sessão(ões) criada(s). ${result.warning}`,
         });
+        toast.info(`${createdCount} sessão(ões) agendada(s). Revise o aviso da agenda.`);
       } else if (googleCreatedCount > 0) {
         calendar.setSyncBanner({
           type: "success",
           message: `${createdCount} sessão(ões) criada(s) e enviadas ao Google Calendar.`,
         });
+        toast.success(`${createdCount} sessão(ões) agendada(s) e enviadas ao Google Calendar.`);
       } else {
         calendar.setSyncBanner({
           type: "success",
           message: `${createdCount} sessão(ões) criada(s) com sucesso.`,
         });
+        toast.success(createdCount > 1 ? `${createdCount} sessões agendadas com sucesso.` : "Sessão agendada com sucesso.");
       }
 
+      if (createdDate) {
+        schedule.setCurrentDate(createdDate);
+        schedule.setSelectedDate(createdDate);
+        schedule.setView("day");
+      }
       schedule.setShowNewSession(false);
       schedule.setNewSession({
         patient_id: "",
@@ -822,8 +969,10 @@ export default function SchedulePage() {
         discount_percentage: "0",
       });
       await schedule.loadData();
-    } catch (err: any) {
-      setScheduleError(err?.message ?? "Falha ao agendar sessão.");
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, "Falha ao agendar sessão.");
+      setScheduleError(message);
+      toast.error(message);
     } finally {
       schedule.setSaving(false);
     }
@@ -848,10 +997,10 @@ export default function SchedulePage() {
       schedule.setShowSessionDetails(false);
       schedule.setSelectedSessionDetails(null);
       await schedule.loadData();
-    } catch (err: any) {
+    } catch (err: unknown) {
       calendar.setSyncBanner({
         type: "error",
-        message: err?.message ?? "Falha ao cancelar sessão.",
+        message: getErrorMessage(err, "Falha ao cancelar sessão."),
       });
     } finally {
       setCancellingSession(false);
@@ -861,6 +1010,7 @@ export default function SchedulePage() {
   async function handleCompleteSession(allowFutureCompletion = false) {
     if (!selectedItem?.id || selectedIsExternal) return;
 
+    const sessionForFeedback = selectedItem;
     const scheduledAt = new Date(selectedItem.scheduled_at);
     const isFuture = !Number.isNaN(scheduledAt.getTime()) && scheduledAt.getTime() > Date.now();
 
@@ -891,30 +1041,34 @@ export default function SchedulePage() {
         throw new Error(result.error || "Falha ao marcar sessão como realizada.");
       }
 
-      if (result.packageCreditConsumed) {
-        toast.success("Sessão realizada. 1 crédito do pacote foi consumido.");
+      const financialMessage = getCompleteSessionFinancialMessage(result);
+      const evolutionMessage = result.needsEvolution
+        ? " Próximo passo: registre a evolução clínica no prontuário seguro."
+        : " A evolução desta sessão já está registrada.";
+
+      if (result.needsEvolution && sessionForFeedback.patient_id) {
+        toast.success("Sessão concluída com segurança.", {
+          description: `${financialMessage}${evolutionMessage}`,
+          action: {
+            label: "Registrar evolução",
+            onClick: () =>
+              router.push(
+                `/dashboard/patients/${sessionForFeedback.patient_id}?tab=sessions&sessionId=${sessionForFeedback.id}&evolution=1`
+              ),
+          },
+        });
       } else {
-        toast.success("Sessão marcada como realizada.");
-      }
-      if (result.billingCreated) {
-        toast.success("Cobrança pendente criada no financeiro.");
-      } else if (result.packageCreditAlreadyConsumed) {
-        toast.info("Crédito do pacote já estava consumido para esta sessão.");
-      } else if (result.billingAlreadyExists) {
-        toast.info("Já existe um lançamento financeiro vinculado a esta sessão.");
-      } else if (result.billingSkippedReason === "courtesy_or_zero_value") {
-        toast.info("Sessão cortesia ou sem valor: cobrança não criada.");
-      }
-      if (result.needsEvolution) {
-        toast.info("Evolução ainda não registrada. Você pode registrar sem bloquear a finalização.");
+        toast.success("Sessão concluída com segurança.", {
+          description: `${financialMessage}${evolutionMessage}`,
+        });
       }
 
       schedule.setShowSessionDetails(false);
       schedule.setSelectedSessionDetails(null);
       await schedule.loadData();
       window.dispatchEvent(new CustomEvent("notifications:refresh"));
-    } catch (err: any) {
-      toast.error(err?.message ?? "Falha ao marcar sessão como realizada.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Falha ao marcar sessão como realizada."));
     } finally {
       setCompletingSession(false);
     }
@@ -962,8 +1116,8 @@ export default function SchedulePage() {
       schedule.setSelectedSessionDetails(null);
       await schedule.loadData();
       window.dispatchEvent(new CustomEvent("notifications:refresh"));
-    } catch (err: any) {
-      toast.error(err?.message ?? "Falha ao desfazer realização.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Falha ao desfazer realização."));
     } finally {
       setReversingSession(false);
     }
@@ -1043,9 +1197,9 @@ export default function SchedulePage() {
               </Button>
             )}
             <SubscriptionGate>
-              <Button onClick={() => schedule.setShowNewSession(true)} className="h-10 w-full rounded-2xl shadow-primary/20 sm:w-auto">
+              <Button onClick={() => openNewSessionDialog()} className="h-10 w-full rounded-2xl shadow-primary/20 sm:w-auto">
                 <Plus className="size-4" />
-                Agendar sessão
+                {clinicalSessions === 0 ? "Agendar primeira sessão" : "Agendar sessão"}
               </Button>
             </SubscriptionGate>
           </div>
@@ -1425,6 +1579,16 @@ export default function SchedulePage() {
               </div>
             ) : schedule.view !== "month" ? (
               <div className={cn("relative min-w-[880px]", schedule.view === "day" && "min-w-[520px]")}>
+                {schedule.sessions.length === 0 && (
+                  <div className="px-5 pt-5">
+                    <ScheduleEmptyState
+                      title="Agenda pronta para o primeiro atendimento"
+                      description="Comece escolhendo um paciente, data, horário e como a cobrança será tratada. O Nythos cuida das validações antes de salvar."
+                      ctaLabel="Agendar primeira sessão"
+                      onSchedule={() => openNewSessionDialog(schedule.currentDate)}
+                    />
+                  </div>
+                )}
                 <div className="sticky top-0 z-30 grid border-b border-border/60 bg-white/90 backdrop-blur-md grid-cols-[72px_1fr]">
                   <div className="sticky left-0 z-40 flex h-16 items-end justify-end bg-white/95 p-2">
                     <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">GMT-03</span>
@@ -1487,7 +1651,21 @@ export default function SchedulePage() {
                           {daySessions.length === 0 && (
                             <div className="absolute inset-x-3 top-8 rounded-2xl border border-dashed border-border/80 bg-white/55 px-3 py-4 text-center">
                               <CalendarCheck2 className="mx-auto mb-2 size-4 text-muted-foreground/65" />
-                              <p className="text-xs font-medium text-muted-foreground">Sem itens neste dia</p>
+                              <p className="text-xs font-medium text-muted-foreground">
+                                {schedule.view === "day" ? "Dia livre para agendar" : "Sem itens neste dia"}
+                              </p>
+                              {schedule.view === "day" && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="mt-3 h-8 rounded-2xl bg-white text-xs"
+                                  onClick={() => openNewSessionDialog(day)}
+                                >
+                                  <Plus className="size-3.5" />
+                                  {clinicalSessions === 0 ? "Agendar primeira sessão" : "Agendar sessão"}
+                                </Button>
+                              )}
                             </div>
                           )}
 
@@ -1664,9 +1842,9 @@ export default function SchedulePage() {
                 <CalendarDays className="size-5" />
               </span>
               <div>
-                <DialogTitle className="text-xl font-semibold tracking-tight text-foreground">Agendar sessão</DialogTitle>
+                <DialogTitle className="text-xl font-semibold tracking-tight text-foreground">Agendar nova sessão</DialogTitle>
                 <DialogDescription className="mt-1 text-sm">
-                  Defina paciente, horário e recorrência mantendo a validação de conflitos da agenda.
+                  Escolha o paciente, confirme data e horário e defina como a cobrança será tratada.
                 </DialogDescription>
               </div>
             </div>
@@ -1676,10 +1854,13 @@ export default function SchedulePage() {
             <section className="rounded-2xl border border-border/70 bg-slate-50/60 p-4">
               <div className="mb-4 flex items-center gap-2">
                 <UserRound className="size-4 text-primary" />
-                <h3 className="text-sm font-semibold text-foreground">Paciente</h3>
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Paciente</h3>
+                  <p className="text-xs text-muted-foreground">Selecione quem será atendido nesta sessão.</p>
+                </div>
               </div>
               <FieldShell>
-                <Label>Paciente</Label>
+                <Label>Paciente *</Label>
                 <PatientCombobox
                   patients={schedule.patients}
                   selectedPatient={selectedPatient}
@@ -1693,17 +1874,23 @@ export default function SchedulePage() {
                     router.push("/dashboard/patients/new");
                   }}
                 />
+                <FieldHint>
+                  Para pacientes recém-criados, busque pelo nome ou e-mail cadastrado.
+                </FieldHint>
               </FieldShell>
             </section>
 
             <section className="rounded-2xl border border-border/70 bg-white p-4">
               <div className="mb-4 flex items-center gap-2">
                 <Clock3 className="size-4 text-primary" />
-                <h3 className="text-sm font-semibold text-foreground">Data e duração</h3>
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Data, horário e duração</h3>
+                  <p className="text-xs text-muted-foreground">Esses dados definem o espaço real na agenda.</p>
+                </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
                 <FieldShell>
-                  <Label>Data</Label>
+                  <Label>Data *</Label>
                   <Input
                     type="date"
                     value={schedule.newSession.scheduled_at}
@@ -1712,7 +1899,7 @@ export default function SchedulePage() {
                   />
                 </FieldShell>
                 <FieldShell>
-                  <Label>Horário</Label>
+                  <Label>Horário *</Label>
                   <Input
                     type="time"
                     value={schedule.newSession.scheduled_time}
@@ -1721,7 +1908,7 @@ export default function SchedulePage() {
                   />
                 </FieldShell>
                 <FieldShell>
-                  <Label>Duração (min)</Label>
+                  <Label>Duração</Label>
                   <Input
                     type="number"
                     min={15}
@@ -1730,6 +1917,7 @@ export default function SchedulePage() {
                     onChange={(e) => schedule.setNewSession({ ...schedule.newSession, duration_minutes: e.target.value })}
                     className="rounded-xl bg-white"
                   />
+                  <FieldHint>Use a duração padrão do perfil ou ajuste em minutos.</FieldHint>
                 </FieldShell>
               </div>
             </section>
@@ -1737,11 +1925,14 @@ export default function SchedulePage() {
             <section className="rounded-2xl border border-border/70 bg-white p-4">
               <div className="mb-4 flex items-center gap-2">
                 <MapPin className="size-4 text-primary" />
-                <h3 className="text-sm font-semibold text-foreground">Tipo e local</h3>
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Tipo e local</h3>
+                  <p className="text-xs text-muted-foreground">Ajuda a organizar o atendimento e a leitura do histórico.</p>
+                </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <FieldShell>
-                  <Label>Tipo de sessão</Label>
+                  <Label>Tipo de atendimento</Label>
                   <select
                     className={nativeSelectClassName()}
                     value={schedule.newSession.session_type}
@@ -1755,7 +1946,7 @@ export default function SchedulePage() {
                   </select>
                 </FieldShell>
                 <FieldShell>
-                  <Label>Local</Label>
+                  <Label>Local da sessão</Label>
                   <select
                     className={nativeSelectClassName()}
                     value={schedule.newSession.location}
@@ -1777,7 +1968,7 @@ export default function SchedulePage() {
                   <div className="min-w-0">
                     <h3 className="text-sm font-semibold text-foreground">Cobrança</h3>
                     <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                      Gera pendência apenas quando a sessão for realizada.
+                      Defina agora a regra financeira; o lançamento só nasce quando a sessão for marcada como realizada.
                     </p>
                   </div>
                 </div>
@@ -1811,7 +2002,7 @@ export default function SchedulePage() {
                     >
                       <span className="w-full whitespace-normal text-sm font-semibold leading-4">Sessão avulsa</span>
                       <span className={cn("w-full whitespace-normal break-words text-[11px] leading-4", billingMode === "single" ? "text-primary-foreground/80" : "text-muted-foreground")}>
-                        Gera pendência depois
+                        Cobrança pendente ao realizar
                       </span>
                     </Button>
                     <Button
@@ -1838,7 +2029,7 @@ export default function SchedulePage() {
                             ? "Carregando pacotes"
                             : packageChoiceAvailable
                               ? `${Number(packagesWithReservableBalance[0].reservable_sessions ?? packagesWithReservableBalance[0].remaining_sessions ?? 0)} sessões restantes`
-                              : "Nenhum pacote ativo"}
+                              : "Sem pacote disponível"}
                       </span>
                     </Button>
                     <Button
@@ -1854,13 +2045,13 @@ export default function SchedulePage() {
                     >
                       <span className="w-full whitespace-normal text-sm font-semibold leading-4">Cortesia</span>
                       <span className={cn("w-full whitespace-normal break-words text-[11px] leading-4", billingMode === "free" ? "text-white/80" : "text-muted-foreground")}>
-                        Sem lançamento financeiro
+                        Sem lançamento no financeiro
                       </span>
                     </Button>
                   </div>
                   {selectedPatient && !schedule.patientSessionPackagesLoading && !packageChoiceAvailable && (
                     <div className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs font-medium text-muted-foreground">
-                      <span>Nenhum pacote ativo para este paciente.</span>
+                      <span>Este paciente ainda não tem pacote ativo com crédito disponível.</span>
                       <button
                         type="button"
                         className="font-semibold text-primary transition-colors hover:text-primary/80"
@@ -1878,6 +2069,7 @@ export default function SchedulePage() {
                 {isPackageBilling ? (
                   <FieldShell>
                     <Label>Pacote</Label>
+                    <FieldHint>O pacote precisa estar ativo, válido e com saldo para a data escolhida.</FieldHint>
                     <select
                       className={nativeSelectClassName()}
                       value={schedule.newSession.package_id}
@@ -1946,6 +2138,7 @@ export default function SchedulePage() {
                 ) : (
                   <FieldShell>
                   <Label>Valor da sessão</Label>
+                  <FieldHint>Esse valor será usado para criar a pendência financeira ao realizar a sessão.</FieldHint>
                   <Input
                     type="number"
                     min={isFreeSession ? 0 : 0.01}
@@ -2061,8 +2254,8 @@ export default function SchedulePage() {
             <Button variant="outline" className="rounded-2xl" onClick={() => schedule.setShowNewSession(false)} disabled={schedule.saving}>
               Cancelar
             </Button>
-            <Button className="rounded-2xl" onClick={handleCreateSession} disabled={schedule.saving}>
-              {schedule.saving ? "Salvando..." : "Salvar sessão"}
+            <Button className="rounded-2xl" onClick={handleCreateSession} disabled={schedule.saving} aria-busy={schedule.saving}>
+              {schedule.saving ? "Agendando sessão..." : "Agendar sessão"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2222,6 +2415,22 @@ export default function SchedulePage() {
                   </div>
                 )}
               </div>
+
+              {!selectedIsExternal && selectedItem.status === "scheduled" && (
+                <div className="rounded-2xl border border-emerald-200/70 bg-emerald-50/80 p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-2xl bg-white text-emerald-700 shadow-sm">
+                      <CheckCircle className="size-4" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-emerald-950">Concluir sessão atualiza o caso com segurança.</p>
+                      <p className="mt-1 text-sm leading-relaxed text-emerald-800/80">
+                        Ao concluir, o Nythos aplica a regra financeira configurada: cria pendência, consome crédito de pacote ou mantém cortesia. Depois, registre a evolução clínica no prontuário.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -2268,9 +2477,10 @@ export default function SchedulePage() {
                 className="rounded-2xl bg-emerald-600 text-white shadow-emerald-600/20 hover:bg-emerald-700"
                 onClick={() => handleCompleteSession()}
                 disabled={cancellingSession || completingSession || reversingSession}
+                aria-busy={completingSession}
               >
                 <CheckCircle className="size-4" />
-                {completingSession ? "Finalizando..." : "Marcar como realizada"}
+                {completingSession ? "Concluindo..." : "Concluir sessão"}
               </Button>
             )}
             {!selectedIsExternal && selectedItem?.status === "scheduled" && (

@@ -4,6 +4,7 @@ import type {
   StripeCheckoutMode,
   StripePortalFailureCode,
 } from "./nythos-billing";
+import { ONLINE_PAYMENT_STANDBY_MESSAGE } from "../billing/payment-standby";
 
 export type BillingPlanOptionKey = "trial" | "pro-monthly" | "pro-yearly" | "clinic";
 
@@ -63,11 +64,11 @@ export function getClinicCheckoutMessage(): string {
 export function getCheckoutFailureMessage(response: NythosCheckoutUiResponse): string {
   return response.message
     || response.error
-    || "Nao foi possivel iniciar o checkout agora. Tente novamente em instantes.";
+    || ONLINE_PAYMENT_STANDBY_MESSAGE;
 }
 
 export function getPortalFailureMessage(response: NythosPortalUiResponse): string {
   return response.message
     || response.error
-    || "Nao foi possivel abrir o gerenciamento de assinatura agora.";
+    || ONLINE_PAYMENT_STANDBY_MESSAGE;
 }

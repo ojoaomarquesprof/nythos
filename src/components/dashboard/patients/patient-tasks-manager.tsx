@@ -9,7 +9,6 @@ import {
   MessageSquare, CheckCircle2, Ban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -80,7 +79,8 @@ export function PatientTasksManager({ patientId, initialTasks }: Props) {
 
   // Sync state with server side data updates from revalidatePath
   useEffect(() => {
-    setTasks(initialTasks);
+    const timer = window.setTimeout(() => setTasks(initialTasks), 0);
+    return () => window.clearTimeout(timer);
   }, [initialTasks]);
 
   const [optimisticTasks, updateOptimistic] = useOptimistic(
@@ -330,8 +330,10 @@ export function PatientTasksManager({ patientId, initialTasks }: Props) {
           {pending.length === 0 ? (
             <div className="text-center py-10 rounded-2xl border border-dashed border-white/40 bg-white/20">
               <ListChecks className="w-7 h-7 text-muted-foreground mx-auto mb-2 opacity-40" />
-              <p className="text-sm text-muted-foreground">Nenhuma tarefa pendente.</p>
-              <p className="text-xs text-muted-foreground/60 mt-1">Clique em "Nova Tarefa" para criar uma.</p>
+              <p className="text-sm font-semibold text-foreground">Nenhuma tarefa em aberto por enquanto.</p>
+              <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-muted-foreground/70">
+                Crie uma tarefa quando ela apoiar o plano terapêutico ou o acompanhamento entre sessões.
+              </p>
             </div>
           ) : (
             <div className="space-y-2">

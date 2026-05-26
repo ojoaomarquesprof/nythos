@@ -5,6 +5,7 @@ import {
   getClinicCheckoutMessage,
   getPortalFailureMessage,
 } from "./checkout-ui";
+import { ONLINE_PAYMENT_STANDBY_MESSAGE } from "../billing/payment-standby";
 
 describe("Stripe checkout UI helpers", () => {
   it("builds only the server-safe monthly and yearly checkout payloads", () => {
@@ -29,19 +30,15 @@ describe("Stripe checkout UI helpers", () => {
   it("normalizes safe checkout failure messages", () => {
     expect(getCheckoutFailureMessage({
       success: false,
-      message: "O pagamento online ainda nao esta disponivel para esta conta. Seu plano nao foi alterado.",
-    })).toBe("O pagamento online ainda nao esta disponivel para esta conta. Seu plano nao foi alterado.");
+      message: ONLINE_PAYMENT_STANDBY_MESSAGE,
+    })).toBe(ONLINE_PAYMENT_STANDBY_MESSAGE);
 
-    expect(getCheckoutFailureMessage({})).toBe(
-      "Nao foi possivel iniciar o checkout agora. Tente novamente em instantes."
-    );
+    expect(getCheckoutFailureMessage({})).toBe(ONLINE_PAYMENT_STANDBY_MESSAGE);
     expect(getPortalFailureMessage({
       success: false,
       code: "stripe_customer_missing",
       message: "Assine o Nythos PRO para gerenciar sua assinatura.",
     })).toBe("Assine o Nythos PRO para gerenciar sua assinatura.");
-    expect(getPortalFailureMessage({})).toBe(
-      "Nao foi possivel abrir o gerenciamento de assinatura agora."
-    );
+    expect(getPortalFailureMessage({})).toBe(ONLINE_PAYMENT_STANDBY_MESSAGE);
   });
 });

@@ -40,6 +40,10 @@ import {
 } from "@/components/ui/dialog";
 import { useSubscription } from "@/hooks/use-subscription";
 import {
+  ONLINE_PAYMENT_STANDBY_MESSAGE,
+  ONLINE_PAYMENT_STANDBY_TITLE,
+} from "@/lib/billing/payment-standby";
+import {
   buildCheckoutRequestBody,
   getCheckoutFailureMessage,
   getClinicCheckoutMessage,
@@ -144,6 +148,11 @@ type EmbeddedCheckoutState = {
   message: string | null;
   error: string | null;
   awaitingWebhook: boolean;
+};
+
+type CheckoutAvailabilityState = {
+  checkoutEnabled: boolean;
+  message: string;
 };
 
 const FEATURE_ROWS: Array<{
@@ -348,6 +357,10 @@ export default function BillingPage() {
   const [checkoutLoadingKey, setCheckoutLoadingKey] = useState<string | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
   const [embeddedCheckout, setEmbeddedCheckout] = useState<EmbeddedCheckoutState | null>(null);
+  const [checkoutAvailability, setCheckoutAvailability] = useState<CheckoutAvailabilityState>({
+    checkoutEnabled: false,
+    message: ONLINE_PAYMENT_STANDBY_MESSAGE,
+  });
   const {
     loading,
     planId,
@@ -366,13 +379,50 @@ export default function BillingPage() {
   const currentPlanName = subscriptionStatus === "trialing" ? "Teste gratis PRO" : planName;
   const isSubscriptionLoaded = !loading;
   const canRequestPlanChanges = isSubscriptionLoaded && canManagePlan;
+  const onlineCheckoutEnabled = checkoutAvailability.checkoutEnabled;
   const portalUnavailableMessage = subscription.provider && subscription.provider !== "stripe"
     ? "Esta conta usa um provedor legado e precisa de migracao manual."
     : planId === "clinic"
       ? "Para planos Clinic, fale com a equipe Nythos."
+      : !onlineCheckoutEnabled
+        ? checkoutAvailability.message
       : subscriptionStatus === "trialing"
         ? "Assine o Nythos PRO para gerenciar sua assinatura."
         : "Voce ainda nao possui uma assinatura ativa para gerenciar.";
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadCheckoutAvailability() {
+      try {
+        const response = await fetch("/api/checkout", {
+          method: "GET",
+          headers: { accept: "application/json" },
+        });
+        const data = await response.json().catch(() => ({})) as Partial<CheckoutAvailabilityState>;
+        if (!active) return;
+
+        setCheckoutAvailability({
+          checkoutEnabled: data.checkoutEnabled === true,
+          message: typeof data.message === "string" && data.message.trim()
+            ? data.message
+            : ONLINE_PAYMENT_STANDBY_MESSAGE,
+        });
+      } catch {
+        if (!active) return;
+        setCheckoutAvailability({
+          checkoutEnabled: false,
+          message: ONLINE_PAYMENT_STANDBY_MESSAGE,
+        });
+      }
+    }
+
+    void loadCheckoutAvailability();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -386,6 +436,14 @@ export default function BillingPage() {
   }, []);
 
   const runCheckout = async (option: BillingPlanOption, mode: "embedded" | "hosted" = "embedded") => {
+    if (!onlineCheckoutEnabled) {
+      setEmbeddedCheckout(null);
+      toast.info(ONLINE_PAYMENT_STANDBY_TITLE, {
+        description: checkoutAvailability.message,
+      });
+      return false;
+    }
+
     const checkoutMode = mode === "embedded" && stripePublishableKey ? "embedded" : "hosted";
     const requestBody = buildCheckoutRequestBody(option.key, checkoutMode);
     if (!requestBody) {
@@ -421,8 +479,8 @@ export default function BillingPage() {
 
       if (!response.ok || data.success === false) {
         const message = getCheckoutFailureMessage(data);
-        const title = message.includes("pagamento online ainda nao esta disponivel")
-          ? "Pagamento online em preparacao"
+        const title = message.includes("Pagamento online em preparacao")
+          ? ONLINE_PAYMENT_STANDBY_TITLE
           : "Nao foi possivel iniciar o pagamento";
 
         if (checkoutMode === "embedded") {
@@ -655,13 +713,13 @@ export default function BillingPage() {
                       Gerenciamento da assinatura
                     </p>
                     <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                      {subscription.hasStripeCustomer
+                      {subscription.hasStripeCustomer && onlineCheckoutEnabled
                         ? "Atualize seus dados de cobranca e consulte faturas em um ambiente seguro de pagamento."
                         : portalUnavailableMessage}
                     </p>
                   </div>
                 </div>
-                {subscription.hasStripeCustomer && (
+                {subscription.hasStripeCustomer && onlineCheckoutEnabled && (
                   <Button
                     type="button"
                     className="h-11 shrink-0 rounded-2xl px-5"
@@ -703,7 +761,7 @@ export default function BillingPage() {
             <div className="flex gap-3 rounded-[24px] border border-teal-100 bg-teal-50/80 p-4 text-sm leading-6 text-teal-800">
               <Info className="mt-0.5 h-5 w-5 shrink-0" />
               <span>
-                Pagamento online em preparacao. Seu plano atual nao sera alterado automaticamente por enquanto.
+                {checkoutAvailability.message}
               </span>
             </div>
           </CardContent>
@@ -778,12 +836,16 @@ export default function BillingPage() {
               || (option.key === "pro-monthly" && planId === "professional" && subscriptionStatus !== "trialing")
               || (option.key === "clinic" && planId === "clinic");
             const isTrialOption = option.key === "trial";
+            const isPaymentOption = option.key === "pro-monthly" || option.key === "pro-yearly";
+            const isPaymentUnavailable = isPaymentOption && !onlineCheckoutEnabled;
             const isLoading = checkoutLoadingKey === option.key;
-            const disabled = loading || isCurrent || isTrialOption || !canRequestPlanChanges || Boolean(checkoutLoadingKey);
+            const disabled = loading || isCurrent || isTrialOption || !canRequestPlanChanges || Boolean(checkoutLoadingKey) || isPaymentUnavailable;
             const ctaLabel = loading
               ? "Carregando..."
               : isCurrent
               ? "Plano atual"
+              : isPaymentUnavailable
+                ? "Pagamento em preparacao"
               : !canRequestPlanChanges
                 ? "Gerenciado pelo responsavel"
                 : isTrialOption
@@ -861,6 +923,11 @@ export default function BillingPage() {
                       Somente o responsavel da conta pode gerenciar o plano.
                     </p>
                   )}
+                  {!loading && canManagePlan && isPaymentUnavailable && !isCurrent && (
+                    <p className="text-center text-xs leading-5 text-muted-foreground">
+                      {checkoutAvailability.message}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             );
@@ -921,7 +988,7 @@ export default function BillingPage() {
                   </div>
                 </div>
 
-                {(embeddedCheckout.error || !embeddedCheckout.clientSecret) && (
+                {onlineCheckoutEnabled && (embeddedCheckout.error || !embeddedCheckout.clientSecret) && (
                   <Button
                     type="button"
                     variant="outline"

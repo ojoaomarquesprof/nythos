@@ -1,5 +1,5 @@
 import React from "react";
-import { Calendar, CheckCircle2, ChevronRight, Clock, Download, Undo2, X } from "lucide-react";
+import { Calendar, CheckCircle2, ChevronRight, Clock, Download, FileText, Undo2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,6 +22,10 @@ interface SessionListProps {
   setCancellingSession: (session: Session | null) => void;
   setShowCancelSeriesModal: (show: boolean) => void;
 }
+
+type SessionWithEvolutionFlag = Session & {
+  has_session_evolution?: boolean | null;
+};
 
 export function SessionList({
   sessions,
@@ -67,7 +71,7 @@ export function SessionList({
             </div>
             <p className="text-sm font-medium text-foreground">Nenhuma sessão registrada</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Use a ação de agendamento no topo para criar o próximo atendimento.
+              Agende a primeira sessão para conectar agenda, evolução e financeiro deste caso.
             </p>
           </CardContent>
         </Card>
@@ -77,7 +81,9 @@ export function SessionList({
             const statusCfg = SESSION_STATUS[session.status as keyof typeof SESSION_STATUS] || SESSION_STATUS.scheduled;
             const canManageScheduledSession = session.status === "scheduled";
             const canReverseCompletedSession = session.status === "completed";
-            const hasEvolution = Boolean((session as any).has_session_evolution || session.session_notes_encrypted);
+            const hasEvolution = Boolean(
+              (session as SessionWithEvolutionFlag).has_session_evolution || session.session_notes_encrypted
+            );
             return (
               <Card key={session.id} className="rounded-2xl border border-border/70 bg-white/85 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
                 <CardContent className="p-4">
@@ -117,6 +123,26 @@ export function SessionList({
                         {session.duration_minutes} min · {SESSION_TYPES[session.session_type as keyof typeof SESSION_TYPES]?.label || "Tipo nao informado"}
                         {session.session_price != null && ` · ${formatCurrency(session.session_price)}`}
                       </p>
+                      {session.status === "completed" && (
+                        <div
+                          className={cn(
+                            "mt-3 flex items-start gap-2 rounded-2xl border px-3 py-2 text-xs leading-relaxed",
+                            hasEvolution
+                              ? "border-emerald-200/80 bg-emerald-50/70 text-emerald-800"
+                              : "border-amber-200/80 bg-amber-50/70 text-amber-800"
+                          )}
+                        >
+                          <FileText className="mt-0.5 size-3.5 shrink-0" />
+                          <p>
+                            <span className="font-semibold">
+                              {hasEvolution ? "Evolução em ordem." : "Evolução clínica pendente."}
+                            </span>{" "}
+                            {hasEvolution
+                              ? "Este atendimento já tem registro vinculado ao prontuário."
+                              : "Registre a evolução no prontuário para manter o histórico clínico completo."}
+                          </p>
+                        </div>
+                      )}
                     </div>
                     <div className="flex flex-wrap gap-1.5 sm:flex-nowrap">
                       <Button
@@ -136,7 +162,7 @@ export function SessionList({
                           disabled={isSaving}
                         >
                           <CheckCircle2 className="size-3.5" />
-                          Realizada
+                          Concluir sessão
                         </Button>
                       )}
                       {canReverseCompletedSession && (

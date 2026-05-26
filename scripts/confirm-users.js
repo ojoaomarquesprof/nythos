@@ -5,42 +5,49 @@
  * Usage: node scripts/confirm-users.js
  */
 
-// Load .env.local manually (no dotenv dependency required)
-const fs = require('fs');
-const path = require('path');
+async function loadEnvLocal() {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const envPath = path.join(__dirname, "..", ".env.local");
 
-const envPath = path.join(__dirname, '..', '.env.local');
-if (fs.existsSync(envPath)) {
-  fs.readFileSync(envPath, 'utf8')
-    .split('\n')
-    .forEach(line => {
-      const [k, ...rest] = line.split('=');
-      if (k && !k.startsWith('#') && rest.length) {
-        process.env[k.trim()] = rest.join('=').trim();
-      }
-    });
+  if (fs.existsSync(envPath)) {
+    fs.readFileSync(envPath, "utf8")
+      .split("\n")
+      .forEach((line) => {
+        const [key, ...rest] = line.split("=");
+        if (key && !key.startsWith("#") && rest.length) {
+          process.env[key.trim()] = rest.join("=").trim();
+        }
+      });
+  }
 }
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+async function createSupabaseAdminClient() {
+  await loadEnvLocal();
 
-if (!supabaseUrl || !supabaseServiceKey) {
-  console.error(
-    '❌ Missing required environment variables.\n' +
-    '   Ensure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set in .env.local'
-  );
-  process.exit(1);
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error(
+      "Missing required environment variables.\n" +
+      "   Ensure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set in .env.local"
+    );
+    process.exit(1);
+  }
+
+  const { createClient } = await import("@supabase/supabase-js");
+  return createClient(supabaseUrl, supabaseServiceKey);
 }
-
-const { createClient } = require('@supabase/supabase-js');
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function autoConfirm() {
-  console.log('Buscando usuários...');
+  const supabase = await createSupabaseAdminClient();
+
+  console.log("Buscando usuarios...");
   const { data: usersData, error: listError } = await supabase.auth.admin.listUsers();
 
   if (listError) {
-    console.error('Erro ao buscar usuários:', listError);
+    console.error("Erro ao buscar usuarios:", listError);
     return;
   }
 
@@ -53,11 +60,14 @@ async function autoConfirm() {
       if (error) {
         console.error(`Erro ao confirmar ${user.email}:`, error.message);
       } else {
-        console.log(`✅ Email ${user.email} confirmado com sucesso!`);
+        console.log(`Email ${user.email} confirmado com sucesso!`);
       }
     }
   }
-  console.log('Processo finalizado!');
+  console.log("Processo finalizado!");
 }
 
-autoConfirm();
+autoConfirm().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

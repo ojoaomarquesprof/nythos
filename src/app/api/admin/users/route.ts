@@ -57,7 +57,7 @@ export async function GET() {
     });
 
     return NextResponse.json(usersWithSubs);
-  } catch (error: any) {
+  } catch (error: unknown) {
     logSafeError('Admin users API error', error);
     return NextResponse.json({ error: safeClientError('Não foi possível concluir a operação.') }, { status: 500 });
   }

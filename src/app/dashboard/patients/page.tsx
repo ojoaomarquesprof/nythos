@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { 
@@ -10,11 +10,9 @@ import {
   Phone, 
   Mail, 
   MoreVertical, 
-  UserCircle,
   FileText,
   CalendarPlus,
   Trash2,
-  ExternalLink
 } from "lucide-react";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,6 +32,10 @@ import { SubscriptionGate } from "@/components/auth/subscription-gate";
 import { useSubscription } from "@/hooks/use-subscription";
 import type { Patient } from "@/types/database";
 
+type PatientListItem = Pick<Patient, "id" | "full_name" | "email" | "phone"> & {
+  status: string | null;
+};
+
 const statusConfig = {
   active: { label: "Ativo", color: "bg-emerald-50 text-emerald-700 border-emerald-100" },
   inactive: { label: "Inativo", color: "bg-amber-50 text-amber-700 border-amber-100" },
@@ -41,7 +43,7 @@ const statusConfig = {
 };
 
 const avatarColors = [
-  "bg-teal- text-teal-",
+  "bg-teal-50 text-teal-700",
   "bg-emerald-100 text-emerald-700",
   "bg-rose-100 text-rose-700",
   "bg-amber-100 text-amber-700",
@@ -54,19 +56,13 @@ const avatarColors = [
 export default function PatientsPage() {
   const router = useRouter();
   const { therapistId } = useSubscription();
-  const [patients, setPatients] = useState<Patient[]>([]);
+  const [patients, setPatients] = useState<PatientListItem[]>([]);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "inactive" | "archived">("all");
   const [loading, setLoading] = useState(true);
-  const supabase = createClient() as any;
+  const supabase = useMemo(() => createClient(), []);
 
-  useEffect(() => {
-    if (therapistId) {
-      loadPatients();
-    }
-  }, [therapistId]);
-
-  async function loadPatients() {
+  const loadPatients = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from("patients")
@@ -77,7 +73,15 @@ export default function PatientsPage() {
       setPatients(data);
     }
     setLoading(false);
-  }
+  }, [supabase]);
+
+  useEffect(() => {
+    if (!therapistId) return;
+    const timer = window.setTimeout(() => {
+      void loadPatients();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [therapistId, loadPatients]);
 
   const filtered = patients.filter((p) => {
     const matchSearch =
@@ -126,12 +130,12 @@ export default function PatientsPage() {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
           <Input
             placeholder="Buscar por nome, e-mail ou telefone..."
-            className="pl-12 h-12 bg-white/80 backdrop-blur-sm border-teal- rounded-2xl shadow-sm focus-visible:ring-primary focus-visible:border-primary transition-all text-sm font-medium"
+            className="pl-12 h-12 bg-white/80 backdrop-blur-sm border-teal-100 rounded-2xl shadow-sm focus-visible:ring-primary focus-visible:border-primary transition-all text-sm font-medium"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="flex gap-1 bg-teal-/50 rounded-2xl p-1 border border-teal-/50 self-start sm:self-center">
+        <div className="flex gap-1 bg-teal-50/50 rounded-2xl p-1 border border-teal-100/50 self-start sm:self-center">
           {(["all", "active", "inactive", "archived"] as const).map((f) => (
             <button
               key={f}
@@ -195,24 +199,24 @@ export default function PatientsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="bg-white/80 backdrop-blur-md rounded-[32px] border border-teal- shadow-xl overflow-hidden">
+        <div className="bg-white/80 backdrop-blur-md rounded-[32px] border border-teal-100 shadow-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
-                <tr className="border-b border-teal- bg-teal-/30">
+                <tr className="border-b border-teal-100 bg-teal-50/30">
                   <th className="px-6 py-4 text-left text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">Paciente</th>
                   <th className="px-6 py-4 text-left text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">Status</th>
                   <th className="px-6 py-4 text-left text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">Contato</th>
                   <th className="px-6 py-4 text-right text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-teal-">
+              <tbody className="divide-y divide-teal-100">
                 {filtered.map((patient, index) => {
-                  const status = statusConfig[patient.status as keyof typeof statusConfig];
+                  const status = statusConfig[patient.status as keyof typeof statusConfig] ?? statusConfig.active;
                   return (
                     <tr 
                       key={patient.id} 
-                      className="group hover:bg-teal-/50 transition-colors cursor-pointer"
+                      className="group hover:bg-teal-50/50 transition-colors cursor-pointer"
                       onClick={() => router.push(`/dashboard/patients/${patient.id}`)}
                     >
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -252,14 +256,14 @@ export default function PatientsPage() {
                         <div className="flex justify-end">
                           <DropdownMenu>
                             <DropdownMenuTrigger 
-                              className="w-9 h-9 rounded-xl hover:bg-teal- flex items-center justify-center text-slate-400 hover:text-primary transition-all active:scale-90 outline-none border-none bg-transparent cursor-pointer"
+                              className="w-9 h-9 rounded-xl hover:bg-teal-50 flex items-center justify-center text-slate-400 hover:text-primary transition-all active:scale-90 outline-none border-none bg-transparent cursor-pointer"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <MoreVertical className="w-5 h-5" />
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48 rounded-2xl border-teal- shadow-xl p-1.5 animate-slide-up">
+                            <DropdownMenuContent align="end" className="w-48 rounded-2xl border-teal-100 shadow-xl p-1.5 animate-slide-up">
                               <DropdownMenuItem 
-                                className="rounded-xl flex items-center gap-2 font-bold text-xs py-2.5 cursor-pointer text-slate-700 hover:text-primary focus:bg-teal- transition-colors"
+                                className="rounded-xl flex items-center gap-2 font-bold text-xs py-2.5 cursor-pointer text-slate-700 hover:text-primary focus:bg-teal-50 transition-colors"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   router.push(`/dashboard/patients/${patient.id}`);
@@ -269,16 +273,16 @@ export default function PatientsPage() {
                                 Ver Prontuário
                               </DropdownMenuItem>
                               <DropdownMenuItem 
-                                className="rounded-xl flex items-center gap-2 font-bold text-xs py-2.5 cursor-pointer text-slate-700 hover:text-primary focus:bg-teal- transition-colors"
+                                className="rounded-xl flex items-center gap-2 font-bold text-xs py-2.5 cursor-pointer text-slate-700 hover:text-primary focus:bg-teal-50 transition-colors"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  router.push(`/dashboard/schedule?patient=${patient.id}`);
+                                  router.push(`/dashboard/schedule?patientId=${encodeURIComponent(patient.id)}`);
                                 }}
                               >
                                 <CalendarPlus className="w-4 h-4 text-primary/40" />
                                 Agendar Sessão
                               </DropdownMenuItem>
-                              <DropdownMenuSeparator className="bg-teal- my-1" />
+                              <DropdownMenuSeparator className="bg-teal-100 my-1" />
                               <DropdownMenuItem 
                                 className="rounded-xl flex items-center gap-2 font-bold text-xs py-2.5 cursor-pointer text-rose-600 focus:text-rose-700 focus:bg-rose-50 transition-colors"
                                 onClick={(e) => {

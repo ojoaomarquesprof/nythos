@@ -25,18 +25,19 @@ import {
   getNythosProAnnualSavings,
   PLAN_DEFINITIONS,
 } from "@/lib/subscription/plan-rules";
+import { ONLINE_PAYMENT_STANDBY_MESSAGE } from "@/lib/billing/payment-standby";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "Precos | Nythos",
   description:
-    "Teste o Nythos PRO por 14 dias. Depois, continue no plano mensal, anual ou fale sobre Nythos Clinic para maior volume.",
+    "Teste o Nythos PRO por 14 dias. Planos mensais, anuais e Clinic estao visiveis enquanto o pagamento online e preparado.",
   openGraph: {
     type: "website",
     siteName: "Nythos",
     title: "Teste o Nythos PRO por 14 dias | Nythos",
     description:
-      "Planos simples para psicologos: teste gratuito, Nythos PRO mensal ou anual, e Nythos Clinic sob consulta.",
+      "Planos simples para psicologos: teste gratuito, Nythos PRO mensal ou anual, e Nythos Clinic sob consulta. Pagamento online em preparacao.",
   },
 };
 
@@ -74,7 +75,7 @@ const faqItems = [
   {
     question: "Posso escolher mensal ou anual agora?",
     answer:
-      "A comunicacao comercial ja esta preparada para mensal e anual. Nesta fase, criar conta nao inicia cobranca ativa nem altera assinatura real automaticamente.",
+      `${ONLINE_PAYMENT_STANDBY_MESSAGE} Os planos mensal e anual ficam visiveis para comparacao, mas criar conta nao inicia cobranca ativa nem altera assinatura real automaticamente.`,
   },
   {
     question: "Quando faz sentido falar sobre Nythos Clinic?",
@@ -173,7 +174,7 @@ export default async function PricingPage() {
               Teste o Nythos PRO por 14 dias.
             </h1>
             <p className="mt-6 max-w-2xl text-base leading-7 text-violet-100/78 md:text-xl md:leading-8">
-              Depois do teste, continue no plano mensal ou anual. Para clinicas e equipes maiores, fale conosco sobre o Nythos Clinic.
+              Planos mensal e anual ja estao visiveis para comparacao. Para clinicas e equipes maiores, fale conosco sobre o Nythos Clinic.
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -187,7 +188,7 @@ export default async function PricingPage() {
             </div>
 
             <p className="mt-5 max-w-xl text-sm leading-6 text-violet-100/58">
-              A criacao de conta nao cria cobranca ativa nesta etapa.
+              {ONLINE_PAYMENT_STANDBY_MESSAGE}
             </p>
           </div>
 
@@ -227,7 +228,7 @@ export default async function PricingPage() {
               </h2>
             </div>
             <p className="max-w-md text-sm leading-6 text-slate-600">
-              Trial gratuito, Nythos PRO mensal ou anual, e Nythos Clinic para operacoes com mais volume.
+              Trial gratuito, Nythos PRO mensal ou anual, e Nythos Clinic para operacoes com mais volume. O pagamento online fica indisponivel nesta etapa.
             </p>
           </div>
 
@@ -425,7 +426,7 @@ export default async function PricingPage() {
               Teste o Nythos PRO e organize sua rotina clinica.
             </h2>
             <p className="mt-5 max-w-2xl text-sm leading-6 text-violet-100/70">
-              A criacao de conta inicia o fluxo atual do produto. Nenhuma assinatura real e criada por esta pagina.
+              A criacao de conta inicia o fluxo atual do produto. {ONLINE_PAYMENT_STANDBY_MESSAGE}
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link href={ctaHref} className={cn(buttonVariants({ size: "lg" }), "h-12 rounded-2xl bg-teal-300 px-6 font-semibold text-slate-950 hover:bg-teal-200")}>
