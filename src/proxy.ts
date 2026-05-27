@@ -6,7 +6,7 @@ import {
   verifyAuthRoutes
 } from '@/lib/auth/middleware-checks'
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Padrão Chain of Responsibility (Roteamento de validação)
