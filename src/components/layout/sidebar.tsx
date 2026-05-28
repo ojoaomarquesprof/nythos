@@ -196,7 +196,7 @@ export function Sidebar() {
               >
                 {isTrial
                   ? `Você tem ${daysLeft} ${daysLeft === 1 ? "dia" : "dias"} de acesso total liberado!`
-                  : "Assine um plano para liberar todas as funções."}
+                  : "Acesso preservado nesta fase. Veja os planos disponíveis."}
               </p>
               <Button
                 size="sm"
@@ -206,7 +206,7 @@ export function Sidebar() {
                 )}
                 onClick={() => router.push("/dashboard/settings/billing")}
               >
-                {isTrial ? "Ativar Assinatura" : "Ver Planos"}
+                Ver Planos
               </Button>
             </div>
           )}

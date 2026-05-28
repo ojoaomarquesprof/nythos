@@ -2,14 +2,30 @@
 
 import { ArrowRight, Clock, ShieldCheck } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useSubscription } from "@/hooks/use-subscription";
 import { ONLINE_PAYMENT_STANDBY_MESSAGE } from "@/lib/billing/payment-standby";
 import { cn } from "@/lib/utils";
 
 export function SubscriptionBanner() {
   const { hasSubscription, isTrial, daysLeft, loading, isSecretary } = useSubscription();
+  const [hasMounted, setHasMounted] = useState(false);
 
-  if (loading) return null;
+  useEffect(() => {
+    let cancelled = false;
+
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setHasMounted(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!hasMounted || loading) return null;
 
   // Se tem assinatura e nao e trial, nao mostra nada.
   if (hasSubscription && !isTrial) return null;

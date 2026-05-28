@@ -80,12 +80,30 @@ function validateDocumentFile(file: File) {
   return validatePatientDocumentSelection(file);
 }
 
-function EmptyBlock({ icon: Icon, title, description }: { icon: React.ElementType; title: string; description: string }) {
+function EmptyBlock({
+  icon: Icon,
+  title,
+  description,
+  actionLabel,
+  onAction,
+}: {
+  icon: React.ElementType;
+  title: string;
+  description: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
   return (
     <div className="rounded-3xl border border-dashed border-border/80 bg-slate-50/70 p-8 text-center">
       <Icon className="mx-auto mb-3 size-9 text-muted-foreground/40" />
       <p className="text-sm font-semibold text-foreground">{title}</p>
       <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{description}</p>
+      {actionLabel && onAction && (
+        <Button type="button" variant="outline" size="sm" className="mt-4 h-9 rounded-2xl bg-white" onClick={onAction}>
+          <Plus className="size-4" />
+          {actionLabel}
+        </Button>
+      )}
     </div>
   );
 }
@@ -307,7 +325,7 @@ export function PatientRecordsManager({
               <div>
                 <CardTitle className="text-lg font-semibold text-foreground">Consentimentos e autorizacoes</CardTitle>
                 <CardDescription className="text-xs">
-                  Registros manuais de termos, autorizacoes e validade.
+                  Registros clinico-administrativos sensiveis, com status e validade visiveis.
                 </CardDescription>
               </div>
             </div>
@@ -322,7 +340,9 @@ export function PatientRecordsManager({
             <EmptyBlock
               icon={Shield}
               title="Nenhum consentimento registrado."
-              description="Registre termos assinados, autorizacoes pendentes ou vencimentos importantes."
+              description="Comece registrando termos assinados, autorizacoes pendentes ou vencimentos importantes para este paciente."
+              actionLabel="Registrar consentimento"
+              onAction={() => setConsentOpen(true)}
             />
           ) : (
             <div className="grid gap-3 md:grid-cols-2">
@@ -382,7 +402,7 @@ export function PatientRecordsManager({
               <div>
                 <CardTitle className="text-lg font-semibold text-foreground">Arquivos e documentos</CardTitle>
                 <CardDescription className="text-xs">
-                  Arquivos privados e metadados sensiveis do paciente.
+                  Documentos privados do paciente, com metadados sensiveis protegidos pelo fluxo atual.
                 </CardDescription>
               </div>
             </div>
@@ -403,7 +423,9 @@ export function PatientRecordsManager({
             <EmptyBlock
               icon={Archive}
               title="Nenhum documento anexado."
-              description="Registre termos, relatorios, laudos, atestados ou documentos escolares relevantes."
+              description="Guarde termos, relatorios, laudos, atestados ou documentos escolares quando houver base para mante-los no prontuario."
+              actionLabel="Adicionar documento"
+              onAction={() => setDocumentOpen(true)}
             />
           ) : (
             <div className="grid gap-3 md:grid-cols-2">
@@ -471,7 +493,7 @@ export function PatientRecordsManager({
                         onClick={() => handleDownloadDocument(document.id)}
                       >
                         <Download className="size-3.5" />
-                        {downloadingDocumentId === document.id ? "Preparando..." : "Baixar/visualizar"}
+                        {downloadingDocumentId === document.id ? "Preparando..." : "Baixar com seguranca"}
                       </Button>
                     )}
                   </div>
@@ -488,7 +510,7 @@ export function PatientRecordsManager({
           <ModalIntro
             icon={Shield}
             title="Registrar consentimento"
-            description="Guarde o status de autorizacoes e termos importantes do paciente."
+            description="Guarde o status de autorizacoes e termos importantes sem substituir a revisao profissional do documento original."
           />
           <form onSubmit={handleCreateConsent} className="flex min-h-0 flex-1 flex-col">
             <div className="min-h-0 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
@@ -556,7 +578,7 @@ export function PatientRecordsManager({
                 </div>
               </FormSection>
 
-              <FormSection icon={FileText} title="Observacoes" description="Use este campo apenas para informacoes administrativas relevantes.">
+              <FormSection icon={FileText} title="Observacoes" description="Use este campo apenas para informacoes administrativas relevantes; nao copie conteudo clinico integral de termos ou documentos.">
                 <Textarea
                   id="consent-notes"
                   className={textareaClassName}
@@ -596,7 +618,7 @@ export function PatientRecordsManager({
           <ModalIntro
             icon={Archive}
             title="Adicionar documento"
-            description="Anexe arquivos em area privada ou registre uma referencia manual quando nao houver arquivo."
+            description="Anexe arquivos em area privada ou registre uma referencia manual quando nao houver arquivo para guardar."
           />
           <form onSubmit={handleCreateDocument} className="flex min-h-0 flex-1 flex-col">
             <div className="min-h-0 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
@@ -679,7 +701,7 @@ export function PatientRecordsManager({
                     <span className="mb-3 flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                       <Upload className="size-5" />
                     </span>
-                    <span className="text-sm font-semibold text-foreground">Selecionar arquivo</span>
+                    <span className="text-sm font-semibold text-foreground">Selecionar arquivo seguro</span>
                     <span className="mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">
                       PDF, PNG, JPG, WebP, DOC ou DOCX ate 20 MB. Registros sem arquivo continuam permitidos.
                     </span>
@@ -696,7 +718,7 @@ export function PatientRecordsManager({
                   onChange={(event) => setDocumentForm({ ...documentForm, description: event.target.value })}
                 />
                 <p className="mt-3 rounded-2xl bg-slate-50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-                  A descricao continua protegida pelo fluxo de criptografia existente. Evite copiar conteudo integral do arquivo aqui.
+                  A descricao continua protegida pelo fluxo de criptografia existente. Evite copiar conteudo integral do arquivo ou dados clinicos desnecessarios aqui.
                 </p>
               </FormSection>
 

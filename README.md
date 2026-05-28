@@ -30,9 +30,9 @@ O **Nythos** é uma plataforma SaaS voltada a psicólogos e clínicas de psicolo
 | **Prontuários** | Notas de evolução e diagnósticos criptografados com AES via Supabase Vault |
 | **Pacientes** | Cadastro completo, guardiões/responsáveis, anamnese digital |
 | **Área do Paciente** | Magic Link / OTP — paciente acessa diário de emoções e tarefas sem senha |
-| **Fluxo de Caixa** | Receitas, despesas, relatórios em PDF, integração com Asaas |
+| **Fluxo de Caixa** | Receitas, despesas, relatórios em PDF e controle financeiro clínico |
 | **Equipe** | Terapeutas e secretárias com papéis (roles) e acesso controlado por RLS |
-| **Assinatura** | Trial de 7 dias configurável via banco, planos pagos via Asaas |
+| **Assinatura** | Acesso liberado para piloto fechado; pagamentos online em modo de espera |
 
 ### Modelo de Segurança
 
@@ -55,7 +55,7 @@ O **Nythos** é uma plataforma SaaS voltada a psicólogos e clínicas de psicolo
 │             Next.js Route Handlers (API)             │
 │  /api/patients/create  (service_role — admin)        │
 │  /api/team/invite      (service_role — admin)        │
-│  /api/webhooks         (Asaas payment events)        │
+│  /api/webhooks         (billing legacy/standby)      │
 │  /auth/patient/callback (Magic Link PKCE)            │
 └────────────────────┬────────────────────────────────┘
                      │ Supabase JS SDK / @supabase/ssr
@@ -69,8 +69,8 @@ O **Nythos** é uma plataforma SaaS voltada a psicólogos e clínicas de psicolo
 └─────────────────────────────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────────┐
-│                 Asaas (Gateway)                      │
-│  Cobranças · Webhooks de pagamento                  │
+│             Pagamentos online (standby)              │
+│  Stripe/Asaas · teste/legado · sem cobrança ativa    │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -108,7 +108,7 @@ nythos-app/
 | Componentes | shadcn/ui + Lucide React | — |
 | Gráficos | Recharts | ^3.8 |
 | Backend / DB | Supabase (PostgreSQL + Auth + Storage) | ^2.104 |
-| Pagamentos | Asaas | REST API |
+| Pagamentos | Stripe / Asaas | Standby no piloto fechado |
 | Push Notifications | Web Push (VAPID) | ^3.6 |
 | PDF | jsPDF + AutoTable | ^4.2 |
 | Deploy | Vercel | — |
@@ -117,7 +117,7 @@ nythos-app/
 
 ## Variáveis de Ambiente
 
-Crie o arquivo `.env.local` na raiz de `nythos-app/` com o seguinte conteúdo:
+Use `.env.example` como fonte de verdade e crie o arquivo `.env.local` na raiz de `nythos-app/`. Nunca commite `.env.local` ou segredos reais.
 
 ```dotenv
 # ── Supabase ─────────────────────────────────────────────────────────────────
@@ -133,12 +133,26 @@ SUPABASE_SERVICE_ROLE_KEY=<SERVICE_ROLE_KEY>
 # URL base usada nos Magic Links de pacientes (sem barra final)
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 
-# ── Asaas (Gateway de Pagamento) ─────────────────────────────────────────────
-# Sandbox: https://sandbox.asaas.com  |  Produção: https://asaas.com
-ASAAS_API_KEY=<SUA_ASAAS_API_KEY>
+# Segredo server-side para assinar o cookie HMAC da área do paciente.
+# Obrigatório em produção. Gere com: openssl rand -base64 32
+PATIENT_SESSION_SECRET=<SEGREDO_FORTE_E_ALEATORIO>
 
-# Token secreto para validar webhooks do Asaas (string aleatória sua)
-ASAAS_WEBHOOK_TOKEN=<TOKEN_SECRETO_WEBHOOK>
+# ── Stripe SaaS Billing (standby no piloto fechado) ─────────────────────────
+STRIPE_ENVIRONMENT=test
+STRIPE_CHECKOUT_ENABLED=false
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+STRIPE_PRICE_PRO_MONTHLY=
+STRIPE_PRICE_PRO_YEARLY=
+STRIPE_API_BASE_URL=https://api.stripe.com/v1
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
+
+# ── Asaas legado (standby no piloto fechado) ────────────────────────────────
+ASAAS_ENVIRONMENT=sandbox
+ASAAS_CHECKOUT_ENABLED=false
+ASAAS_BASE_URL=https://api-sandbox.asaas.com/v3
+ASAAS_API_KEY=
+ASAAS_WEBHOOK_TOKEN=
 
 # ── Web Push / PWA ────────────────────────────────────────────────────────────
 # Gere com: npx web-push generate-vapid-keys
@@ -148,6 +162,24 @@ VAPID_EMAIL=mailto:seu@email.com
 ```
 
 > **Sobre o Vault:** A chave de criptografia de prontuários (`nythos_encryption_key`) **não é** uma variável de ambiente da aplicação Next.js. Ela vive exclusivamente dentro do Supabase Vault. Veja a seção [Configurando o Vault](#configurando-o-vault-criptografia-de-prontuários).
+
+### Configuração para piloto fechado
+
+Variáveis obrigatórias para piloto/produção:
+
+| Variável | Uso |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL pública do projeto Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | chave anon pública, protegida por RLS |
+| `SUPABASE_SERVICE_ROLE_KEY` | server-side apenas; nunca usar `NEXT_PUBLIC_` |
+| `NEXT_PUBLIC_APP_URL` | URL pública do app para links, redirects e OAuth |
+| `PATIENT_SESSION_SECRET` | segredo HMAC forte do cookie da área do paciente |
+
+Pagamentos online permanecem em modo de espera no piloto fechado. Mantenha `STRIPE_CHECKOUT_ENABLED=false` e `ASAAS_CHECKOUT_ENABLED=false` salvo teste deliberado em sandbox/test mode. Chaves secretas de Stripe e Asaas nunca devem usar `NEXT_PUBLIC_`.
+
+Variáveis opcionais por recurso: Google Calendar (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALENDAR_OAUTH_STATE_SECRET`), Push/PWA (`NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`), health/release (`NEXT_PUBLIC_APP_VERSION`, `NEXT_PUBLIC_BUILD_ID`) e scripts administrativos (`ADMIN_EMAIL`, `ADMIN_PASSWORD`).
+
+Checklist antes de produção: confirme que `.env.local` não está versionado, que Supabase/RLS apontam para o projeto correto, que `PATIENT_SESSION_SECRET` não usa fallback de desenvolvimento, que checkout Stripe/Asaas segue desativado, e que login profissional, `/p/[token]`, `/patient/dashboard`, `npm run test` e `npm run build` passam no domínio final.
 
 ---
 
@@ -183,7 +215,7 @@ cd nythos/nythos-app
 npm install
 
 # 3. Copie o template de variáveis de ambiente
-cp .env.local.example .env.local
+cp .env.example .env.local
 # Preencha os valores conforme a seção anterior
 ```
 
@@ -371,8 +403,11 @@ No painel do Vercel → **Settings → Environment Variables**, adicione todas a
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon key do projeto (nuvem) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key (**marcar como Secret**) |
 | `NEXT_PUBLIC_APP_URL` | `https://seudominio.com` |
-| `ASAAS_API_KEY` | Chave de produção (não sandbox) |
-| `ASAAS_WEBHOOK_TOKEN` | Token secreto que você cadastrou no painel Asaas |
+| `PATIENT_SESSION_SECRET` | segredo forte gerado para produção (**marcar como Secret**) |
+| `STRIPE_ENVIRONMENT` | `test` durante o piloto fechado |
+| `STRIPE_CHECKOUT_ENABLED` | `false` durante o piloto fechado |
+| `ASAAS_ENVIRONMENT` | `sandbox` enquanto o Asaas estiver legado/standby |
+| `ASAAS_CHECKOUT_ENABLED` | `false` durante o piloto fechado |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Chave VAPID pública |
 | `VAPID_PRIVATE_KEY` | Chave VAPID privada (**marcar como Secret**) |
 | `VAPID_EMAIL` | `mailto:contato@seudominio.com` |
@@ -413,13 +448,9 @@ No Supabase → **Authentication → URL Configuration**:
   - `https://seudominio.com/auth/callback`
   - `https://seudominio.com/auth/patient/callback`
 
-#### 6. Configurar Webhook do Asaas
+#### 6. Pagamentos no piloto fechado
 
-No painel do Asaas → **Configurações → Webhooks**, registre:
-
-- **URL**: `https://seudominio.com/api/webhooks`
-- **Token**: o mesmo valor de `ASAAS_WEBHOOK_TOKEN`
-- **Eventos**: `PAYMENT_CONFIRMED`, `PAYMENT_RECEIVED`, `PAYMENT_OVERDUE`
+Não configure cobrança real no piloto fechado. Mantenha Stripe e Asaas com checkout desativado (`STRIPE_CHECKOUT_ENABLED=false` e `ASAAS_CHECKOUT_ENABLED=false`). Webhooks de pagamento só devem ser configurados quando o billing online sair do modo de espera.
 
 ---
 

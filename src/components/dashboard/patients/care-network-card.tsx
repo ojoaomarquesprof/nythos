@@ -112,16 +112,6 @@ export function CareNetworkCard({
   const { hasSubscription, loading: subLoading } = useSubscription();
   const { exportPdf, isExporting: isExportingPdf } = usePdfExport();
 
-  useEffect(() => {
-    if (initialContacts) {
-      setContacts(initialContacts);
-      setLoading(false);
-      return;
-    }
-
-    fetchContacts();
-  }, [patientId, initialContacts]);
-
   function syncContacts(nextContacts: SupportContact[]) {
     setContacts(nextContacts);
     onChanged?.(nextContacts);
@@ -133,6 +123,20 @@ export function CareNetworkCard({
     syncContacts(data || []);
     setLoading(false);
   }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (initialContacts) {
+        setContacts(initialContacts);
+        setLoading(false);
+        return;
+      }
+
+      void fetchContacts();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientId, initialContacts]);
 
   async function handleAddContact(e: React.FormEvent) {
     e.preventDefault();
@@ -226,6 +230,7 @@ export function CareNetworkCard({
       title: "Rede de Apoio",
       subtitle: patientDetails,
       profile,
+      documentKind: "clinical",
       fileName: `rede_apoio_${patient.full_name.toLowerCase().replace(/\s+/g, "_")}.pdf`,
       content: [
         {
@@ -234,11 +239,11 @@ export function CareNetworkCard({
             widths: ["*", "auto", "auto", "auto", "auto"],
             body: [
               [
-                { text: "Nome", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
-                { text: "Papel", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
-                { text: "Vinculo", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
-                { text: "Contato", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
-                { text: "Autorizacao", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
+                { text: "Nome", bold: true, fillColor: "#334155", color: "white", margin: [5, 5] },
+                { text: "Papel", bold: true, fillColor: "#334155", color: "white", margin: [5, 5] },
+                { text: "Vinculo", bold: true, fillColor: "#334155", color: "white", margin: [5, 5] },
+                { text: "Contato", bold: true, fillColor: "#334155", color: "white", margin: [5, 5] },
+                { text: "Autorizacao", bold: true, fillColor: "#334155", color: "white", margin: [5, 5] },
               ],
               ...tableBody.map((row) => row.map((cell) => ({ text: cell, margin: [5, 5] }))),
             ],
@@ -276,7 +281,7 @@ export function CareNetworkCard({
               disabled={contacts.length === 0 || !profile || !patient || isExportingPdf}
             >
               <Download className="size-4" />
-              PDF
+              Baixar PDF
             </Button>
             <Button
               size="sm"

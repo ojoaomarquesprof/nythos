@@ -59,7 +59,7 @@ export function SessionList({
           disabled={isExportingPdf || sessions.length === 0}
         >
           <Download className="size-4" />
-          Exportar PDF
+          Baixar PDF
         </Button>
       </div>
 
@@ -71,7 +71,7 @@ export function SessionList({
             </div>
             <p className="text-sm font-medium text-foreground">Nenhuma sessão registrada</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Agende a primeira sessão para conectar agenda, evolução e financeiro deste caso.
+              Agende a primeira sessao para conectar agenda, evolucao, documentos clinicos e financeiro deste caso.
             </p>
           </CardContent>
         </Card>

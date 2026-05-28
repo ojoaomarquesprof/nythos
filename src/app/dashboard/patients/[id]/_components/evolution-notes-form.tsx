@@ -70,7 +70,10 @@ export function EvolutionNotesForm({
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-primary">Prontuário e Evolução</h2>
           <p className="text-sm text-muted-foreground">
-            Espaço seguro para observações clínicas sensíveis, evolução por sessão e histórico do caso.
+            Espaco seguro para observacoes clinicas sensiveis, evolucao por sessao e historico do caso.
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            PDFs clinicos usam os dados do perfil profissional e devem ser exportados apenas quando necessario.
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
@@ -81,16 +84,16 @@ export function EvolutionNotesForm({
             disabled={isExportingPdf}
           >
             <FileText className="w-4 h-4 mr-2 shrink-0" />
-            Relatório Completo
+            Exportar com seguranca
           </Button>
           <Button
             variant="outline"
             className="h-9 w-full justify-center rounded-2xl border-primary/20 bg-white/80 text-xs font-semibold text-primary hover:bg-primary/5 sm:w-auto"
             onClick={handleExportNotes}
-            disabled={isExportingPdf || !patient.notes_encrypted}
+            disabled={isExportingPdf || (!patient.notes_encrypted && sessionEvolutions.length === 0)}
           >
             <Download className="w-4 h-4 mr-2 shrink-0" />
-            Exportar Notas
+            Baixar PDF clinico
           </Button>
         </div>
       </div>
@@ -205,8 +208,8 @@ export function EvolutionNotesForm({
                 </p>
                 <p className="mx-auto mt-1 max-w-md text-sm leading-relaxed text-muted-foreground">
                   {hasPendingSessionEvolution
-                    ? "Use a sessão concluída como ponto de partida para registrar observações clínicas com segurança e contexto."
-                    : "Após a primeira sessão, use este espaço para registrar a evolução clínica com segurança e contexto."}
+                    ? "Use a sessao concluida como ponto de partida para registrar observacoes clinicas com seguranca e contexto."
+                    : "Apos a primeira sessao, use este espaco para registrar a evolucao clinica com seguranca e contexto."}
                 </p>
               </div>
             )}

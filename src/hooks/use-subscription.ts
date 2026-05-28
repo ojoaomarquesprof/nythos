@@ -92,16 +92,30 @@ function daysUntil(date: string | null): number {
   return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
 }
 
-async function countRows(
+async function countActivePatients(
   supabase: ReturnType<typeof createClient>,
-  table: "patients" | "profiles" | "patient_documents",
-  applyFilters: (query: any) => any
+  ownerUserId: string
 ): Promise<number> {
-  const query = (supabase as any)
-    .from(table)
-    .select("id", { count: "exact", head: true });
+  const { count, error } = await supabase
+    .from("patients")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", ownerUserId)
+    .eq("status", "active");
 
-  const { count, error } = await applyFilters(query);
+  if (error) return 0;
+  return count ?? 0;
+}
+
+async function countSecretaryTeamMembers(
+  supabase: ReturnType<typeof createClient>,
+  ownerUserId: string
+): Promise<number> {
+  const { count, error } = await supabase
+    .from("profiles")
+    .select("id", { count: "exact", head: true })
+    .eq("employer_id", ownerUserId)
+    .eq("role", "secretary");
+
   if (error) return 0;
   return count ?? 0;
 }
@@ -148,22 +162,14 @@ export function useSubscription() {
           subscriptionResult,
           activePatients,
           teamMembers,
-          documents,
         ] = await Promise.all([
           supabase
             .from("account_subscriptions")
             .select("id, owner_user_id, plan_id, status, trial_ends_at, current_period_ends_at, cancel_at_period_end, provider")
             .eq("owner_user_id", ownerUserId)
             .maybeSingle(),
-          countRows(supabase, "patients", (query) =>
-            query.eq("user_id", ownerUserId).eq("status", "active")
-          ),
-          countRows(supabase, "profiles", (query) =>
-            query.eq("employer_id", ownerUserId).eq("role", "secretary")
-          ),
-          countRows(supabase, "patient_documents", (query) =>
-            query.eq("therapist_id", ownerUserId)
-          ),
+          countActivePatients(supabase, ownerUserId),
+          countSecretaryTeamMembers(supabase, ownerUserId),
         ]);
 
         let row = subscriptionResult.error ? null : subscriptionResult.data as AccountSubscriptionRow | null;
@@ -203,7 +209,8 @@ export function useSubscription() {
         const nextUsage: SubscriptionUsage = {
           activePatients,
           teamMembers,
-          documents,
+          // Patient documents are intentionally not counted from the browser:
+          // public.patient_documents exposes data only through patient-scoped RPC/API flows.
           storageMb: 0,
         };
 

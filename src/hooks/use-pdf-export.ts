@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { generateClinicalPdf, PdfOptions } from "@/lib/pdf-generator";
+import { generateClinicalPdf, type PdfOptions } from "@/lib/pdf-generator";
 import { toast } from "sonner";
 
 export function usePdfExport() {

@@ -10,6 +10,7 @@ export interface PdfOptions {
   profile: Profile;
   content: unknown[]; // Array estruturado do pdfmake
   fileName?: string;
+  documentKind?: "clinical" | "financial" | "receipt" | "administrative";
 }
 
 type PdfMakeInstance = {
@@ -25,6 +26,22 @@ type PdfFontsModule = {
   };
   vfs?: unknown;
 };
+
+const DOCUMENT_KIND_LABELS: Record<NonNullable<PdfOptions["documentKind"]>, string> = {
+  clinical: "Documento clinico",
+  financial: "Relatorio financeiro",
+  receipt: "Recibo de Pagamento",
+  administrative: "Documento",
+};
+
+function getProfileIdentity(profile: Profile) {
+  return {
+    clinicName: profile.clinic_name?.trim() || "Clinica de Psicologia",
+    professionalName: profile.full_name?.trim() || "Nome profissional nao informado",
+    crp: profile.crp?.trim() || null,
+    phone: profile.phone?.trim() || null,
+  };
+}
 
 // Helper to convert image URL to base64
 export async function getBase64ImageFromUrl(imageUrl: string): Promise<string> {
@@ -55,7 +72,16 @@ export async function generateClinicalPdf(options: PdfOptions): Promise<void> {
     pdfMake.vfs = pdfFonts.vfs;
   }
 
-  const { title, subtitle, profile, content, fileName = "relatorio_clinico.pdf" } = options;
+  const {
+    title,
+    subtitle,
+    profile,
+    content,
+    fileName = "relatorio_clinico.pdf",
+    documentKind = "clinical",
+  } = options;
+  const profileIdentity = getProfileIdentity(profile);
+  const documentLabel = DOCUMENT_KIND_LABELS[documentKind];
 
   // 2. Extrair Logo
   let logoBase64 = null;
@@ -70,7 +96,7 @@ export async function generateClinicalPdf(options: PdfOptions): Promise<void> {
   // 3. Montar o layout declarativo (Document Definition)
   const docDefinition = {
     pageSize: 'A4',
-    pageMargins: [40, 100, 40, 60], // Left, Top, Right, Bottom
+    pageMargins: [40, 112, 40, 66], // Left, Top, Right, Bottom
     header: function() {
       return {
         margin: [40, 20, 40, 0],
@@ -78,14 +104,23 @@ export async function generateClinicalPdf(options: PdfOptions): Promise<void> {
           logoBase64 ? { image: logoBase64, width: 50, height: 50, fit: [50, 50] } : { text: '', width: 50 },
           {
             stack: [
-              { text: profile.clinic_name || "Clínica de Psicologia", fontSize: 14, bold: true, color: '#0f172a' },
-              { text: `Psicóloga(o): ${profile.full_name || "Não informado"}`, fontSize: 10, color: '#475569' },
-              profile.crp ? { text: `CRP: ${profile.crp}`, fontSize: 10, color: '#475569' } : null,
-              profile.phone ? { text: `Contato: ${profile.phone}`, fontSize: 10, color: '#475569' } : null,
+              { text: profileIdentity.clinicName, fontSize: 14, bold: true, color: '#0f172a' },
+              { text: `Profissional: ${profileIdentity.professionalName}`, fontSize: 10, color: '#475569' },
+              profileIdentity.crp ? { text: `CRP: ${profileIdentity.crp}`, fontSize: 10, color: '#475569' } : null,
+              profileIdentity.phone ? { text: `Contato: ${profileIdentity.phone}`, fontSize: 10, color: '#475569' } : null,
             ].filter(Boolean),
             margin: [10, 0, 0, 0],
             width: '*'
-          }
+          },
+          {
+            text: documentLabel,
+            width: 116,
+            alignment: 'right',
+            color: '#64748b',
+            fontSize: 8,
+            bold: true,
+            margin: [0, 4, 0, 0],
+          },
         ]
       };
     },
@@ -96,12 +131,13 @@ export async function generateClinicalPdf(options: PdfOptions): Promise<void> {
       return {
         margin: [40, 0, 40, 0],
         columns: [
-          { text: `Gerado em: ${dateStr}`, fontSize: 8, color: '#94a3b8' },
+          { text: `Nythos | Gerado em: ${dateStr}`, fontSize: 8, color: '#94a3b8' },
           { text: `Página ${currentPage} de ${pageCount}`, fontSize: 8, color: '#94a3b8', alignment: 'right' }
         ]
       };
     },
     content: [
+      { text: documentLabel, fontSize: 8, bold: true, color: '#64748b', margin: [0, 0, 0, 6] },
       { text: title, fontSize: 20, bold: true, color: '#0f172a', margin: [0, 0, 0, subtitle ? 4 : 20] },
       subtitle ? { text: subtitle, fontSize: 12, color: '#64748b', margin: [0, 0, 0, 20] } : null,
       
@@ -140,6 +176,7 @@ export interface PdfHeaderOptions {
 export async function createPdfDocument(options: PdfHeaderOptions) {
   const doc = new jsPDF();
   const { title, subtitle, profile } = options;
+  const profileIdentity = getProfileIdentity(profile);
 
   let yPos = 20;
   const margin = 14;
@@ -157,17 +194,17 @@ export async function createPdfDocument(options: PdfHeaderOptions) {
   doc.setFontSize(16);
   const textX = profile.clinic_logo_url ? 50 : margin;
   
-  doc.text(profile.clinic_name || "Clínica de Psicologia", textX, yPos);
+  doc.text(profileIdentity.clinicName, textX, yPos);
   
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.setTextColor(100);
-  doc.text(`Psicóloga(o): ${profile.full_name || "Não informado"}`, textX, yPos + 6);
-  if (profile.crp) {
-    doc.text(`CRP: ${profile.crp}`, textX, yPos + 11);
+  doc.text(`Profissional: ${profileIdentity.professionalName}`, textX, yPos + 6);
+  if (profileIdentity.crp) {
+    doc.text(`CRP: ${profileIdentity.crp}`, textX, yPos + 11);
   }
-  if (profile.phone) {
-    doc.text(`Contato: ${profile.phone}`, textX, yPos + 16);
+  if (profileIdentity.phone) {
+    doc.text(`Contato: ${profileIdentity.phone}`, textX, yPos + 16);
   }
 
   yPos += 30;
@@ -211,7 +248,7 @@ export function addPdfFooter(doc: jsPDF) {
 
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
-    doc.text(`Gerado em: ${dateStr}`, 14, 285);
+    doc.text(`Nythos | Gerado em: ${dateStr}`, 14, 285);
     doc.text(`Página ${i} de ${pageCount}`, 196, 285, { align: "right" });
   }
 }

@@ -593,7 +593,6 @@ export default function PatientDetailPage() {
     setIsEditingSession,
     sessionEditForm,
     setSessionEditForm,
-    rescheduleSession,
     setRescheduleSession,
     rescheduleDate,
     setRescheduleDate,
@@ -601,7 +600,6 @@ export default function PatientDetailPage() {
     setRescheduleTime,
     showRescheduleModal,
     setShowRescheduleModal,
-    rescheduleWeekOffset,
     setRescheduleWeekOffset,
     therapistSessions,
     showCancelSeriesModal,
@@ -610,7 +608,6 @@ export default function PatientDetailPage() {
     setCancellingSession,
     rescheduleWeekDays,
     handleAddNote,
-    handleStatusChange,
     handleCompleteSession,
     handleReverseCompletedSession,
     handleStartEditingSession,
@@ -771,13 +768,6 @@ export default function PatientDetailPage() {
       latestEvolutionText = latestEvolutionSession.session_notes_encrypted;
     }
   }
-  const financeState =
-    pendingPatientIncome > 0
-      ? `${formatCurrency(pendingPatientIncome)} pendente`
-      : patientCashFlow.length > 0
-        ? "Sem pendências financeiras"
-        : "Sem lançamentos";
-  const latestAnamnesis = anamnesisSummaries[0] ?? null;
   const completedAnamnesis = anamnesisSummaries.find((item) => item.status === "completed") ?? null;
   const pendingAnamnesis = anamnesisSummaries.find((item) => item.status !== "completed") ?? null;
   const hasAnsweredAnamnesis = !!completedAnamnesis;
@@ -791,12 +781,6 @@ export default function PatientDetailPage() {
           ? "Humor relatado menor que o registro anterior"
           : "Humor relatado estável"
       : "Tendência disponível com pelo menos 2 registros";
-  const anamnesisState =
-    completedAnamnesis
-      ? `Respondida em ${formatDate(completedAnamnesis.completed_at || completedAnamnesis.created_at || new Date().toISOString())}`
-      : pendingAnamnesis
-        ? "Solicitada, aguardando resposta"
-        : "Não solicitada";
   const missingEssentialFields = [
     !patient.phone ? "telefone" : null,
     !patient.email ? "e-mail" : null,
@@ -1650,7 +1634,14 @@ export default function PatientDetailPage() {
   };
 
   const handleExportSessions = async () => {
-    if (!profile) return;
+    if (!profile) {
+      setErrorDialog({
+        open: true,
+        title: "Dados profissionais incompletos",
+        message: "Revise nome, CRP e clinica em Configuracoes antes de baixar PDFs identificados.",
+      });
+      return;
+    }
     const tableBody = sessions.map(s => [
       new Date(s.scheduled_at).toLocaleDateString("pt-BR"),
       formatTime(s.scheduled_at),
@@ -1660,9 +1651,10 @@ export default function PatientDetailPage() {
     ]);
 
     const exported = await exportPdf({
-      title: "Relatório de Sessões",
-      subtitle: `Paciente: ${patient.full_name}\nData de Geração: ${new Date().toLocaleDateString("pt-BR")}`,
+      title: "Resumo de sessoes do paciente",
+      subtitle: `Paciente: ${patient.full_name}\nGerado em: ${new Date().toLocaleDateString("pt-BR")}`,
       profile,
+      documentKind: "clinical",
       fileName: `sessoes_${patient.full_name.replace(/\s+/g, '_')}.pdf`,
       content: [
         {
@@ -1671,11 +1663,11 @@ export default function PatientDetailPage() {
             widths: ['auto', 'auto', 'auto', '*', 'auto'],
             body: [
               [
-                { text: 'Data', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
-                { text: 'Hora', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
-                { text: 'Duração', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
-                { text: 'Tipo', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
-                { text: 'Status', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] }
+                { text: 'Data', bold: true, fillColor: '#334155', color: 'white', margin: [5, 5] },
+                { text: 'Hora', bold: true, fillColor: '#334155', color: 'white', margin: [5, 5] },
+                { text: 'Duracao', bold: true, fillColor: '#334155', color: 'white', margin: [5, 5] },
+                { text: 'Tipo', bold: true, fillColor: '#334155', color: 'white', margin: [5, 5] },
+                { text: 'Status', bold: true, fillColor: '#334155', color: 'white', margin: [5, 5] }
               ],
               ...tableBody.map(row => row.map(cell => ({ text: cell, margin: [5, 5] })))
             ]
@@ -1703,16 +1695,31 @@ export default function PatientDetailPage() {
   };
 
   const handleExportNotes = async () => {
-    if (!profile || !patient.notes_encrypted) return;
+    if (!profile) {
+      setErrorDialog({
+        open: true,
+        title: "Dados profissionais incompletos",
+        message: "Revise nome, CRP e clinica em Configuracoes antes de baixar PDFs clinicos.",
+      });
+      return;
+    }
     const completedSessions = sessions.filter(s => s.status === "completed" && hasSessionEvolution(s));
+    if (!patient.notes_encrypted && completedSessions.length === 0) {
+      setErrorDialog({
+        open: true,
+        title: "Sem informacoes suficientes",
+        message: "Este paciente ainda nao possui nota geral ou evolucao de sessao para exportar com seguranca.",
+      });
+      return;
+    }
     const contentBody: PdfContentItem[] = [];
     if (patient.notes_encrypted) {
-      contentBody.push({ text: "Notas Gerais", style: "header" });
+      contentBody.push({ text: "Notas gerais", style: "header" });
       contentBody.push({ text: patient.notes_encrypted, style: "normalText", margin: [0, 0, 0, 20] });
     }
 
     if (completedSessions.length > 0) {
-      contentBody.push({ text: "Evoluções por Sessão", style: "header", margin: [0, 10, 0, 10] });
+      contentBody.push({ text: "Evolucoes por sessao", style: "header", margin: [0, 10, 0, 10] });
       completedSessions.forEach(session => {
         const evolution = parseEvolutionPayload(session.session_notes_encrypted);
         const dateStr = `${new Date(session.scheduled_at).toLocaleDateString("pt-BR")}`;
@@ -1723,9 +1730,10 @@ export default function PatientDetailPage() {
     }
 
     const exported = await exportPdf({
-      title: "Prontuário de Evolução",
-      subtitle: `Paciente: ${patient.full_name}\nData: ${new Date().toLocaleDateString("pt-BR")}`,
+      title: "Prontuario de evolucao",
+      subtitle: `Paciente: ${patient.full_name}\nGerado em: ${new Date().toLocaleDateString("pt-BR")}`,
       profile,
+      documentKind: "clinical",
       fileName: `prontuario_evolucao_${patient.full_name.replace(/\s+/g, '_')}.pdf`,
       content: contentBody
     });
@@ -1747,16 +1755,24 @@ export default function PatientDetailPage() {
   };
 
   const handleExportSingleSession = async (session: Session) => {
-    if (!profile) return;
+    if (!profile) {
+      setErrorDialog({
+        open: true,
+        title: "Dados profissionais incompletos",
+        message: "Revise nome, CRP e clinica em Configuracoes antes de baixar PDFs clinicos.",
+      });
+      return;
+    }
     const evolution = parseEvolutionPayload(session.session_notes_encrypted);
 
     const exported = await exportPdf({
-      title: "Relatório de Atendimento Individual",
+      title: "Atendimento individual",
       subtitle: `Paciente: ${patient.full_name} | Data: ${formatDate(session.scheduled_at)}`,
       profile,
+      documentKind: "clinical",
       fileName: `sessao_${patient.full_name.replace(/\s+/g, '_')}_${formatDate(session.scheduled_at).replace(/\//g, '-')}.pdf`,
       content: [
-        { text: "Evolução Clínica", style: "header", color: '#4f46e5', margin: [0, 10, 0, 10] },
+        { text: "Evolucao clinica", style: "header", color: '#334155', margin: [0, 10, 0, 10] },
         { text: evolution.notes || session.session_notes_encrypted || "Nenhuma nota registrada.", style: "normalText" }
       ]
     });
@@ -2778,7 +2794,7 @@ export default function PatientDetailPage() {
                             const evolution = JSON.parse(viewingSession.session_notes_encrypted || "{}");
                             const evolutionText = evolution.notes || viewingSession.session_notes_encrypted || "";
                             if (evolutionText) return evolutionText;
-                          } catch (e) {
+                          } catch {
                             if (viewingSession.session_notes_encrypted) return viewingSession.session_notes_encrypted;
                           }
                           return (
@@ -2819,7 +2835,7 @@ export default function PatientDetailPage() {
                             </div>
                           </div>
                         );
-                      } catch (e) {
+                      } catch {
                         return null;
                       }
                     })()}
@@ -2895,7 +2911,7 @@ export default function PatientDetailPage() {
                       className="rounded-full px-6 h-10 font-bold border-primary/20 text-primary hover:bg-primary/5"
                     >
                       <Download className="w-4 h-4 mr-2" />
-                      EXPORTAR PDF
+                      BAIXAR PDF CLINICO
                     </Button>
                     <div className="flex flex-wrap justify-end gap-2">
                       {viewingSession.status === "scheduled" && (

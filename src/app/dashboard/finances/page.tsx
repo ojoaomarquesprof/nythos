@@ -72,7 +72,7 @@ type EvolutionChartPoint = {
 type PdfTableCell = string | number;
 
 function paymentMethodLabel(method: string | null | undefined): string {
-  if (!method) return "NÃ£o informado";
+  if (!method) return "Nao informado";
   return PAYMENT_METHODS[method as keyof typeof PAYMENT_METHODS]?.label ?? method;
 }
 
@@ -87,8 +87,12 @@ function receiptFileSlug(value: string): string {
 }
 
 function compactInternalCode(id: string | null): string {
-  if (!id) return "NÃ£o informado";
+  if (!id) return "Nao informado";
   return id.replace(/-/g, "").slice(0, 10).toUpperCase();
+}
+
+function isProfessionalProfileIncomplete(profile: Profile | null): boolean {
+  return !profile?.full_name?.trim() || !profile?.clinic_name?.trim() || !profile?.crp?.trim();
 }
 
 function getTransactionClinicalNote(transaction: FinancialTransaction) {
@@ -305,20 +309,20 @@ export default function FinancesPage() {
   const handleGenerateReceipt = async (transaction: FinancialTransaction) => {
     if (!profile) {
       showError(
-        "Perfil nÃ£o encontrado",
-        "Complete os dados da clÃ­nica/profissional para emitir um recibo mais completo."
+        "Perfil profissional nao encontrado",
+        "Revise os dados profissionais em Configuracoes antes de gerar recibos com identidade da clinica."
       );
       return;
     }
 
     if (!canGenerateCashFlowReceipt(transaction)) {
-      toast.error("Recibo disponÃ­vel apenas para receitas confirmadas de sessÃ£o ou pacote.");
+      toast.error("Recibo disponivel apenas para receitas confirmadas de sessao ou pacote.");
       return;
     }
 
     const receipt = buildCashFlowReceiptPayload(transaction);
     if (!receipt) {
-      toast.error("NÃ£o foi possÃ­vel preparar os dados do recibo.");
+      toast.error("Nao foi possivel preparar os dados do recibo.");
       return;
     }
 
@@ -326,9 +330,9 @@ export default function FinancesPage() {
       void recordReceiptGenerated(transaction.id).catch(() => undefined);
     }
 
-    const missingProfileData = !profile.full_name || !profile.clinic_name || !profile.crp;
+    const missingProfileData = isProfessionalProfileIncomplete(profile);
     if (missingProfileData) {
-      toast.warning("Complete os dados da clÃ­nica/profissional para emitir um recibo mais completo.");
+      toast.warning("O recibo usa dados do perfil profissional. Complete nome, clinica e CRP antes de entregar ao paciente.");
     }
 
     let signatureBase64: string | null = null;
@@ -343,30 +347,31 @@ export default function FinancesPage() {
     const serviceRows = receipt.origin === "package"
       ? [
           ["Origem", receipt.originLabel],
-          ["Pacote", receipt.packageName || "Pacote de sessÃµes"],
-          ["Quantidade de sessÃµes", receipt.packageTotalSessions ? String(receipt.packageTotalSessions) : "NÃ£o informado"],
-          ["Valor por sessÃ£o", receipt.packageUnitAmount ? formatCurrency(receipt.packageUnitAmount) : "NÃ£o informado"],
-          ["DescriÃ§Ã£o", receipt.description],
+          ["Pacote", receipt.packageName || "Pacote de sessoes"],
+          ["Quantidade de sessoes", receipt.packageTotalSessions ? String(receipt.packageTotalSessions) : "Nao informado"],
+          ["Valor por sessao", receipt.packageUnitAmount ? formatCurrency(receipt.packageUnitAmount) : "Nao informado"],
+          ["Descricao", receipt.description],
         ]
       : [
           ["Origem", receipt.originLabel],
-          ["Data da sessÃ£o", receipt.sessionDate ? formatDate(receipt.sessionDate) : "NÃ£o informado"],
-          ["DescriÃ§Ã£o", receipt.description],
+          ["Data da sessao", receipt.sessionDate ? formatDate(receipt.sessionDate) : "Nao informado"],
+          ["Descricao", receipt.description],
         ];
 
     const receiverRows = [
-      ["Profissional", profile.full_name || "NÃ£o informado"],
-      ["ClÃ­nica", profile.clinic_name || "NÃ£o informado"],
-      ["CRP", profile.crp || "NÃ£o informado"],
+      ["Profissional", profile.full_name || "Nao informado"],
+      ["Clinica", profile.clinic_name || "Nao informado"],
+      ["CRP", profile.crp || "Nao informado"],
       ...(profile.cpf ? [["CPF", profile.cpf]] : []),
       ...(profile.phone ? [["Contato", profile.phone]] : []),
-      ...(profile.address ? [["EndereÃ§o", profile.address]] : []),
+      ...(profile.address ? [["Endereco", profile.address]] : []),
     ];
 
     await exportPdf({
-      title: "Recibo",
+      title: "Recibo de Pagamento",
       subtitle: `Comprovante de pagamento - ${receipt.originLabel}`,
       profile,
+      documentKind: "receipt",
       fileName: `recibo_${receiptFileSlug(receipt.patientName)}_${compactInternalCode(receipt.id).toLowerCase()}.pdf`,
       content: [
         {
@@ -374,9 +379,8 @@ export default function FinancesPage() {
             {
               width: "*",
               stack: [
-                { text: "Recebemos de", fontSize: 9, bold: true, color: "#64748b", margin: [0, 0, 0, 4] },
+                { text: "Paciente/pagador", fontSize: 9, bold: true, color: "#64748b", margin: [0, 0, 0, 4] },
                 { text: receipt.patientName, fontSize: 15, bold: true, color: "#0f172a" },
-                { text: "Pagador/paciente", fontSize: 9, color: "#64748b", margin: [0, 3, 0, 0] },
               ],
             },
             {
@@ -394,9 +398,9 @@ export default function FinancesPage() {
             widths: [130, "*"],
             body: [
               [{ text: "Dados do pagamento", colSpan: 2, bold: true, color: "#0f172a", fillColor: "#f8fafc" }, {}],
-              ["Data de pagamento", receipt.paidAt ? formatDate(receipt.paidAt) : "NÃ£o informado"],
-              ["MÃ©todo", paymentMethodLabel(receipt.paymentMethod)],
-              ["CÃ³digo interno", compactInternalCode(receipt.id)],
+              ["Data de pagamento", receipt.paidAt ? formatDate(receipt.paidAt) : "Nao informado"],
+              ["Metodo", paymentMethodLabel(receipt.paymentMethod)],
+              ["Referencia", compactInternalCode(receipt.id)],
             ],
           },
           layout: "lightHorizontalLines",
@@ -406,7 +410,7 @@ export default function FinancesPage() {
           table: {
             widths: [130, "*"],
             body: [
-              [{ text: "ServiÃ§o", colSpan: 2, bold: true, color: "#0f172a", fillColor: "#f8fafc" }, {}],
+              [{ text: "Servico", colSpan: 2, bold: true, color: "#0f172a", fillColor: "#f8fafc" }, {}],
               ...serviceRows,
             ],
           },
@@ -424,7 +428,6 @@ export default function FinancesPage() {
           layout: "lightHorizontalLines",
           margin: [0, 0, 0, 24],
         },
-        { text: "Este documento e um comprovante interno de pagamento registrado no Nythos.", fontSize: 9, color: "#64748b", alignment: "center", margin: [0, 4, 0, 18] },
         signatureBase64
           ? { image: signatureBase64, width: 120, alignment: "center", margin: [0, 0, 0, 6] }
           : null,
@@ -433,7 +436,7 @@ export default function FinancesPage() {
           margin: [0, 0, 0, 6],
         },
         {
-          text: profile.full_name || profile.clinic_name || "Profissional responsÃ¡vel",
+          text: profile.full_name || profile.clinic_name || "Profissional responsavel",
           alignment: "center",
           bold: true,
           color: "#0f172a",
@@ -534,8 +537,12 @@ export default function FinancesPage() {
 
   const handleExportPdf = async () => {
     if (!profile) {
-      showError("Perfil Não Encontrado", "Configure seu perfil nas Configurações antes de gerar relatórios com identidade visual.");
+      showError("Perfil profissional nao encontrado", "Configure nome, CRP e clinica nas Configuracoes antes de gerar relatorios com identidade visual.");
       return;
+    }
+
+    if (isProfessionalProfileIncomplete(profile)) {
+      toast.warning("O PDF financeiro usa dados do perfil profissional. Complete nome, clinica e CRP para um documento mais completo.");
     }
     
     const title = filter === "all" ? "Fluxo de Caixa Geral" : filter === "income" ? "Relatório de Receitas" : "Relatório de Despesas";
@@ -550,8 +557,9 @@ export default function FinancesPage() {
 
     await exportPdf({
       title,
-      subtitle: `Período selecionado (Filtro: ${title})\nGerado em: ${new Date().toLocaleDateString("pt-BR")}`,
+      subtitle: `Competencia: ${currentDate.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}\nEmitido em: ${new Date().toLocaleDateString("pt-BR")}`,
       profile,
+      documentKind: "financial",
       fileName: `financeiro_${filter}.pdf`,
       content: [
         {
@@ -560,11 +568,11 @@ export default function FinancesPage() {
             widths: ['auto', '*', 'auto', 'auto', 'auto'],
             body: [
               [
-                { text: 'Data', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
-                { text: 'Descrição', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
-                { text: 'Categoria', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
-                { text: 'Valor', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] },
-                { text: 'Status', bold: true, fillColor: '#8b5cf6', color: 'white', margin: [5, 5] }
+                { text: 'Data', bold: true, fillColor: '#334155', color: 'white', margin: [5, 5] },
+                { text: 'Descricao', bold: true, fillColor: '#334155', color: 'white', margin: [5, 5] },
+                { text: 'Categoria', bold: true, fillColor: '#334155', color: 'white', margin: [5, 5] },
+                { text: 'Valor', bold: true, fillColor: '#334155', color: 'white', margin: [5, 5] },
+                { text: 'Status', bold: true, fillColor: '#334155', color: 'white', margin: [5, 5] }
               ],
               ...tableBody.map((row) => row.map((cell) => ({ text: cell, margin: [5, 5] })))
             ]
@@ -789,7 +797,7 @@ export default function FinancesPage() {
                   className="h-10 rounded-xl font-bold border-teal-200 hover:bg-teal-50 text-teal-600 transition-all"
                 >
                   <Download className="w-4 h-4 mr-2" />
-                  PDF
+                  Baixar PDF
                 </Button>
               </SubscriptionGate>
               <div className="flex gap-1 bg-teal-500/50 rounded-xl p-1 border border-teal-500/50">
@@ -1217,6 +1225,7 @@ export default function FinancesPage() {
         onGenerateReceipt={handleGenerateReceipt}
         actionPending={transactionActionId === selectedTransaction?.id}
         receiptPending={isExporting}
+        professionalProfileIncomplete={isProfessionalProfileIncomplete(profile)}
       />
     </div>
   );

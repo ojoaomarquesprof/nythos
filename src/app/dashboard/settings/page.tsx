@@ -15,8 +15,28 @@ import type { Profile } from "@/types/database";
 import { AnamnesisBuilder } from "@/components/dashboard/settings/anamnesis-builder";
 import { CurrentPlanCard } from "@/components/dashboard/settings/current-plan-card";
 
+type BrandImageField = "avatar_url" | "clinic_logo_url" | "signature_url";
+
+const BRAND_ASSET_MAX_SIZE_MB = 15;
+const BRAND_ASSET_MAX_SIZE_BYTES = BRAND_ASSET_MAX_SIZE_MB * 1024 * 1024;
+const BRAND_ASSET_ACCEPT = "image/jpeg,image/png,image/gif,image/webp";
+const BRAND_ASSET_HELP_TEXT = `Recomendado: imagem em JPG, PNG, GIF ou WebP. Máximo ${BRAND_ASSET_MAX_SIZE_MB}MB.`;
+const ALLOWED_BRAND_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+
+type BrandAssetUploadResponse = {
+  success?: boolean;
+  field?: BrandImageField;
+  publicUrl?: string;
+  error?: string;
+};
+
 export default function SettingsPage() {
-  const supabase = createClient() as any;
+  const supabase = createClient();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -41,6 +61,11 @@ export default function SettingsPage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingSignature, setUploadingSignature] = useState(false);
+  const missingDocumentProfileFields = [
+    !formData.full_name.trim() ? "nome profissional" : null,
+    !formData.clinic_name.trim() ? "clinica" : null,
+    !formData.crp.trim() ? "CRP" : null,
+  ].filter(Boolean);
   
   // New states for notifications and security
   const [pushStatus, setPushStatus] = useState<NotificationPermission>("default");
@@ -90,7 +115,10 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
-    loadProfile();
+    const timer = window.setTimeout(() => {
+      void loadProfile();
+    }, 0);
+    return () => window.clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -104,7 +132,7 @@ export default function SettingsPage() {
 
   const handleFileUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    field: "avatar_url" | "clinic_logo_url" | "signature_url",
+    field: BrandImageField,
   ) => {
     const file = e.target.files?.[0];
     if (!file || !profile) {
@@ -112,8 +140,14 @@ export default function SettingsPage() {
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      showError("Arquivo Muito Grande", "A imagem deve ter no máximo 5MB.");
+    if (!ALLOWED_BRAND_IMAGE_TYPES.has(file.type)) {
+      showError("Tipo de arquivo inválido", "Envie uma imagem JPG, PNG, GIF ou WebP.");
+      e.target.value = "";
+      return;
+    }
+
+    if (file.size > BRAND_ASSET_MAX_SIZE_BYTES) {
+      showError("Arquivo Muito Grande", `A imagem deve ter no máximo ${BRAND_ASSET_MAX_SIZE_MB}MB.`);
       e.target.value = "";
       return;
     }
@@ -123,35 +157,31 @@ export default function SettingsPage() {
     else setUploadingSignature(true);
 
     try {
-      const fileExt = file.name.split(".").pop()?.toLowerCase() || "png";
-      const safeExt = ["jpg","jpeg","png","gif","webp"].includes(fileExt) ? fileExt : "png";
-      const fileName = `${profile.id}/${field}-${Date.now()}.${safeExt}`;
+      const uploadFormData = new FormData();
+      uploadFormData.append("file", file);
+      uploadFormData.append("field", field);
 
-      const { error: uploadError } = await supabase.storage
-        .from("brand")
-        .upload(fileName, file, { upsert: true });
+      const response = await fetch("/api/brand-assets/upload", {
+        method: "POST",
+        body: uploadFormData,
+      });
 
-      if (uploadError) {
-        throw new Error(`Erro no upload: ${uploadError.message}`);
+      const result = await response.json().catch(() => null) as BrandAssetUploadResponse | null;
+
+      if (!response.ok || !result?.success || result.field !== field || !result.publicUrl) {
+        const message = response.status === 401
+          ? "Não foi possível confirmar sua sessão. Faça login novamente."
+          : result?.error || "Não foi possível enviar a imagem pelo servidor.";
+        showError("Erro no Upload", message);
+        e.target.value = "";
+        return;
       }
 
-      const { data } = supabase.storage.from("brand").getPublicUrl(fileName);
-      const publicUrl = `${data.publicUrl}?t=${Date.now()}`;
-
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({ [field]: data.publicUrl })
-        .eq("id", profile.id);
-
-      if (updateError) {
-        throw new Error(`Erro ao salvar URL: ${updateError.message}`);
-      }
-
-      setFormData((prev) => ({ ...prev, [field]: publicUrl }));
-      setProfile((prev) => prev ? { ...prev, [field]: data.publicUrl } : prev);
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : "Erro desconhecido";
-      showError("Erro no Upload", msg);
+      const previewUrl = `${result.publicUrl}?t=${Date.now()}`;
+      setFormData((prev) => ({ ...prev, [field]: previewUrl }));
+      setProfile((prev) => prev ? { ...prev, [field]: result.publicUrl } : prev);
+    } catch {
+      showError("Erro no Upload", "Não foi possível enviar a imagem pelo servidor. Tente novamente.");
       e.target.value = "";
     } finally {
       if (field === "avatar_url") setUploadingAvatar(false);
@@ -236,7 +266,7 @@ export default function SettingsPage() {
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-primary">Configurações</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Personalize sua experiência e gerencie os dados da sua clínica.
+            Personalize sua experiencia e mantenha recibos, PDFs e documentos com identificacao profissional clara.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -262,6 +292,21 @@ export default function SettingsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-8 space-y-8">
+                {missingDocumentProfileFields.length > 0 && (
+                  <div className="flex items-start gap-3 rounded-3xl border border-amber-200 bg-amber-50/80 p-4 text-amber-900">
+                    <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                    <div>
+                      <p className="text-sm font-bold">Dados profissionais incompletos para documentos</p>
+                      <p className="mt-1 text-sm leading-relaxed text-amber-900/80">
+                        Recibos e PDFs usam nome profissional, CRP, clinica, logo e assinatura quando esses campos estao preenchidos.
+                      </p>
+                      <p className="mt-2 text-xs font-bold uppercase tracking-widest text-amber-800/70">
+                        Revisar: {missingDocumentProfileFields.join(", ")}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Visual Identity Section */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {/* Avatar Upload */}
@@ -294,20 +339,20 @@ export default function SettingsPage() {
                           </div>
                           <Input
                             type="file"
-                            accept="image/*"
+                            accept={BRAND_ASSET_ACCEPT}
                             className="hidden"
                             onChange={(e) => handleFileUpload(e, "avatar_url")}
                             disabled={uploadingAvatar}
                           />
                         </label>
-                        <p className="text-[10px] text-muted-foreground leading-tight px-1">Recomendado: 400x400px. Máximo 5MB.</p>
+                        <p className="text-[10px] text-muted-foreground leading-tight px-1">{BRAND_ASSET_HELP_TEXT}</p>
                       </div>
                     </div>
                   </div>
 
                   {/* Logo Upload */}
                   <div className="space-y-3">
-                    <Label className="text-sm font-bold text-primary/70 uppercase ml-1">Logo da Clínica</Label>
+                    <Label className="text-sm font-bold text-primary/70 uppercase ml-1">Logo da Clinica</Label>
                     <div className="flex items-center gap-5 p-4 rounded-3xl bg-white/30 border border-white/40 shadow-inner">
                       {formData.clinic_logo_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -335,13 +380,13 @@ export default function SettingsPage() {
                           </div>
                           <Input
                             type="file"
-                            accept="image/*"
+                            accept={BRAND_ASSET_ACCEPT}
                             className="hidden"
                             onChange={(e) => handleFileUpload(e, "clinic_logo_url")}
                             disabled={uploadingLogo}
                           />
                         </label>
-                        <p className="text-[10px] text-muted-foreground leading-tight px-1">Usada em relatórios PDF. Fundo transparente.</p>
+                        <p className="text-[10px] text-muted-foreground leading-tight px-1">{BRAND_ASSET_HELP_TEXT}</p>
                       </div>
                     </div>
                   </div>
@@ -377,13 +422,13 @@ export default function SettingsPage() {
                         </div>
                         <Input
                           type="file"
-                          accept="image/*"
+                          accept={BRAND_ASSET_ACCEPT}
                           className="hidden"
                           onChange={(e) => handleFileUpload(e, "signature_url")}
                           disabled={uploadingSignature}
                         />
                       </label>
-                      <p className="text-[10px] text-muted-foreground leading-tight px-1">Será usada nos recibos. Use fundo transparente.</p>
+                      <p className="text-[10px] text-muted-foreground leading-tight px-1">{BRAND_ASSET_HELP_TEXT}</p>
                     </div>
                   </div>
                 </div>
@@ -392,7 +437,7 @@ export default function SettingsPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <Label htmlFor="full_name" className="text-xs font-bold text-primary/70 uppercase ml-1">Nome Completo</Label>
+                    <Label htmlFor="full_name" className="text-xs font-bold text-primary/70 uppercase ml-1">Nome profissional nos documentos</Label>
                     <Input
                       id="full_name"
                       name="full_name"
@@ -404,7 +449,7 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="crp" className="text-xs font-bold text-primary/70 uppercase ml-1">CRP</Label>
+                    <Label htmlFor="crp" className="text-xs font-bold text-primary/70 uppercase ml-1">CRP para recibos e PDFs</Label>
                     <Input
                       id="crp"
                       name="crp"
@@ -415,7 +460,7 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="clinic_name" className="text-xs font-bold text-primary/70 uppercase ml-1">Nome da Clínica</Label>
+                    <Label htmlFor="clinic_name" className="text-xs font-bold text-primary/70 uppercase ml-1">Nome da clinica nos PDFs</Label>
                     <Input
                       id="clinic_name"
                       name="clinic_name"
@@ -504,14 +549,14 @@ export default function SettingsPage() {
                   <Button
                     type="submit"
                     className="gradient-primary text-white h-12 px-10 rounded-full font-bold shadow-lg shadow-primary/20 transition-all hover:scale-[1.02]"
-                    disabled={saving}
+                    disabled={loading || saving}
                   >
                     {saving ? (
                       <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     ) : (
                       <>
                         <Save className="w-4 h-4 mr-2" />
-                        Salvar Configurações
+                        Salvar dados profissionais
                       </>
                     )}
                   </Button>

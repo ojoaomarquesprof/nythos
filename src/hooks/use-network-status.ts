@@ -1,24 +1,33 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useSyncExternalStore } from "react";
+
+function subscribeToNetworkStatus(onStoreChange: () => void) {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+
+  window.addEventListener("online", onStoreChange);
+  window.addEventListener("offline", onStoreChange);
+
+  return () => {
+    window.removeEventListener("online", onStoreChange);
+    window.removeEventListener("offline", onStoreChange);
+  };
+}
+
+function getNetworkSnapshot() {
+  return typeof navigator === "undefined" ? true : navigator.onLine;
+}
+
+function getServerNetworkSnapshot() {
+  return true;
+}
 
 export function useNetworkStatus() {
-  const [isOnline, setIsOnline] = useState(() =>
-    typeof navigator !== "undefined" ? navigator.onLine : true
+  return useSyncExternalStore(
+    subscribeToNetworkStatus,
+    getNetworkSnapshot,
+    getServerNetworkSnapshot
   );
-
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
-  }, []);
-
-  return isOnline;
 }

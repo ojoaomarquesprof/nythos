@@ -6,12 +6,10 @@ import { useSubscription } from "@/hooks/use-subscription";
 import {
   Activity,
   Plus,
-  Calendar,
   Clock,
   Trash2,
   ChevronDown,
   ChevronUp,
-  AlertTriangle,
   History,
   Download,
 } from "lucide-react";
@@ -47,6 +45,13 @@ interface AbcRecord {
   created_at: string;
 }
 
+type AbcRpcClient = ReturnType<typeof createClient> & {
+  rpc: (
+    fn: "get_abc_records_decrypted" | "create_abc_record_secure",
+    args: Record<string, unknown>
+  ) => Promise<{ data: unknown; error: { message?: string } | null }>;
+};
+
 export function AbcRecordCard({
   patientId,
   patient,
@@ -61,7 +66,7 @@ export function AbcRecordCard({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const supabase = createClient() as any;
+  const supabase = createClient() as AbcRpcClient;
   const router = useRouter();
   const { hasSubscription, loading: subLoading } = useSubscription();
   const { exportPdf, isExporting: isExportingPdf } = usePdfExport();
@@ -76,19 +81,23 @@ export function AbcRecordCard({
     duration: "",
   });
 
-  useEffect(() => {
-    fetchAbcRecords();
-  }, [patientId]);
-
   async function fetchAbcRecords() {
     setLoading(true);
     const { data, error } = await supabase.rpc("get_abc_records_decrypted", { p_patient_id: patientId });
 
-    if (!error && data) {
-      setRecords(data);
+    if (!error && Array.isArray(data)) {
+      setRecords(data as unknown as AbcRecord[]);
     }
     setLoading(false);
   }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchAbcRecords();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientId]);
 
   async function handleAddRecord(e: React.FormEvent) {
     e.preventDefault();
@@ -150,7 +159,7 @@ export function AbcRecordCard({
       .filter(Boolean)
       .join(" | ");
 
-    const tableBody = records.map((r: any) => [
+    const tableBody = records.map((r) => [
       formatDate(r.occurrence_date),
       r.behavior,
       r.antecedent,
@@ -159,9 +168,10 @@ export function AbcRecordCard({
     ]);
 
     const exported = await exportPdf({
-      title: "Registro de AnÃ¡lise do Comportamento (ABC)",
+      title: "Registro de Analise do Comportamento (ABC)",
       subtitle: patientDetails,
       profile,
+      documentKind: "clinical",
       fileName: `abc_${patient.full_name.toLowerCase().replace(/\s+/g, "_")}.pdf`,
       content: [
         {
@@ -170,11 +180,11 @@ export function AbcRecordCard({
             widths: ["auto", "auto", "*", "*", "auto"],
             body: [
               [
-                { text: "Data", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
-                { text: "Comportamento", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
-                { text: "Antecedente (A)", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
-                { text: "ConsequÃªncia (C)", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
-                { text: "Intensidade", bold: true, fillColor: "#e2e8f0", color: "#1e293b", margin: [5, 5] },
+                { text: "Data", bold: true, fillColor: "#334155", color: "white", margin: [5, 5] },
+                { text: "Comportamento", bold: true, fillColor: "#334155", color: "white", margin: [5, 5] },
+                { text: "Antecedente (A)", bold: true, fillColor: "#334155", color: "white", margin: [5, 5] },
+                { text: "Consequencia (C)", bold: true, fillColor: "#334155", color: "white", margin: [5, 5] },
+                { text: "Intensidade", bold: true, fillColor: "#334155", color: "white", margin: [5, 5] },
               ],
               ...tableBody.map((row) => row.map((cell) => ({ text: cell, margin: [5, 5] }))),
             ],
@@ -226,7 +236,7 @@ export function AbcRecordCard({
               disabled={records.length === 0 || !profile || !patient || isExportingPdf}
             >
               <Download className="mr-2 h-4 w-4" />
-              <span className="hidden sm:inline">PDF</span>
+              <span className="hidden sm:inline">Baixar PDF</span>
             </Button>
 
             <Dialog open={open} onOpenChange={setOpen}>
@@ -306,9 +316,10 @@ export function AbcRecordCard({
                       </div>
                       <Slider
                         value={[formData.intensity]}
-                        onValueChange={(val: any) =>
-                          setFormData({ ...formData, intensity: Array.isArray(val) ? val[0] : val })
-                        }
+                        onValueChange={(val) => {
+                          const nextIntensity = Array.isArray(val) ? val[0] : val;
+                          setFormData({ ...formData, intensity: nextIntensity ?? formData.intensity });
+                        }}
                         max={10}
                         min={1}
                         step={1}
@@ -398,10 +409,13 @@ export function AbcRecordCard({
               <History className="h-6 w-6 text-rose-200" />
             </div>
             <p className="text-sm font-medium text-slate-400">Nenhum registro comportamental.</p>
+            <p className="mt-1 max-w-md text-xs leading-relaxed text-slate-400">
+              Quando houver registros, voce podera baixar um PDF clinico identificado pelo perfil profissional.
+            </p>
           </div>
         ) : (
           <div className="space-y-4">
-            {records.map((r: any) => {
+            {records.map((r) => {
               const isExpanded = expandedId === r.id;
               return (
                 <div

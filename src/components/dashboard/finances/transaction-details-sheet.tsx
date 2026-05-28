@@ -61,6 +61,7 @@ interface TransactionDetailsSheetProps {
   onGenerateReceipt: (transaction: FinancialTransaction) => Promise<void>;
   actionPending?: boolean;
   receiptPending?: boolean;
+  professionalProfileIncomplete?: boolean;
 }
 
 function todayIsoDate(): string {
@@ -103,6 +104,7 @@ export function TransactionDetailsSheet({
   onGenerateReceipt,
   actionPending = false,
   receiptPending = false,
+  professionalProfileIncomplete = false,
 }: TransactionDetailsSheetProps) {
   const [paymentMethod, setPaymentMethod] = useState<ManualPaymentMethod>("pix");
   const [paidAt, setPaidAt] = useState(todayIsoDate());
@@ -245,6 +247,25 @@ export function TransactionDetailsSheet({
             </div>
           </div>
 
+          {canGenerateReceipt && (
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-5">
+              <div className="flex items-start gap-3">
+                <FileCheck className="mt-0.5 size-4 shrink-0 text-emerald-700" />
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700/70">Recibo profissional</p>
+                  <p className="mt-1 text-xs font-semibold leading-relaxed text-emerald-900/70">
+                    O PDF usa os dados do perfil profissional, incluindo nome, clinica, CRP, logo e assinatura quando preenchidos. Gerar o recibo nao altera valor, status ou origem do lancamento.
+                  </p>
+                  {professionalProfileIncomplete && (
+                    <p className="mt-2 rounded-xl bg-white/70 px-3 py-2 text-xs font-bold leading-relaxed text-amber-800">
+                      Complete nome profissional, clinica e CRP antes de entregar o recibo ao paciente.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {transaction.notes && (
             <div className="space-y-1.5 rounded-2xl border border-slate-100 bg-slate-50 p-5">
               <div className="flex items-center gap-2 text-slate-400">
@@ -333,6 +354,17 @@ export function TransactionDetailsSheet({
               Ver paciente
             </Button>
           )}
+          {canGenerateReceipt && professionalProfileIncomplete && (
+            <Button
+              variant="outline"
+              className="h-11 flex-1 rounded-xl bg-white font-black text-amber-700 hover:bg-amber-50"
+              onClick={() => window.location.assign("/dashboard/settings")}
+              disabled={actionPending || receiptPending}
+            >
+              <ArrowUpRight className="h-4 w-4" />
+              Revisar dados profissionais
+            </Button>
+          )}
           {canCancel && (
             <Button
               variant="outline"
@@ -352,7 +384,7 @@ export function TransactionDetailsSheet({
               disabled={actionPending || receiptPending}
             >
               <Download className="h-4 w-4" />
-              {receiptPending ? "Gerando..." : "Baixar recibo"}
+              {receiptPending ? "Gerando recibo..." : "Gerar recibo"}
             </Button>
           )}
           {canConfirm && (

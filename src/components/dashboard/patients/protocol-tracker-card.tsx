@@ -6,11 +6,7 @@ import { useSubscription } from "@/hooks/use-subscription";
 import { 
   ClipboardCheck, 
   Plus, 
-  Calendar, 
-  Trophy, 
   Trash2,
-  ExternalLink,
-  ChevronRight,
   Download
 } from "lucide-react";
 import { usePdfExport } from "@/hooks/use-pdf-export";
@@ -81,7 +77,7 @@ export function ProtocolTrackerCard({
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const supabase = createClient() as any;
+  const supabase = createClient();
   const router = useRouter();
   const { hasSubscription, loading: subLoading } = useSubscription();
   const { exportPdf, isExporting: isExportingPdf } = usePdfExport();
@@ -94,20 +90,24 @@ export function ProtocolTrackerCard({
     status: "completed" as Evaluation["status"],
   });
 
-  useEffect(() => {
-    fetchEvaluations();
-  }, [patientId]);
-
   async function fetchEvaluations() {
     setLoading(true);
     const { data, error } = await supabase
       .rpc("get_patient_evaluations_decrypted", { p_patient_id: patientId });
 
-    if (!error && data) {
-      setEvaluations(data);
+    if (!error && Array.isArray(data)) {
+      setEvaluations(data as unknown as Evaluation[]);
     }
     setLoading(false);
   }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchEvaluations();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientId]);
 
   async function handleAddEvaluation(e: React.FormEvent) {
     e.preventDefault();
@@ -164,17 +164,18 @@ export function ProtocolTrackerCard({
       `Data do Relatório: ${new Date().toLocaleDateString("pt-BR")}`
     ].filter(Boolean).join(" | ");
 
-    const tableBody = evaluations.map((e: any) => [
-      e.protocol_name,
-      formatDate(e.evaluation_date),
-      e.score || "—",
-      e.status === "completed" ? "Concluído" : "Em andamento"
+    const tableBody = evaluations.map((evaluation) => [
+      evaluation.protocol_name,
+      formatDate(evaluation.evaluation_date),
+      evaluation.score || "—",
+      evaluation.status === "completed" ? "Concluído" : "Em andamento"
     ]);
 
     const exported = await exportPdf({
-      title: "Relatório de Protocolos e Avaliações",
+      title: "Relatorio de protocolos e avaliacoes",
       subtitle: patientDetails,
       profile,
+      documentKind: "clinical",
       fileName: `protocolos_${patient.full_name.toLowerCase().replace(/\s+/g, "_")}.pdf`,
       content: [
         {
@@ -183,10 +184,10 @@ export function ProtocolTrackerCard({
             widths: ['*', 'auto', 'auto', 'auto'],
             body: [
               [
-                { text: 'Protocolo', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
-                { text: 'Data', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
-                { text: 'Score / Resultado', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] },
-                { text: 'Status', bold: true, fillColor: '#e2e8f0', color: '#1e293b', margin: [5, 5] }
+                { text: 'Protocolo', bold: true, fillColor: '#334155', color: 'white', margin: [5, 5] },
+                { text: 'Data', bold: true, fillColor: '#334155', color: 'white', margin: [5, 5] },
+                { text: 'Score / Resultado', bold: true, fillColor: '#334155', color: 'white', margin: [5, 5] },
+                { text: 'Status', bold: true, fillColor: '#334155', color: 'white', margin: [5, 5] }
               ],
               ...tableBody.map(row => row.map(cell => ({ text: cell, margin: [5, 5] })))
             ]
@@ -238,7 +239,7 @@ export function ProtocolTrackerCard({
               disabled={evaluations.length === 0 || !profile || !patient || isExportingPdf}
             >
               <Download className="w-4 h-4 mr-2" />
-              <span className="hidden sm:inline">PDF</span>
+              <span className="hidden sm:inline">Baixar PDF</span>
             </Button>
 
             <Dialog open={open} onOpenChange={setOpen}>
@@ -265,7 +266,7 @@ export function ProtocolTrackerCard({
                     <Label className="text-sm font-bold text-slate-700">Protocolo / Teste *</Label>
                     <Select
                       value={formData.protocol}
-                      onValueChange={(val: any) => setFormData({ ...formData, protocol: val || "" })}
+                      onValueChange={(val) => setFormData({ ...formData, protocol: val || "" })}
                     >
                       <SelectTrigger className="glass-input-field h-12 bg-slate-50/50">
                         <SelectValue placeholder="Selecione o protocolo" />
@@ -375,10 +376,13 @@ export function ProtocolTrackerCard({
                     <ClipboardCheck className="w-6 h-6 text-teal-600" />
                   </div>
                   <p className="text-sm text-slate-400 font-medium">Nenhum protocolo registrado.</p>
+                  <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-slate-400">
+                    Registre um protocolo para baixar um PDF clinico identificado pelo perfil profissional.
+                  </p>
                 </TableCell>
               </TableRow>
             ) : (
-              evaluations.map((e: any) => (
+              evaluations.map((e) => (
                 <TableRow key={e.id} className="group hover:bg-white/40 transition-colors border-b border-white/20 last:border-0">
                   <TableCell className="text-sm font-bold text-teal-700/80 py-5 pl-8">
                     {e.protocol_name}
