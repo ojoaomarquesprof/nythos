@@ -16,7 +16,8 @@
    - [Supabase Local (CLI)](#supabase-local-cli)
    - [Configurando o Vault (Criptografia de Prontuários)](#configurando-o-vault-criptografia-de-prontuários)
 6. [Scripts Disponíveis](#scripts-disponíveis)
-7. [Deploy em Produção](#deploy-em-produção)
+7. [Documentação Operacional](#documentação-operacional)
+8. [Deploy em Produção](#deploy-em-produção)
 
 ---
 
@@ -376,6 +377,14 @@ supabase migration up           # Aplica migrations pendentes
 supabase db diff                # Gera migration a partir de mudanças no schema
 supabase status                 # Mostra URLs e status dos serviços locais
 ```
+
+---
+
+## Documentação Operacional
+
+- [Runbook do piloto fechado](docs/PILOT_RUNBOOK.md)
+- [Checklist de QA manual](docs/MANUAL_QA.md)
+- [Políticas do bucket `brand`](docs/SUPABASE_STORAGE_BRAND_POLICIES.md)
 
 ---
 
