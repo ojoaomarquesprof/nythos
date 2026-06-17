@@ -1,4 +1,4 @@
-````md
+
 # Nythos — SaaS para Gestão Clínica e Financeira
 
 > Plataforma SaaS para profissionais de saúde mental, com agenda, pacientes, prontuários, fluxo financeiro, área do paciente, equipe e segurança aplicada a dados sensíveis.
@@ -533,4 +533,3 @@ Desenvolvido por **João Marques**.
 
 - GitHub: [@ojoaomarquesprof](https://github.com/ojoaomarquesprof)
 - LinkedIn: [João Marques](https://www.linkedin.com/in/jo%C3%A3o-marques-332709417/)
-````
